@@ -366,19 +366,43 @@ flagged in the verification plan.**
 
 #### ACUB — Adjusted Census Urban Boundary (polygon)
 
-- MapServer (open-data version, polygons, intersects cleanly): `https://gisagocss.state.mi.us/arcgis/rest/services/OpenData/michigan_geographic_framework/MapServer/5`
-- Fields confirmed: `OBJECTID`, `ACUBCODE` (str4), `ACUBNUM` (int),
-  `NAME` (str36, display name), `LABEL` (str60), `TYPE` (str4), `RU`,
-  `SQKM`, `SQMILES`, `ACRES`.
-- Sample point-in-polygon query (WGS84 input): `https://gisagocss.state.mi.us/arcgis/rest/services/OpenData/michigan_geographic_framework/MapServer/5/query?geometry=-83.045,42.331&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`
-- **Caveat (important):** this layer appears to be the v17a (2010-vintage)
-  ACUB. The FHWA-approved **2020 ACUB** was reportedly scheduled for MDOT
-  database entry in 2025. If we strictly need the 2020 boundaries for V1
-  eligibility decisions, we need to confirm the layer vintage with MDOT
-  (`MDOT-NHS@Michigan.gov`) and possibly swap in a different endpoint.
-  Alternate MapServers carrying the same / similar data:
-  - `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/MapServer/282` (layer `ACUB`)
-  - `http://gisp.mcgi.state.mi.us/arcgis/rest/services/MDOT/ACUB/MapServer`
+**V1 source: USDOT NTAD "Adjusted Urban Areas" (2020) — nationwide.**
+The layer is published as AGOL item `decb7d40c3d540f484dc6925effa9d4b`
+("2020 Adjusted Urban Area Boundaries") via UDOT's UPLAN portal, which
+re-hosts the USDOT BTS NTAD dataset. **User confirmed nationwide coverage**
+visually in the ArcGIS Map Viewer
+(`https://www.arcgis.com/apps/mapviewer/index.html?layers=decb7d40c3d540f484dc6925effa9d4b`).
+A prior research pass briefly mis-flagged this as Utah-only based on the
+host portal name; that inference was wrong.
+
+- **FeatureServer (user-verified):** `https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0`
+- Metadata (run from a workstation that can reach `services.arcgis.com`):
+  `https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0?f=pjson`
+- Sample point-in-polygon query (Detroit, used in verification step §5.1):
+  `https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0/query?geometry=-83.045,42.331&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`
+- Hub page (download + schema + sample queries): `https://data-uplan.opendata.arcgis.com/datasets/uplan::2020-adjusted-urban-area-boundaries/about`.
+- **Field names — TBD** until the live `?f=pjson` is read from a
+  workstation. Expected based on the NTAD schema: an urban-area name
+  field (`NAME` or `NAME20`), `UACE20` (urban-area census code),
+  `UATYP20` (urbanized area / urban cluster type), and `ALAND20`/`AWATER20`.
+  Pinned down in verification step §5.1.
+
+##### Fallback layers (only if the nationwide AGOL item turns out to be unreliable)
+
+- **Michigan MapServer (2010-vintage, "v17a"):** `https://gisagocss.state.mi.us/arcgis/rest/services/OpenData/michigan_geographic_framework/MapServer/5`
+  - Fields confirmed: `OBJECTID`, `ACUBCODE` (str4), `ACUBNUM` (int),
+    `NAME` (str36, display name), `LABEL` (str60), `TYPE` (str4), `RU`,
+    `SQKM`, `SQMILES`, `ACRES`.
+  - Sample point-in-polygon query (WGS84 input): `https://gisagocss.state.mi.us/arcgis/rest/services/OpenData/michigan_geographic_framework/MapServer/5/query?geometry=-83.045,42.331&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`
+  - **Caveat:** this is the **2010-vintage** v17a layer. The FHWA-approved
+    **2020 ACUB** was reportedly scheduled for MDOT database entry in 2025.
+  - Alternate Michigan MapServers carrying the same / similar data:
+    - `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/MapServer/282` (layer `ACUB`)
+    - `http://gisp.mcgi.state.mi.us/arcgis/rest/services/MDOT/ACUB/MapServer`
+- **Other nationwide candidates** (parked, not used in V1):
+  - USDOT BTS NTAD "Urban Areas" — `https://geodata.bts.gov/datasets/usdot::urban-areas/about`
+  - FHWA HPMS Adjusted Urban Areas (2020) — `https://www.fhwa.dot.gov/planning/census_issues/urbanized_areas_and_mpo_tma/`
+  - US Census TIGER/Line 2020 Urban Areas — `https://www2.census.gov/geo/tiger/TIGER2020/UAC/`
 
 #### Query strategy (Michigan)
 
