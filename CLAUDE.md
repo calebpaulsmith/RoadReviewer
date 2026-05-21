@@ -251,22 +251,24 @@ hand-rolled JSON parsing.
 - **F6. ACUB is nationwide.** Use the user-provided AGOL nationwide ACUB
   feature service for all six Region V states (see §4.2). One lookup
   call per row, regardless of state.
-- **F7. Eligibility rule — road projects only.** A row is *PA-ineligible
-  for road work* if any intersecting (or nearest-within-150-ft) road
-  segment has a functional class of **Urban Minor Collector or greater**
-  inside the relevant urban boundary. Implementation:
+- **F7. Eligibility rule.** A row is *PA-ineligible for road work* if any
+  intersecting (or nearest-within-150-ft) road segment has a functional
+  class of **Urban Minor Collector or greater** inside the relevant
+  urban boundary. Implementation:
   - Query the state's NFC layer for class + road name.
   - Cross-check the point against the ACUB polygon layer to determine
     Urban vs Rural.
   - Eligible classes: Rural Local, Rural Minor Collector, Urban Local.
     Everything else = red highlight + "INELIGIBLE" in the Eligibility
     column.
-  - **Run the check only when the row's Category is road-relevant**
-    (e.g. Cat C, or a user-configurable list). Other categories get
-    "N/A — non-road" in the Eligibility column and skip the network
-    calls. *Behavioural note:* this is encoded as "road project only" per
-    the user's decision; the inspector can still re-run lookups on
-    any row by selecting it and hitting the button again.
+  - **Always run, on every row.** V1 has no visibility into the row's
+    PA work Category, so we run eligibility on everything regardless of
+    work type. If the tool later integrates with Grants Manager
+    (V2+), it could narrow the check to categories where road class
+    actually matters — primarily Cat B (Emergency Protective Measures)
+    and Cat C (Roads & Bridges), with Cat D (Water Control Facilities),
+    Cat F (Public Utilities), and Cat G (Parks/Rec/Other) sometimes
+    also touching federal-aid routes.
 - **F8. State selector.** Setup sheet has a State dropdown with WI / IN
   / MI / MN / IL / OH. Only MI's NFC layer is wired in V1; selecting
   another state pops a "NFC lookup not yet wired for {state} — ACUB
@@ -545,27 +547,31 @@ warning from the Site Inspector Tool.
    imagery URLs in default-browser tabs for the selected row.
 4. **Workbook scope.** Single consolidated `RoadReviewer.xlsm` with a
    Home sheet, one shared Sites table, and three workflow sheets.
-5. **Eligibility scope.** Road-project only. Inspector selects road-
-   relevant categories; we skip the network call (and write "N/A —
-   non-road") for everything else.
+5. **Eligibility scope — always run.** V1 has no visibility into the
+   row's PA Category, so the road-class check runs on every row. The
+   rule is a flag, not a gate: the inspector reads "INELIGIBLE" + class
+   on the row and decides whether it applies. If Grants Manager
+   integration ever lands (V2+), the check could narrow to Cat B / C /
+   D / F / G — the categories that may touch federal-aid routes.
 6. **NHS.** Skip in V1. Add later if needed.
 7. **MapPages images.** Manual screenshot paste in V1; auto-basemap
    capture is a V2 effort (see §6).
 8. **WO/DI.** Per-job only — Setup sheet drives it. Row-level override
    is allowed by editing the row's WO/DI cells directly; no mode toggle.
+9. **Output folder default.** Setup sheet pre-fills the output folder
+   with `{OneDrivePath}\Desktop\Script\RoadReviewer\{Disaster}\WO{WO}-DI{DI}\`,
+   where `{OneDrivePath}` is discovered at workbook open time by
+   probing for `%USERPROFILE%\OneDrive - FEMA\`, then
+   `%USERPROFILE%\OneDrive\`, falling back to `%USERPROFILE%\Desktop\`
+   if neither exists. The folder is created on-demand on first
+   FIRMette / Map PDF write. Inspector can override on the Setup sheet.
 
 ### Still open
 
-1. **Road-relevant category list.** The eligibility-rule gate (F7) needs
-   to know which Categories of work to run the road check for. Default
-   guess: FEMA PA Category C (Roads & Bridges). Should we also auto-run
-   for Cat D / Cat G when the site is near a road? Or just Cat C?
-2. **MDOT NFC field names.** §4.2 lists three candidate layers (353
+1. **MDOT NFC field names.** §4.2 lists three candidate layers (353
    "Functional System", 364 "Classification", 543 "Route System"). We
-   need to read the `?f=pjson` metadata from the workstation to find
-   the exact class-code field and road-name field before wiring the
-   query. This is verification step §5.1.
-3. **Output folder default.** Currently the prototype forces the user
-   to click Browse every job. Acceptable to default to
-   `OneDrive - FEMA\Desktop\{Disaster}\{WO}-{DI}\` and create it if
-   missing?
+   need to read the `?f=pjson` metadata from a machine that can reach
+   `mdotgis.state.mi.us` (this build sandbox cannot) to find the exact
+   class-code field and road-name field before wiring the VBA. This is
+   verification step §5.1; the procedure is documented in
+   `docs/probe-mdot-layers.md`.
