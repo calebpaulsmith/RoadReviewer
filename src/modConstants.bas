@@ -93,14 +93,12 @@ Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?la
 ' blocked the inspector from clicking through to the actual damage point;
 ' the FEMA webmap is the same data without the experience's UI wrapper.
 '
-' `visibleLayers=` is the legacy-Classic but still partially honored URL
-' param that names which operational layers should be visible; everything
-' else in the webmap defaults to off. The two IDs below are the National
-' Functional System (NfcNhsPub_8332) and the 2020 Adjusted Census Urban
-' Boundary (193df725e5e-layer-20), read from the webmap's item/data
-' JSON. If a future Map Viewer release drops this param, the link still
-' opens the webmap — visibility just falls back to whatever's saved.
-Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}&visibleLayers=NfcNhsPub_8332%2C193df725e5e-layer-20"
+' (Tried appending &visibleLayers=NfcNhsPub_8332,193df725e5e-layer-20 to
+' force only NFC + ACUB on by default. The new Map Viewer choked on the
+' URL — the webmap didn't load at all. Reverted. Realistic fix is to
+' save a custom webmap in AGOL with the two layers preset visible and
+' point this URL there instead.)
+Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
 
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"
