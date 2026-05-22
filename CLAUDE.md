@@ -716,12 +716,19 @@ warning from the Site Inspector Tool.
    if neither exists. The folder is created on-demand on first
    FIRMette / Map PDF write. Inspector can override on the Setup sheet.
 
+10. **MDOT NFC field names — confirmed 2026-05-22 (verification §5.1).**
+    Read live from `mdotgis.state.mi.us` via the procedure in
+    `docs/probe-mdot-layers.md`. Class comes from layer **353**, field
+    `FunctionalSystem` (smallint, coded-value domain 0–7), filtered
+    `where=RHRetireDate IS NULL`. Layer 364 is feature-type only ("RD")
+    and skipped. Trunkline route name comes from layer **543**
+    (`RouteDesignation`/`RouteNumber`), blank for local streets. ACUB is
+    the NTAD layer's `NAME` field (native WGS84). Full schema, eligibility
+    table, and three live-verified test coordinates are in §4.2.
+
 ### Still open
 
-1. **MDOT NFC field names.** §4.2 lists three candidate layers (353
-   "Functional System", 364 "Classification", 543 "Route System"). We
-   need to read the `?f=pjson` metadata from a machine that can reach
-   `mdotgis.state.mi.us` (this build sandbox cannot) to find the exact
-   class-code field and road-name field before wiring the VBA. This is
-   verification step §5.1; the procedure is documented in
-   `docs/probe-mdot-layers.md`.
+*Nothing blocking V1 implementation.* One cosmetic item: the MDOT
+NFC/NHS/ACUB Experience-app marker URL parameter format (§4.3) is still
+TBD — only affects the per-row "Open in map" deep link (F11), not the
+classification logic. Can be pinned down during the §5.4 smoke test.
