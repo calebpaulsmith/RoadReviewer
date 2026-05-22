@@ -27,7 +27,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
     Set ws = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
-        MsgBox "No site rows found. Add points on the Sites sheet first.", vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox "No site rows found. Add points on the Sites sheet first.", vbInformation, "Classify Roads"
         Exit Sub
     End If
 
@@ -35,7 +35,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
     If Len(stateCode) = 0 Then stateCode = "MI"
     nfcWired = (stateCode = "MI")
     If Not nfcWired Then
-        MsgBox "Road-class (NFC) lookup is not yet wired for " & stateCode & "." & vbCrLf & _
+        If Not gHeadless Then MsgBox "Road-class (NFC) lookup is not yet wired for " & stateCode & "." & vbCrLf & _
             "The ACUB urban-boundary check will still run on every row.", vbInformation, "Classify Roads"
     End If
 
@@ -45,7 +45,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         End If
     Next r
     If total = 0 Then
-        MsgBox IIf(onlyFailed, "No failed rows to re-run.", "No site rows to classify."), vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox IIf(onlyFailed, "No failed rows to re-run.", "No site rows to classify."), vbInformation, "Classify Roads"
         Exit Sub
     End If
 
@@ -66,9 +66,9 @@ Done:
     Application.ScreenUpdating = True
     ClearStatus
     If Err.Number <> 0 Then
-        MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Classify Roads"
+        If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Classify Roads"
     Else
-        MsgBox "Classified " & processed & " row(s).", vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox "Classified " & processed & " row(s).", vbInformation, "Classify Roads"
     End If
 End Sub
 
@@ -77,11 +77,13 @@ Private Function RowIsFailed(ByVal ws As Worksheet, ByVal r As Long) As Boolean
 End Function
 
 Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWired As Boolean)
+    TraceLine "ClassifyOneRow row=" & r & " name=" & CStr(ws.Cells(r, COL_SITENAME).Value)
     ' Idempotent: clear prior lookup output before writing (N5).
     ClearLookupCells ws, r
 
     If Not HasValidCoords(ws, r) Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "no/invalid coordinates"
+        TraceLine "  no/invalid coords"
         Exit Sub
     End If
 

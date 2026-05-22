@@ -34,15 +34,25 @@ Public Sub BuildWorkbook()
     Application.ScreenUpdating = True
     SheetByName(SH_HOME).Activate
 
-    MsgBox "RoadReviewer workbook built." & vbCrLf & vbCrLf & _
-        IIf(hadSites, "Existing Sites data was preserved.", "Start by filling in the Setup sheet, then add points on the Sites sheet.") & vbCrLf & _
-        "Remember to save as a macro-enabled workbook (.xlsm).", _
-        vbInformation, "RoadReviewer"
+    ' Skip the confirmation MsgBox when driven headlessly by the build script
+    ' (which sets gHeadless before calling). The in-Excel "Build / Reset
+    ' Workbook" button leaves gHeadless=False and still shows the dialog.
+    If Not gHeadless Then
+        MsgBox "RoadReviewer workbook built." & vbCrLf & vbCrLf & _
+            IIf(hadSites, "Existing Sites data was preserved.", "Start by filling in the Setup sheet, then add points on the Sites sheet.") & vbCrLf & _
+            "Remember to save as a macro-enabled workbook (.xlsm).", _
+            vbInformation, "RoadReviewer"
+    End If
     Exit Sub
 Fail:
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    MsgBox "Build failed: " & Err.Description, vbCritical, "RoadReviewer"
+    If gHeadless Then
+        ' Re-raise so the automation host sees the failure.
+        Err.Raise Err.Number, "BuildWorkbook", Err.Description
+    Else
+        MsgBox "Build failed: " & Err.Description, vbCritical, "RoadReviewer"
+    End If
 End Sub
 
 ' ---- sheet plumbing -------------------------------------------------------
@@ -115,6 +125,17 @@ Private Function AddButton(ByVal ws As Worksheet, ByVal leftPt As Single, ByVal 
     Set AddButton = sh
 End Function
 
+' DisplayGridlines lives on Window, not Worksheet. To hide gridlines on a
+' specific sheet we activate it first, then flip the Window property.
+' On Error Resume Next handles the rare COM case where ActiveWindow is Nothing
+' (Excel driven by an automation host with no visible workbook window).
+Private Sub HideGridlines(ByVal ws As Worksheet)
+    ws.Activate
+    On Error Resume Next
+    ActiveWindow.DisplayGridlines = False
+    On Error GoTo 0
+End Sub
+
 Private Sub TitleBlock(ByVal ws As Worksheet, ByVal title As String, ByVal subtitle As String)
     With ws.Range("B2")
         .Value = title
@@ -159,7 +180,7 @@ Private Sub BuildHome()
     ws.Range("E16").Font.Italic = True
     ws.Range("E16").Font.Color = RGB(70, 70, 70)
 
-    ws.DisplayGridlines = False
+    HideGridlines ws
     ws.Tab.Color = RGB(47, 79, 79)
 End Sub
 
@@ -174,7 +195,7 @@ Public Sub GoMaps(): SheetByName(SH_MAPS).Activate: End Sub
 Private Sub BuildSetup()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_SETUP)
-    ws.DisplayGridlines = False
+    HideGridlines ws
     ws.Columns("A").ColumnWidth = 28
     ws.Columns("B").ColumnWidth = 60
     TitleBlock ws, "Setup", "Job-wide values. WO/DI default onto every Sites row; override per row if needed."
@@ -241,7 +262,12 @@ Private Sub BuildSites()
     ws.Rows(SITES_HEADER_ROW).Font.Bold = True
     ws.Activate
     ws.Range("A2").Select
+    On Error Resume Next
+    ' ActiveWindow can be Nothing when Excel is driven headless by COM.
+    ' Skipping the freeze in that path is fine - the in-Excel "Build / Reset"
+    ' button still pins the header row.
     ActiveWindow.FreezePanes = True
+    On Error GoTo 0
     ws.Tab.Color = RGB(60, 60, 60)
 End Sub
 
@@ -373,7 +399,7 @@ End Sub
 Private Sub BuildClassifySheet()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_CLASSIFY)
-    ws.DisplayGridlines = False
+    HideGridlines ws
     TitleBlock ws, "1.  Classify Roads", "Look up FHWA functional class + ACUB urban boundary for every Sites row."
     Bullets ws, 5, Array( _
         "Reads Latitude/Longitude from the Sites table.", _
@@ -388,7 +414,7 @@ End Sub
 Private Sub BuildImagerySheet()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_IMAGERY)
-    ws.DisplayGridlines = False
+    HideGridlines ws
     TitleBlock ws, "2.  Review Imagery", "Open a curated set of imagery sources for the selected Sites row(s)."
     Bullets ws, 5, Array( _
         "Select one or more rows in the Sites table first.", _
@@ -401,7 +427,7 @@ End Sub
 Private Sub BuildMapsSheet()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_MAPS)
-    ws.DisplayGridlines = False
+    HideGridlines ws
     TitleBlock ws, "3.  Maps & FIRMettes", "Batch FEMA FIRMette download, per-site map pages, and exports."
     Bullets ws, 5, Array( _
         "Set WO/DI/Disaster and the output folder on the Setup sheet first.", _

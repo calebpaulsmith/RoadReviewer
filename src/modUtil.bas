@@ -5,6 +5,53 @@ Option Explicit
 ' Every sheet reference is hard-bound by name (friction point #4): no
 ' workflow ever writes to ActiveSheet.
 
+' ---- Module-level state ---------------------------------------------------
+' All Public variables must live in the declarations section (before the
+' first Sub/Function) or VBA throws a compile error.
+
+' Set True by automation hosts (build\build.ps1, build\verify-*.ps1) to
+' suppress user-facing MsgBox prompts so the COM caller doesn't hang on
+' an invisible modal dialog. Workflows still write all status to cells +
+' StatusBar, so the result is fully observable when this flag is True.
+' Defaults to False so the in-Excel button-click experience is unchanged.
+Public gHeadless As Boolean
+
+' Diagnostic trace file path. Off by default; flipped on by verify-*.ps1
+' so HTTP calls + per-row checkpoints get appended to a known file. When a
+' long-running workflow hangs, the trace tells us exactly where it stopped
+' instead of leaving us staring at a frozen Excel window.
+Public gTracePath As String
+
+' ---- Setters callable from a COM automation host -------------------------
+' Application.Run can only invoke named subs, not assign module-level
+' variables directly, so the host calls Application.Run "SetHeadless"/"SetTrace".
+
+Public Sub SetHeadless(ByVal value As Boolean)
+    gHeadless = value
+End Sub
+
+Public Sub SetTrace(ByVal path As String)
+    gTracePath = path
+    On Error Resume Next
+    Kill path
+    On Error GoTo 0
+End Sub
+
+Public Sub TraceLine(ByVal txt As String)
+    If Len(gTracePath) = 0 Then Exit Sub
+    Dim fnum As Integer
+    On Error GoTo Fail
+    fnum = FreeFile
+    Open gTracePath For Append As #fnum
+    Print #fnum, Format$(Now, "hh:nn:ss") & " " & txt
+    Close #fnum
+    Exit Sub
+Fail:
+    ' Tracing must never break the workflow.
+End Sub
+
+' ---- Sheet plumbing ------------------------------------------------------
+
 Public Function SheetByName(ByVal sheetName As String) As Worksheet
     Dim ws As Worksheet
     On Error Resume Next
@@ -113,6 +160,12 @@ Public Function ColLetter(ByVal n As Long) As String
     Loop
     ColLetter = r
 End Function
+
+' Sleep n seconds without blocking other Excel work.
+Public Sub WaitSeconds(ByVal seconds As Long)
+    If seconds <= 0 Then Exit Sub
+    Application.Wait Now + TimeSerial(0, 0, seconds)
+End Sub
 
 ' Strip characters that are illegal in Windows file names.
 Public Function CleanFileName(ByVal s As String) As String
