@@ -1,0 +1,5 @@
+# Build artifact - assembled per docs/build-and-import.md
+build/RoadReviewer.xlsm
+
+# Local IDE/agent state
+.claude/
