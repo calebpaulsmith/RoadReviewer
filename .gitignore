@@ -10,3 +10,7 @@ build/prototype-vba/
 
 # Local IDE/agent state
 .claude/
+
+# Inspector output (FIRMettes, Map PDFs, KML, CSV) — generated per WO
+# by the workflows; never source of truth, never committed.
+Output/
