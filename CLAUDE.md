@@ -340,22 +340,117 @@ hand-rolled JSON parsing.
 Source app: MDOT's "NFC, NHS & ACUB" Experience at
 <https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce/page/NFC%2C-NHS-%26-ACUB>.
 The Experience config itself is not directly fetchable, but the underlying
-REST services are publicly readable. **All field names below still need to
-be confirmed from the live `?f=pjson` metadata before wiring the VBA —
-flagged in the verification plan.**
+REST services are publicly readable. Field names and the
+`FunctionalSystem` coded-value domain below were confirmed against the
+live `?f=pjson` metadata on 2026-05-22 (verification step §5.1).
+
+**Operational note — MDOT requires a browser User-Agent.** Hitting any
+`mdotgis.state.mi.us/arcgis/...` endpoint with the default
+`MSXML2.ServerXMLHTTP` UA returns HTTP 403. The VBA HTTP helper must set
+a UA header that looks like a browser
+(e.g. `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 …`)
+before calling `send`. The NTAD ACUB service (§4.2 ACUB block) has no
+such requirement.
 
 #### NFC — National Functional Classification (polyline)
 
-- FeatureServer: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
-- Layer name: `Functional System` (esriLRSLinearEventLayer)
-- Spatial reference: WKID 102123 (EPSG 3078 — Michigan GeoRef). The query
-  needs `inSR=4326&outSR=4326` when we hand it WGS84 lat/lon.
-- Companion layers on the same FeatureServer that may carry the actual
-  class code and the route-name text:
-  - `…/FeatureServer/364` — "Classification"
-  - `…/FeatureServer/543` — "Route System"
-- Sample query: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353/query?where=1%3D1&outFields=*&resultRecordCount=1&f=json`
-- Metadata: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353?f=pjson`
+The class code, the road's PR (route identifier) and the route designation
+are split across **three companion layers** on the same FeatureServer,
+all keyed by `PR` + `PRBmp`/`PREmp` (Michigan's LRS — Physical Reference
++ Begin/End Milepost).
+
+##### Layer 353 — `Functional System` (the class code lives here)
+
+- URL: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
+- Type: `Feature Layer` (esriGeometryPolyline)
+- Spatial reference: WKID 3078 / latestWkid 102123 (Michigan GeoRef).
+  Hand it WGS84 with `inSR=4326`.
+- displayField: `EventId`
+- Confirmed fields (name / type / alias):
+
+  | name | type | alias |
+  |---|---|---|
+  | `OBJECTID` | esriFieldTypeOID | OBJECTID |
+  | `EventId` | esriFieldTypeString | Event ID |
+  | `PR` | esriFieldTypeString | PR |
+  | `PRBmp` | esriFieldTypeDouble | PR BMP |
+  | `PREmp` | esriFieldTypeDouble | PR EMP |
+  | `FunctionalSystem` | esriFieldTypeSmallInteger | Functional System |
+  | `ProposedFunctionalSystem` | esriFieldTypeSmallInteger | Proposed Functional System |
+  | `FieldEstablishDate` | esriFieldTypeDate | Field Establish Date |
+  | `RHEstablishDate` | esriFieldTypeDate | RH Establish Date |
+  | `RHRetireDate` | esriFieldTypeDate | RH Retire Date |
+  | `SystemCreateDate` | esriFieldTypeDate | System Create Date |
+  | `SystemModifiedDate` | esriFieldTypeDate | System Modified Date |
+  | `UserCreate` | esriFieldTypeString | User Create |
+  | `UserModified` | esriFieldTypeString | User Modified |
+  | `LocationError` | esriFieldTypeString | Location Error |
+  | `Shape__Length` | esriFieldTypeDouble | Shape.STLength() |
+  | `GlobalID` | esriFieldTypeGlobalID | GlobalID |
+  | `VALIDATIONSTATUS` | esriFieldTypeSmallInteger | Validation status |
+
+- **`FunctionalSystem` coded-value domain** (`LrseFunctionalSystem`):
+
+  | code | name |
+  |---|---|
+  | 0 | Non-Certified Roadway |
+  | 1 | Interstate |
+  | 2 | Other Freeway |
+  | 3 | Other Principal Arterial |
+  | 4 | Minor Arterial |
+  | 5 | Major Collector |
+  | 6 | Minor Collector |
+  | 7 | Local |
+
+  Note: this is the *bare FHWA class code* — it does **not** carry the
+  Urban/Rural prefix (unlike the TDOT prototype). Urban vs Rural is
+  determined exclusively by the ACUB point-in-polygon check (below).
+
+- **Retired-segment filter is mandatory.** Several intersecting segments
+  at any given point can have non-null `RHRetireDate`. Production queries
+  must filter `where=RHRetireDate IS NULL` or risk reading historical
+  classifications.
+
+##### Layer 364 — `Classification` (feature-type code, e.g. "RD")
+
+- URL: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/364`
+- Type: `Feature Layer` (polyline), WKID 3078/102123
+- displayField: `FeatureClassificationCode`
+- Confirmed fields: `OBJECTID`, `EventId`, `PR`, `PRBmp`, `PREmp`,
+  `FeatureClassificationCode` (string — at every Detroit/Kalamazoo
+  sample point this returned `"RD"`, i.e. "Road"; this layer
+  classifies the *kind of feature* — Road vs Trail vs Ramp — not the
+  FHWA class), `RHEstablishDate`, `RHRetireDate`, `SystemCreateDate`,
+  `SystemModifiedDate`, `UserCreate`, `UserModified`, `LocationError`,
+  `Shape__Length`, `GlobalID`. No coded-value domains.
+- **Use in V1: skip.** The FHWA class comes from 353 and 364 does not
+  carry the urban/rural flag we hoped it might. Keep this URL on file
+  for future filtering (e.g. excluding non-road LRS features), but the
+  V1 eligibility logic doesn't need it.
+
+##### Layer 543 — `Route System` (route designation = road name source)
+
+- URL: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543`
+- Type: `Feature Layer` (polyline), WKID 3078/102123
+- displayField: `EventId`
+- Confirmed fields: `OBJECTID`, `GlobalID`, `EventId`, `PR`, `PRBmp`,
+  `PREmp`, plus three repeats of the route-name tuple:
+  - `RouteDesignation`, `RouteNumber`, `RouteBRBLBS`, `RouteBranch`
+  - `RouteDesignation2`, `RouteNumber2`, `RouteBRBLBS2`, `RouteBranch2`
+  - `RouteDesignation3`, `RouteNumber3`, `RouteBRBLBS3`, `RouteBranch3`
+
+  (plus the standard `RHEstablishDate`/`RHRetireDate`/audit fields).
+- **Caveat — only designated trunkline routes are populated.** A
+  point-in-polyline (with 150-ft buffer) at downtown Detroit
+  (lon=-83.045, lat=42.331) returned **0 features** from layer 543:
+  Woodward / Larned / etc. are local streets without an Interstate / US
+  / M route designation. The road *name* the inspector cares about
+  ("Larned St", "Holmes Rd") is not present in layer 543.
+- **Implication for V1.** We get the FHWA class from 353 and the
+  *trunkline route name* from 543 when present (e.g. "I-94 BL"). When
+  543 returns nothing, the Road Name column will be blank for that row.
+  A future enhancement can reverse-geocode the road name from the
+  Census Bureau or an OSM source. (Logged for V2 — see §6.)
 
 #### NHS — National Highway System (polyline)
 
@@ -381,11 +476,30 @@ host portal name; that inference was wrong.
 - Sample point-in-polygon query (Detroit, used in verification step §5.1):
   `https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0/query?geometry=-83.045,42.331&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`
 - Hub page (download + schema + sample queries): `https://data-uplan.opendata.arcgis.com/datasets/uplan::2020-adjusted-urban-area-boundaries/about`.
-- **Field names — TBD** until the live `?f=pjson` is read from a
-  workstation. Expected based on the NTAD schema: an urban-area name
-  field (`NAME` or `NAME20`), `UACE20` (urban-area census code),
-  `UATYP20` (urbanized area / urban cluster type), and `ALAND20`/`AWATER20`.
-  Pinned down in verification step §5.1.
+- Type: `Feature Layer` (polygon), spatial reference WKID 4326 (native
+  WGS84 — no reprojection needed).
+- displayField: `NAME`
+- **Confirmed fields** (verification step §5.1, 2026-05-22):
+
+  | name | type | alias |
+  |---|---|---|
+  | `OBJECTID` | esriFieldTypeOID | OBJECTID |
+  | `AREA` | esriFieldTypeDouble | AREA |
+  | `UACE` | esriFieldTypeString | UACE |
+  | `NAME` | esriFieldTypeString | NAME |
+  | `F2020POPUL` | esriFieldTypeDouble | F2020POPUL |
+  | `F2020HOUSI` | esriFieldTypeDouble | F2020HOUSI |
+  | `F2020_POPD` | esriFieldTypeDouble | F2020_POPD |
+  | `state_1` | esriFieldTypeString | state_1 |
+  | `Shape__Area` | esriFieldTypeDouble | Shape__Area |
+  | `Shape__Length` | esriFieldTypeDouble | Shape__Length |
+
+  No coded-value domains. The urban-area name we surface to the
+  inspector lives in **`NAME`** (e.g. `"Detroit, MI"`,
+  `"Ann Arbor, MI"`, `"Kalamazoo, MI"`). `UACE` is the 5-digit Census
+  urban-area code (used in 2020 release; note no `20` suffix — the
+  field names dropped it). `state_1` is the two-letter state
+  abbreviation.
 
 ##### Fallback layers (only if the nationwide AGOL item turns out to be unreliable)
 
@@ -408,20 +522,56 @@ host portal name; that inference was wrong.
 
 Mirroring the TDOT pattern, but with two layers instead of one:
 
-1. **NFC query** — point intersect first. If no hit, fall back to a
-   150-foot distance search. Read class + road name.
-2. **ACUB query** — point intersect against the polygon layer. If the
-   point is inside any ACUB polygon → Urban (record ACUB `NAME` so the
-   inspector can see which urban area). Otherwise → Rural.
-3. **NHS query** — point intersect (or short fallback). Record Yes/No
-   and write to its own column.
-4. **Eligibility column** — composed from the NFC class + ACUB result.
-   Eligible classes: Rural Local, Rural Minor Collector, Urban Local.
-   Anything else → "INELIGIBLE" + red highlight.
+1. **NFC query** — layer 353. Point intersect first; if no hit, fall
+   back to a 150-foot distance search. Always filter
+   `where=RHRetireDate IS NULL` to exclude retired segments. Read
+   `FunctionalSystem` (smallint → look up label via the coded-value
+   domain above) and `PR`. The road name itself is **not** carried on
+   layer 353 — see step 2.
+2. **Road-name query** — layer 543 with the same point-intersect /
+   150-ft fallback. Concatenate any non-null
+   `RouteDesignation{,2,3}` + `RouteNumber{,2,3}` tuples into a
+   display string. Expect this to be **blank for local streets**
+   (only trunkline routes are populated); that's fine.
+3. **ACUB query** — point intersect against the NTAD polygon layer.
+   If the point is inside any ACUB polygon → Urban (record `NAME`,
+   `UACE`, `state_1`). Otherwise → Rural.
+4. **NHS query** — V1 skips this (per F9). Layer 333 URL kept on file
+   for V1.1.
+5. **Eligibility column** — composed from the NFC class + ACUB result.
+   Eligible: (Urban + Local), (Rural + Local), (Rural + Minor Collector).
+   Everything else → "INELIGIBLE" + red highlight. The smallint
+   eligibility table in VBA terms:
 
-The exact field names for the NFC class code and the road/route name are
-**TBD** until we read the FeatureServer 353 / 364 / 543 metadata. The
-verification plan (§5, step 1) covers this.
+   | `FunctionalSystem` | ACUB hit? | Result |
+   |---|---|---|
+   | 7 (Local) | yes (Urban) | ELIGIBLE (Urban Local) |
+   | 7 (Local) | no (Rural) | ELIGIBLE (Rural Local) |
+   | 6 (Minor Collector) | no (Rural) | ELIGIBLE (Rural Minor Collector) |
+   | 6 (Minor Collector) | yes (Urban) | INELIGIBLE (Urban Minor Collector) |
+   | 5 / 4 / 3 / 2 / 1 | either | INELIGIBLE |
+   | 0 (Non-Certified) | either | warn — manual review |
+
+   When multiple segments are returned (intersection within 150 ft),
+   the row is INELIGIBLE if *any* returned segment maps to INELIGIBLE.
+
+#### Confirmed test coordinates (verification §5.1)
+
+The following three known points were verified live against the MDOT
+353 + NTAD ACUB services on 2026-05-22. Use them as the smoke-test set
+for workflow 1.
+
+| # | Expected outcome | lat | lon | NFC class | ACUB |
+|---|---|---|---|---|---|
+| 1 | **INELIGIBLE** — Urban Minor Collector | `42.28536` | `-85.57025` | `6` (Minor Collector), single segment, PR=`0006904` | `Kalamazoo, MI` (UACE=`43723`) |
+| 2 | ELIGIBLE — Urban Local | `42.6911` | `-84.5360` | `7` (Local), single segment, PR=`0343402` (Holmes Rd corridor) | `Lansing, MI` (UACE=`47719`) |
+| 3 | ELIGIBLE — Rural Local | `44.2700` | `-83.5200` | `7` (Local), single segment, PR=`1257508` (Iosco County, near Tawas City) | none — point is rural |
+
+Note on §5 step 1's third bullet ("Rural Local inside an ACUB"): a
+class-7 polyline that intersects an ACUB polygon is by definition
+*Urban* Local under the eligibility rule, not Rural Local. The intent
+is "a class-7 (Local) road inside an ACUB" — that's test case #2
+above.
 
 ### 4.3 Verification map URLs
 
