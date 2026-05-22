@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:mdotgis.state.mi.us)",
+      "WebFetch(domain:services.arcgis.com)",
+      "PowerShell($ua = \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0.0.0 Safari/537.36\"; $urls = @\\(353,364,543\\); foreach \\($id in $urls\\) { Write-Output \"===== LAYER $id =====\"; try { $r = Invoke-WebRequest -Uri \"https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/$id`?f=pjson\" -UserAgent $ua -UseBasicParsing; Write-Output \\(\"HTTP \" + $r.StatusCode + \" - bytes: \" + $r.RawContentLength\\) } catch { Write-Output \\(\"ERROR: \" + $_.Exception.Message\\) } })",
+      "PowerShell($tmp = \"$env:TEMP\\\\rr_verify\"; foreach \\($id in @\\(353,364,543\\)\\) { Write-Output \"\"; Write-Output \"===== LAYER $id =====\"; $j = Get-Content \"$tmp\\\\layer_$id.json\" -Raw | ConvertFrom-Json; Write-Output \\(\"name        : \" + $j.name\\); Write-Output \\(\"type        : \" + $j.type\\); Write-Output \\(\"displayField: \" + $j.displayField\\); Write-Output \\(\"geometryType: \" + $j.geometryType\\); Write-Output \\(\"wkid        : \" + $j.extent.spatialReference.latestWkid + \" \\(latest\\), \" + $j.extent.spatialReference.wkid + \" \\(wkid\\)\"\\); Write-Output \"---- fields ----\"; $j.fields | ForEach-Object { Write-Output \\(\"{0,-30} {1,-22} {2}\" -f $_.name, $_.type, $_.alias\\) } })"
+    ]
+  }
+}
