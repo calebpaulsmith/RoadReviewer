@@ -670,7 +670,8 @@ These came up reading the prototypes; capturing them so they aren't lost.
 /                                  this README — CLAUDE.md
 GPS Checker - TN updated 3.5.2026.xlsm   prototype 1 (reference, do not modify)
 Site Inspector Tool 1.xlsm              prototype 2 (reference, do not modify)
-RoadReviewer.xlsm                       V1 deliverable (built into %TEMP%, not committed)
+RoadReviewer.xlsm                       V1 deliverable — committed for easy access; rebuild
+                                          via `build\build.ps1` after any src/ change
 src/                                    V1 VBA source (importable .bas modules)
   modConstants.bas                      sheet names, column indices, URLs, FunctionalSystem domain,
                                           FIRMette poll constants, MapPages layout constants
@@ -709,9 +710,12 @@ docs/
 
 The two prototype `.xlsm` files are kept in the repo as references. The V1
 deliverable is a new workbook so we don't drag along the VBA-stomping
-warning from the Site Inspector Tool. The workbook itself is **built on the
-user's Windows laptop** from `src/` (see `docs/build-and-import.md`) because
-the cloud build environment has no Excel; the `.xlsm` binary is not committed.
+warning from the Site Inspector Tool. The workbook **is committed at the
+repo root** so it's accessible to inspectors who clone the repo, and is
+rebuilt on the user's Windows laptop from `src/` (see
+`docs/build-and-import.md`) — the cloud build environment has no Excel,
+so changes to `src/` need a local rebuild + commit before the .xlsm
+reflects them.
 
 ---
 

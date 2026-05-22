@@ -5,11 +5,12 @@
 
 param(
   [string]$SrcDir = (Join-Path $PSScriptRoot '..\src'),
-  # Default to %TEMP% because the repo's build/ folder has a sandbox-imposed
-  # `Everyone Deny DeleteSubdirectoriesAndFiles` ACE that breaks Excel's
-  # SaveAs (it writes to a temp file then deletes/renames). %TEMP% is
-  # always writable. The path can be overridden via -OutPath.
-  [string]$OutPath = (Join-Path $env:TEMP 'RoadReviewer.xlsm'),
+  # Default to the repo root. SaveAs can't land directly in the build\
+  # folder because that dir carries an `Everyone Deny DeleteSubdirectoriesAndFiles`
+  # ACE which breaks Excel's temp-file → rename pattern, but the repo
+  # root is unaffected when writing a brand-new file. Override with -OutPath
+  # for one-off builds (e.g. to %TEMP% for a throwaway test).
+  [string]$OutPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'RoadReviewer.xlsm'),
   [switch]$Visible
 )
 
