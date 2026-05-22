@@ -1,0 +1,95 @@
+Attribute VB_Name = "modConstants"
+Option Explicit
+
+' RoadReviewer V1 - shared constants.
+' Single place for sheet names, Sites column indices, named-range names,
+' URL templates and the MDOT FunctionalSystem domain. Friction point #9
+' (mixing column letters and indices) is resolved by using 1-based column
+' index constants everywhere.
+
+' ---- Sheet names ----
+Public Const SH_HOME As String = "Home"
+Public Const SH_SETUP As String = "Setup"
+Public Const SH_SITES As String = "Sites"
+Public Const SH_CLASSIFY As String = "1. Classify Roads"
+Public Const SH_IMAGERY As String = "2. Review Imagery"
+Public Const SH_MAPS As String = "3. Maps & FIRMettes"
+
+' ---- Setup named ranges ----
+Public Const NR_WO As String = "JobWO"
+Public Const NR_DI As String = "JobDI"
+Public Const NR_DISASTER As String = "JobDisaster"
+Public Const NR_APPLICANT As String = "JobApplicant"
+Public Const NR_STATE As String = "JobState"
+Public Const NR_OUTFOLDER As String = "JobOutputFolder"
+
+' ---- Sites table geometry ----
+Public Const SITES_HEADER_ROW As Long = 1
+Public Const SITES_FIRST_DATA_ROW As Long = 2
+Public Const SITES_FORMULA_ROWS As Long = 500   ' hyperlink/validation pre-fill depth
+
+' ---- Sites column indices (1-based) ----
+Public Const COL_WO As Long = 1
+Public Const COL_DI As Long = 2
+Public Const COL_SITENO As Long = 3
+Public Const COL_SITENAME As Long = 4
+Public Const COL_ADDRESS As Long = 5
+Public Const COL_LAT As Long = 6
+Public Const COL_LON As Long = 7
+Public Const COL_CATEGORY As Long = 8
+Public Const COL_DESC As Long = 9
+Public Const COL_GEOCODE As Long = 10
+Public Const COL_GMAP As Long = 11
+Public Const COL_STREETVIEW As Long = 12
+Public Const COL_BING As Long = 13
+Public Const COL_FEMAVIEW As Long = 14
+Public Const COL_FIRMPORTAL As Long = 15
+Public Const COL_NFCMAP As Long = 16
+Public Const COL_CLASS As Long = 17
+Public Const COL_URBANRURAL As Long = 18
+Public Const COL_ACUBNAME As Long = 19
+Public Const COL_ROADNAME As Long = 20
+Public Const COL_ELIGIBILITY As Long = 21
+Public Const COL_FIRMSTATUS As Long = 22
+Public Const COL_MAPSTATUS As Long = 23
+Public Const COL_LAST As Long = 23
+
+' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
+Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"
+Public Const URL_STREETVIEW As String = "https://www.google.com/maps?q&layer=c&cbll={LAT},{LON}"
+Public Const URL_BING As String = "https://www.bing.com/maps?cp={LAT}~{LON}&lvl=18&style=h"
+Public Const URL_FEMAVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?latitude={LAT}&longitude={LON}"
+Public Const URL_NFC_EXPERIENCE As String = "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce/page/NFC%2C-NHS-%26-ACUB"
+
+' ---- REST endpoints (§4.1, §4.2, §8.2) ----
+Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"
+Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353"
+Public Const REST_MDOT_ROUTE As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"
+Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"
+Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+
+' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
+Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+' ---- State selector (F8). Only MI's NFC layer is wired in V1. ----
+Public Const STATE_LIST As String = "WI,IN,MI,MN,IL,OH"
+
+' ---- Status-prefix used by the "re-run failed rows" feature (F12). ----
+Public Const STATUS_FAILED_PREFIX As String = "Failed - "
+
+' Returns the FHWA functional-class label for an MDOT FunctionalSystem code
+' (layer 353 coded-value domain LrseFunctionalSystem, §4.2).
+Public Function FunctionalSystemLabel(ByVal code As Long) As String
+    Select Case code
+        Case 0: FunctionalSystemLabel = "Non-Certified Roadway"
+        Case 1: FunctionalSystemLabel = "Interstate"
+        Case 2: FunctionalSystemLabel = "Other Freeway"
+        Case 3: FunctionalSystemLabel = "Other Principal Arterial"
+        Case 4: FunctionalSystemLabel = "Minor Arterial"
+        Case 5: FunctionalSystemLabel = "Major Collector"
+        Case 6: FunctionalSystemLabel = "Minor Collector"
+        Case 7: FunctionalSystemLabel = "Local"
+        Case Else: FunctionalSystemLabel = "Unknown (" & code & ")"
+    End Select
+End Function
