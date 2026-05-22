@@ -14,6 +14,7 @@ Option Explicit
 Public Function HttpGetText(ByVal url As String, Optional ByRef errMsg As String) As String
     Dim http As Object
     errMsg = ""
+    TraceLine "HTTP GET " & Left$(url, 200)
     On Error GoTo Fail
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setTimeouts 5000, 5000, 20000, 30000
@@ -23,12 +24,15 @@ Public Function HttpGetText(ByVal url As String, Optional ByRef errMsg As String
     http.send
     If http.Status = 200 Then
         HttpGetText = http.responseText
+        TraceLine "  -> 200 (" & Len(HttpGetText) & " bytes)"
     Else
         errMsg = "HTTP " & http.Status
+        TraceLine "  -> " & errMsg
     End If
     Exit Function
 Fail:
     errMsg = Err.Description
+    TraceLine "  -> EXCEPTION: " & errMsg
     HttpGetText = ""
 End Function
 
@@ -70,12 +74,23 @@ Public Function HasArcgisError(ByVal json As String) As Boolean
     HasArcgisError = (InStr(json, """error""") > 0 And InStr(json, """code""") > 0)
 End Function
 
-Private Function NewRegex(ByVal pattern As String, ByVal global As Boolean) As Object
+' `global` is a VBA reserved word (synonym for Public), so use `isGlobal`
+' for the parameter — using the reserved word as a parameter name has bitten
+' us with "Sub or Function not defined" errors at JIT-compile time even
+' though the .bas file imports cleanly.
+' IgnoreCase defaults to False because ArcGIS responses include both a
+' lower-case `"name"` key inside the fields-metadata block (where the value
+' is the field's name like "OBJECTID") AND an upper-case attribute key
+' (e.g. `"NAME":"Kalamazoo, MI"`). If our regex were case-insensitive,
+' FirstString("NAME") would return "OBJECTID" — the first lowercase
+' `"name":...` match — instead of the urban-area NAME we actually want.
+Private Function NewRegex(ByVal pattern As String, ByVal isGlobal As Boolean, _
+        Optional ByVal ignoreCase As Boolean = False) As Object
     Dim re As Object
     Set re = CreateObject("VBScript.RegExp")
     re.pattern = pattern
-    re.IgnoreCase = True
-    re.global = global
+    re.IgnoreCase = ignoreCase
+    re.global = isGlobal
     Set NewRegex = re
 End Function
 

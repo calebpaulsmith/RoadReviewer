@@ -17,13 +17,13 @@ Public Sub BuildWorkbookSafe()
     On Error GoTo Trap
 
     ' Tell BuildWorkbook to suppress its success/failure MsgBox.
-    gSilentBuild = True
+    gHeadless = True
     Call BuildWorkbook
-    gSilentBuild = False
+    gHeadless = False
 
     Exit Sub
 Trap:
-    gSilentBuild = False
+    gHeadless = False
     Dim n As Long, d As String, src As String
     n = Err.Number: d = Err.Description: src = Err.Source
     Dim fnum As Integer

@@ -12,12 +12,6 @@ Private Const CLR_BTN As Long = 12419407         ' steel blue
 Private Const CLR_BTN_GO As Long = 4563272        ' green
 Private Const CLR_INELIGIBLE As Long = 13551615   ' light red fill
 
-' Set True by the build helper (build\BuildHelper.bas) when running headless
-' via the automation host. Suppresses the success/failure MsgBox so the
-' COM caller doesn't hang on a hidden dialog. Defaults to False so the
-' in-Excel "Build / Reset Workbook" button still shows the dialogs.
-Public gSilentBuild As Boolean
-
 Public Sub BuildWorkbook()
     Dim hadSites As Boolean
     hadSites = SheetExists(SH_SITES)
@@ -41,9 +35,9 @@ Public Sub BuildWorkbook()
     SheetByName(SH_HOME).Activate
 
     ' Skip the confirmation MsgBox when driven headlessly by the build script
-    ' (which sets gSilentBuild before calling). The in-Excel "Build / Reset
-    ' Workbook" button leaves gSilentBuild=False and still shows the dialog.
-    If Not gSilentBuild Then
+    ' (which sets gHeadless before calling). The in-Excel "Build / Reset
+    ' Workbook" button leaves gHeadless=False and still shows the dialog.
+    If Not gHeadless Then
         MsgBox "RoadReviewer workbook built." & vbCrLf & vbCrLf & _
             IIf(hadSites, "Existing Sites data was preserved.", "Start by filling in the Setup sheet, then add points on the Sites sheet.") & vbCrLf & _
             "Remember to save as a macro-enabled workbook (.xlsm).", _
@@ -53,7 +47,7 @@ Public Sub BuildWorkbook()
 Fail:
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    If gSilentBuild Then
+    If gHeadless Then
         ' Re-raise so the automation host sees the failure.
         Err.Raise Err.Number, "BuildWorkbook", Err.Description
     Else
