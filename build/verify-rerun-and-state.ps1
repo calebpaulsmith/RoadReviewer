@@ -66,7 +66,7 @@ try {
   $sites.Cells(3, 6).Value2 = [double]42.6911
   $sites.Cells(3, 7).Value2 = [double]-84.5360
   $sites.Cells(3, 17).Value2 = 'PREVIOUS-CLASS-MARKER'   # FHWA Class (col 17 = Q)
-  $sites.Cells(3, 21).Value2 = 'ELIGIBLE - Urban Local (sticky)'   # Eligibility
+  $sites.Cells(3, 21).Value2 = 'Non-federal aid - Urban Local (sticky)'   # Federal Aid Status
 
   Write-Host "  Before re-run:"
   Write-Host ("    row 2 elig = '" + [string]$sites.Cells(2,21).Value2 + "'")
@@ -81,9 +81,9 @@ try {
   Write-Host ("    row 2 elig = '" + $r2 + "'")
   Write-Host ("    row 3 class = '" + $r3_class + "'  elig = '" + $r3_elig + "'")
 
-  if ($r2 -notlike "*INELIGIBLE*Urban Minor Collector*") { throw ("Row 2 should have been re-classified to INELIGIBLE Urban Minor Collector, got '" + $r2 + "'") }
+  if ($r2 -notlike "*Federal aid*Urban Minor Collector*") { throw ("Row 2 should have been re-classified to 'Federal aid - Urban Minor Collector', got '" + $r2 + "'") }
   if ($r3_class -ne 'PREVIOUS-CLASS-MARKER') { throw ("Row 3 was reclassified when it shouldn't have been; class is now '" + $r3_class + "'") }
-  if ($r3_elig -ne 'ELIGIBLE - Urban Local (sticky)') { throw ("Row 3 eligibility changed when it shouldn't have; got '" + $r3_elig + "'") }
+  if ($r3_elig -ne 'Non-federal aid - Urban Local (sticky)') { throw ("Row 3 Federal Aid Status changed when it shouldn't have; got '" + $r3_elig + "'") }
   Write-Host "  §5.7 PASSED" -ForegroundColor Green
 
   # Cleanup

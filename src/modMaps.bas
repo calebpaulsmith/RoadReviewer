@@ -599,7 +599,8 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As L
 
     kml = "<?xml version=""1.0"" encoding=""UTF-8""?>" & vbCrLf & _
         "<kml xmlns=""http://www.opengis.net/kml/2.2""><Document>" & vbCrLf & _
-        "<name>RoadReviewer Sites</name>" & vbCrLf
+        "<name>RoadReviewer Sites</name>" & vbCrLf & _
+        KmlPinStyles()
     For r = SITES_FIRST_DATA_ROW To last
         If HasValidCoords(ws, r) Then
             kml = kml & PlacemarkXml(ws, r)
@@ -631,15 +632,45 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As L
     WriteSitesKml = True
 End Function
 
+' KML style block. Three named styles for the three Federal Aid Status
+' buckets the classifier produces. Rows that haven't been classified
+' (blank Federal Aid Status cell) get no styleUrl and render as the
+' default pushpin.
+Private Function KmlPinStyles() As String
+    KmlPinStyles = _
+        "<Style id=""fedAid""><IconStyle><color>ff0000ff</color>" & _
+        "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>" & vbCrLf & _
+        "<Style id=""nonFedAid""><IconStyle><color>ff00ff00</color>" & _
+        "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>" & vbCrLf & _
+        "<Style id=""review""><IconStyle><color>ff00ffff</color>" & _
+        "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon></IconStyle></Style>" & vbCrLf
+End Function
+
+' Map the Federal Aid Status cell text to one of the style ids defined
+' in KmlPinStyles. Blank / Failed / out-of-state rows fall through to
+' default (no styleUrl emitted, default pushpin renders).
+Private Function PinStyleId(ByVal status As String) As String
+    Dim s As String: s = LCase$(Trim$(status))
+    If Len(s) = 0 Then Exit Function
+    If Left$(s, 15) = "non-federal aid" Then PinStyleId = "nonFedAid": Exit Function
+    If Left$(s, 11) = "federal aid" Then PinStyleId = "fedAid": Exit Function
+    If Left$(s, 6) = "review" Then PinStyleId = "review": Exit Function
+    If InStr(s, "no road segment") > 0 Then PinStyleId = "review": Exit Function
+End Function
+
 Private Function PlacemarkXml(ByVal ws As Worksheet, ByVal r As Long) As String
     Dim nm As String, desc As String, lat As String, lon As String
+    Dim status As String, styleId As String, styleTag As String
     nm = XmlEscape(CStr(ws.Cells(r, COL_SITENAME).Value))
     If Len(nm) = 0 Then nm = "Site row " & r
+    status = CStr(ws.Cells(r, COL_ELIGIBILITY).Value)
     desc = XmlEscape(CStr(ws.Cells(r, COL_DESC).Value) & _
-        IIf(IsBlank(ws.Cells(r, COL_ELIGIBILITY).Value), "", " | " & CStr(ws.Cells(r, COL_ELIGIBILITY).Value)))
+        IIf(Len(Trim$(status)) = 0, "", " | " & status))
     lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
     lon = InvariantNum(ws.Cells(r, COL_LON).Value)
-    PlacemarkXml = "<Placemark><name>" & nm & "</name>" & _
+    styleId = PinStyleId(status)
+    If Len(styleId) > 0 Then styleTag = "<styleUrl>#" & styleId & "</styleUrl>"
+    PlacemarkXml = "<Placemark><name>" & nm & "</name>" & styleTag & _
         IIf(Len(desc) > 0, "<description>" & desc & "</description>", "") & _
         "<Point><coordinates>" & lon & "," & lat & ",0</coordinates></Point></Placemark>" & vbCrLf
 End Function

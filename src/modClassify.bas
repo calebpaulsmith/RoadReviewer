@@ -125,7 +125,7 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWire
 
     ' --- Class label + eligibility verdict ---
     ws.Cells(r, COL_CLASS).Value = ClassLabels(codes)
-    ws.Cells(r, COL_ELIGIBILITY).Value = EligibilityVerdict(codes, isUrban)
+    ws.Cells(r, COL_ELIGIBILITY).Value = FederalAidVerdict(codes, isUrban)
 End Sub
 
 Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
@@ -187,33 +187,37 @@ Private Function ClassLabels(ByVal codes As Collection) As String
     ClassLabels = out
 End Function
 
-' Eligibility per the §4.2 table. Ineligible if ANY segment is ineligible.
-Private Function EligibilityVerdict(ByVal codes As Collection, ByVal isUrban As Boolean) As String
-    Dim c As Variant, ineligible As Boolean, manual As Boolean
+' Federal Aid Status verdict per the §4.2 table. The label classifies the
+' road, NOT the project — "Federal aid" means the road IS on the federal-
+' aid system (Urban Minor Collector or higher), "Non-federal aid" means
+' it isn't. The inspector decides what that means for their work order;
+' we don't pre-judge eligibility.
+Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As Boolean) As String
+    Dim c As Variant, isFederalAid As Boolean, manual As Boolean
     Dim worstCode As Long: worstCode = 99
 
     If codes.Count = 0 Then
-        EligibilityVerdict = "No road segment within 150 ft - manual review"
+        FederalAidVerdict = "No road segment within 150 ft - review manually"
         Exit Function
     End If
 
     For Each c In codes
         Select Case CLng(c)
-            Case 7:                 ' Local - always eligible
-            Case 6: If isUrban Then ineligible = True: If 6 < worstCode Then worstCode = 6
+            Case 7:                 ' Local - never federal aid
+            Case 6: If isUrban Then isFederalAid = True: If 6 < worstCode Then worstCode = 6
             Case 1, 2, 3, 4, 5
-                ineligible = True
+                isFederalAid = True
                 If CLng(c) < worstCode Then worstCode = CLng(c)
             Case Else: manual = True
         End Select
     Next c
 
-    If ineligible Then
-        EligibilityVerdict = "INELIGIBLE - " & PrefixedClass(worstCode, isUrban)
+    If isFederalAid Then
+        FederalAidVerdict = "Federal aid - " & PrefixedClass(worstCode, isUrban)
     ElseIf manual Then
-        EligibilityVerdict = "REVIEW - non-certified class, check manually"
+        FederalAidVerdict = "Review - non-certified class, check manually"
     Else
-        EligibilityVerdict = "ELIGIBLE - " & IIf(isUrban, "Urban", "Rural") & " Local"
+        FederalAidVerdict = "Non-federal aid - " & IIf(isUrban, "Urban", "Rural") & " Local"
     End If
 End Function
 

@@ -15,11 +15,11 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
-# (row, lat, lon, expected eligibility substring, expected class substring, expected ACUB name)
+# (row, lat, lon, expected Federal Aid Status substring, expected class substring, expected ACUB name)
 $tests = @(
-  @{ Row=2; Name='Kalamazoo Urban Minor Collector'; Lat=42.28536; Lon=-85.57025; ExpectElig='INELIGIBLE';  ExpectClass='Minor Collector'; ExpectAcub='Kalamazoo' }
-  @{ Row=3; Name='Lansing Urban Local';             Lat=42.6911;  Lon=-84.5360;  ExpectElig='ELIGIBLE';    ExpectClass='Local';           ExpectAcub='Lansing'   }
-  @{ Row=4; Name='Tawas Rural Local';               Lat=44.2700;  Lon=-83.5200;  ExpectElig='ELIGIBLE';    ExpectClass='Local';           ExpectAcub=''          }
+  @{ Row=2; Name='Kalamazoo Urban Minor Collector'; Lat=42.28536; Lon=-85.57025; ExpectElig='Federal aid';     ExpectClass='Minor Collector'; ExpectAcub='Kalamazoo' }
+  @{ Row=3; Name='Lansing Urban Local';             Lat=42.6911;  Lon=-84.5360;  ExpectElig='Non-federal aid'; ExpectClass='Local';           ExpectAcub='Lansing'   }
+  @{ Row=4; Name='Tawas Rural Local';               Lat=44.2700;  Lon=-83.5200;  ExpectElig='Non-federal aid'; ExpectClass='Local';           ExpectAcub=''          }
 )
 
 $excel = New-Object -ComObject Excel.Application

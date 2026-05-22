@@ -19,8 +19,10 @@ all reading from one shared Sites table:
 
 1. **Road classification review** — for a point, look up the FHWA functional
    class and whether it falls inside an Adjusted Census Urban Boundary
-   (ACUB 2020). Flag anything that is Urban Minor Collector or greater as
-   *not eligible* for PA road work.
+   (ACUB 2020). Tag anything that is Urban Minor Collector or greater as
+   a *federal-aid road*; everything else as *non-federal aid*. The tool
+   classifies the road, never the project — the inspector decides what
+   federal-aid status means for any given work order.
 2. **Pre-disaster imagery review** — open a point in multiple publicly
    available imagery sources (Google, Bing, FEMA Map Viewer, Google Earth,
    Street View, historic imagery where available) so the inspector can
@@ -251,16 +253,23 @@ hand-rolled JSON parsing.
 - **F6. ACUB is nationwide.** Use the user-provided AGOL nationwide ACUB
   feature service for all six Region V states (see §4.2). One lookup
   call per row, regardless of state.
-- **F7. Eligibility rule.** A row is *PA-ineligible for road work* if any
-  intersecting (or nearest-within-150-ft) road segment has a functional
-  class of **Urban Minor Collector or greater** inside the relevant
-  urban boundary. Implementation:
+- **F7. Federal-aid rule.** A row is tagged as a *federal-aid road* if
+  any intersecting (or nearest-within-150-ft) road segment has a
+  functional class of **Urban Minor Collector or greater** inside the
+  relevant urban boundary. The tool tags the road, not the project —
+  no "eligible"/"ineligible" language anywhere in the output. The
+  inspector decides what federal-aid status means for the work order.
+  Implementation:
   - Query the state's NFC layer for class + road name.
   - Cross-check the point against the ACUB polygon layer to determine
     Urban vs Rural.
-  - Eligible classes: Rural Local, Rural Minor Collector, Urban Local.
-    Everything else = red highlight + "INELIGIBLE" in the Eligibility
-    column.
+  - Non-federal-aid classes: Rural Local, Rural Minor Collector,
+    Urban Local. Federal-aid: Urban Minor Collector or higher.
+  - The Federal Aid Status column shows "Federal aid - <class>",
+    "Non-federal aid - <class>", or "Review - <reason>". The Sites
+    table tints each row light red, green, or yellow accordingly. The
+    KML export uses red / green / yellow pushpins for the same three
+    buckets; rows that haven't been classified get the default pin.
   - **Always run, on every row.** V1 has no visibility into the row's
     PA work Category, so we run eligibility on everything regardless of
     work type. If the tool later integrates with Grants Manager
@@ -540,22 +549,22 @@ Mirroring the TDOT pattern, but with two layers instead of one:
    `UACE`, `state_1`). Otherwise → Rural.
 4. **NHS query** — V1 skips this (per F9). Layer 333 URL kept on file
    for V1.1.
-5. **Eligibility column** — composed from the NFC class + ACUB result.
-   Eligible: (Urban + Local), (Rural + Local), (Rural + Minor Collector).
-   Everything else → "INELIGIBLE" + red highlight. The smallint
-   eligibility table in VBA terms:
+5. **Federal Aid Status column** — composed from the NFC class + ACUB
+   result. Non-federal aid: (Urban + Local), (Rural + Local),
+   (Rural + Minor Collector). Federal aid: everything else. The
+   smallint -> tag table in VBA terms:
 
    | `FunctionalSystem` | ACUB hit? | Result |
    |---|---|---|
-   | 7 (Local) | yes (Urban) | ELIGIBLE (Urban Local) |
-   | 7 (Local) | no (Rural) | ELIGIBLE (Rural Local) |
-   | 6 (Minor Collector) | no (Rural) | ELIGIBLE (Rural Minor Collector) |
-   | 6 (Minor Collector) | yes (Urban) | INELIGIBLE (Urban Minor Collector) |
-   | 5 / 4 / 3 / 2 / 1 | either | INELIGIBLE |
-   | 0 (Non-Certified) | either | warn — manual review |
+   | 7 (Local) | yes (Urban) | Non-federal aid - Urban Local |
+   | 7 (Local) | no (Rural) | Non-federal aid - Rural Local |
+   | 6 (Minor Collector) | no (Rural) | Non-federal aid - Rural Minor Collector |
+   | 6 (Minor Collector) | yes (Urban) | Federal aid - Urban Minor Collector |
+   | 5 / 4 / 3 / 2 / 1 | either | Federal aid - <Urban/Rural class> |
+   | 0 (Non-Certified) | either | Review - non-certified class, check manually |
 
    When multiple segments are returned (intersection within 150 ft),
-   the row is INELIGIBLE if *any* returned segment maps to INELIGIBLE.
+   the row is tagged federal-aid if *any* returned segment is.
 
 #### Confirmed test coordinates (verification §5.1)
 
@@ -565,9 +574,9 @@ for workflow 1.
 
 | # | Expected outcome | lat | lon | NFC class | ACUB |
 |---|---|---|---|---|---|
-| 1 | **INELIGIBLE** — Urban Minor Collector | `42.28536` | `-85.57025` | `6` (Minor Collector), single segment, PR=`0006904` | `Kalamazoo, MI` (UACE=`43723`) |
-| 2 | ELIGIBLE — Urban Local | `42.6911` | `-84.5360` | `7` (Local), single segment, PR=`0343402` (Holmes Rd corridor) | `Lansing, MI` (UACE=`47719`) |
-| 3 | ELIGIBLE — Rural Local | `44.2700` | `-83.5200` | `7` (Local), single segment, PR=`1257508` (Iosco County, near Tawas City) | none — point is rural |
+| 1 | **Federal aid** — Urban Minor Collector | `42.28536` | `-85.57025` | `6` (Minor Collector), single segment, PR=`0006904` | `Kalamazoo, MI` (UACE=`43723`) |
+| 2 | Non-federal aid — Urban Local | `42.6911` | `-84.5360` | `7` (Local), single segment, PR=`0343402` (Holmes Rd corridor) | `Lansing, MI` (UACE=`47719`) |
+| 3 | Non-federal aid — Rural Local | `44.2700` | `-83.5200` | `7` (Local), single segment, PR=`1257508` (Iosco County, near Tawas City) | none — point is rural |
 
 Note on §5 step 1's third bullet ("Rural Local inside an ACUB"): a
 class-7 polyline that intersects an ACUB polygon is by definition
@@ -604,8 +613,8 @@ developer (or reviewer) actually runs in Excel before moving on.
    hyperlink opens the right map at the right zoom.
 4. **Workflow 1 — Classify Roads.** Implement against MDOT layers.
    Manual check: run on the three known coordinates and confirm class,
-   road name, urban/rural, eligibility match expectations. Also try a
-   point in Tennessee → should report "out of state" not crash.
+   road name, urban/rural, federal-aid status match expectations. Also
+   try a point in Tennessee → should report "out of state" not crash.
 5. **Workflow 2 — Review Imagery.** Implement the one-click open-many-tabs
    button. Manual check: click on a row, verify every URL opens to the
    correct point.

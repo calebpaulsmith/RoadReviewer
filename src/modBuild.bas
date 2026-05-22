@@ -10,7 +10,11 @@ Option Explicit
 Private Const CLR_HEADER As Long = 5197615      ' dark slate (RGB 47,79,79-ish)
 Private Const CLR_BTN As Long = 12419407         ' steel blue
 Private Const CLR_BTN_GO As Long = 4563272        ' green
-Private Const CLR_INELIGIBLE As Long = 13551615   ' light red fill
+' VBA Long color = R + G*256 + B*65536. Calibrated to Excel's standard
+' light-red / light-green / light-yellow conditional-format swatches.
+Private Const CLR_FEDAID As Long = 13551615      ' RGB(255,199,206) — "Federal aid" rows
+Private Const CLR_NONFEDAID As Long = 13561798   ' RGB(198,239,206) — "Non-federal aid" rows
+Private Const CLR_REVIEW As Long = 10284031      ' RGB(255,235,156) — "Review" rows
 
 Public Sub BuildWorkbook()
     Dim hadSites As Boolean
@@ -299,7 +303,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_URBANRURAL) = "Urban/Rural"
     h(COL_ACUBNAME) = "ACUB Name"
     h(COL_ROADNAME) = "Road Name"
-    h(COL_ELIGIBILITY) = "Eligibility"
+    h(COL_ELIGIBILITY) = "Federal Aid Status"
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
     h(COL_AGOLMAP) = "AGOL Map"
@@ -418,13 +422,28 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
     ws.Columns(COL_AGOLMAP).ColumnWidth = 10
 
-    ' Red highlight when Eligibility says INELIGIBLE (eligibility rule, F7).
+    ' Tri-state highlight on the Federal Aid Status column:
+    '   red    — cell starts with "Federal aid"  (federal-aid road)
+    '   green  — cell starts with "Non-federal aid"
+    '   yellow — cell starts with "Review" (non-certified class or no
+    '            road found within 150 ft)
+    ' "Non-federal aid" intentionally tests for the literal prefix
+    ' (LEFT … 15) because a substring search for "Federal aid" would
+    ' also match "Non-federal aid". Order matters when format rules
+    ' overlap: in Excel the FIRST matching rule wins, so non-federal
+    ' is checked before federal.
     eligCol = "$" & ColLetter(COL_ELIGIBILITY) & SITES_FIRST_DATA_ROW
     With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_ELIGIBILITY))
         .FormatConditions.Delete
         .FormatConditions.Add Type:=xlExpression, _
-            Formula1:="=ISNUMBER(SEARCH(""INELIGIBLE""," & eligCol & "))"
-        .FormatConditions(1).Interior.Color = CLR_INELIGIBLE
+            Formula1:="=LEFT(" & eligCol & ",15)=""Non-federal aid"""
+        .FormatConditions(.FormatConditions.Count).Interior.Color = CLR_NONFEDAID
+        .FormatConditions.Add Type:=xlExpression, _
+            Formula1:="=LEFT(" & eligCol & ",11)=""Federal aid"""
+        .FormatConditions(.FormatConditions.Count).Interior.Color = CLR_FEDAID
+        .FormatConditions.Add Type:=xlExpression, _
+            Formula1:="=LEFT(" & eligCol & ",6)=""Review"""
+        .FormatConditions(.FormatConditions.Count).Interior.Color = CLR_REVIEW
     End With
 
     On Error Resume Next
@@ -442,7 +461,7 @@ Private Sub BuildClassifySheet()
     Bullets ws, 5, Array( _
         "Reads Latitude/Longitude from the Sites table.", _
         "Writes FHWA Class, Urban/Rural, ACUB Name, Road Name and Eligibility back to each row.", _
-        "Ineligible rows (Urban Minor Collector or greater) are highlighted red.", _
+        "Federal aid rows (Urban Minor Collector or greater) are highlighted red, non-federal aid green, review yellow.", _
         "Michigan road class is wired in V1; other states still get the ACUB check.")
     AddButton ws, 18, 150, 200, 34, "Classify All Rows", "ClassifyAllRows", CLR_BTN_GO
     AddButton ws, 230, 150, 200, 34, "Re-run Failed Rows", "ReRunFailedClassifications", CLR_BTN
