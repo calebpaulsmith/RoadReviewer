@@ -72,7 +72,7 @@ try {
 
   Write-Host "=== Sites headers ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')
-  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
+  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
   for ($c = 1; $c -le $expectedHeaders.Count; $c++) {
     $got = [string]$sites.Cells(1,$c).Value2
     $want = $expectedHeaders[$c-1]
@@ -111,7 +111,7 @@ try {
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
   Write-Host "=== Conditional formatting on Federal Aid Status column ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells(2,19), $sites.Cells(2,23))
+  $r = $sites.Range($sites.Cells(2,19), $sites.Cells(2,24))
   $fcCount = $r.FormatConditions.Count
   Write-Host ("  format conditions count on class..eligibility row 2: " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }

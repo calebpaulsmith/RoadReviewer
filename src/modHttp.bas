@@ -53,11 +53,15 @@ Public Function ExtractIntegers(ByVal json As String, ByVal fieldName As String)
 End Function
 
 ' All string values for a string field across every feature.
+' Skips the self-referential `"FIELD":"FIELD"` mapping that some ArcGIS
+' servers (TIGER) include in their `fieldAliases` block — that match
+' would otherwise contaminate results with the literal field name.
 Public Function ExtractStrings(ByVal json As String, ByVal fieldName As String) As Collection
-    Dim col As New Collection, re As Object, m As Object
+    Dim col As New Collection, re As Object, m As Object, v As String
     Set re = NewRegex("""" & fieldName & """\s*:\s*""((?:[^""\\]|\\.)*)""", True)
     For Each m In re.Execute(json)
-        col.Add JsonUnescape(m.SubMatches(0))
+        v = JsonUnescape(m.SubMatches(0))
+        If v <> fieldName Then col.Add v
     Next m
     Set ExtractStrings = col
 End Function

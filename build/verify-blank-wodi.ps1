@@ -33,7 +33,7 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = 'Test Applicant'
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(2, 3).Value2 = 1
   $sites.Cells(2, 4).Value2 = 'BlankIDs site'
@@ -45,7 +45,7 @@ try {
 
   Write-Host "=== Case A: WO and DI BOTH blank ===" -ForegroundColor Cyan
   $excel.Run('DownloadFirmettes') | Out-Null
-  $statusA = [string]$sites.Cells(2, 24).Value2   # FIRMette Status, was col 22 before Costs/Work Completion shifted +2
+  $statusA = [string]$sites.Cells(2, 25).Value2   # FIRMette Status (col 25 after Costs/Work + Street Name shifts)
   Write-Host ("  FIRMette Status: " + $statusA)
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')
   Write-Host ("  PDFs: " + $pdfs.Count)
@@ -85,8 +85,8 @@ try {
   Get-ChildItem -LiteralPath $outFolder | Remove-Item -Force
   $wb.Worksheets('MapPages').Delete()
   $wb.Names('JobWO').RefersToRange.Value2 = '123'
-  $sites.Cells(2, 24).Value2 = ''   # FIRMette Status (was 22)
-  $sites.Cells(2, 25).Value2 = ''   # Map Status      (was 23)
+  $sites.Cells(2, 25).Value2 = ''   # FIRMette Status (col 25 now)
+  $sites.Cells(2, 26).Value2 = ''   # Map Status      (col 26 now)
 
   $excel.Run('DownloadFirmettes') | Out-Null
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')
@@ -107,7 +107,7 @@ try {
 
   # Cleanup
   $wb.Worksheets('MapPages').Delete()
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobWO').RefersToRange.Value2 = ''
   $wb.Names('JobDI').RefersToRange.Value2 = ''

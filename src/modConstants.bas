@@ -67,14 +67,19 @@ Public Const COL_CLASS As Long = 19
 Public Const COL_URBANRURAL As Long = 20
 Public Const COL_ACUBNAME As Long = 21
 Public Const COL_ROADNAME As Long = 22
-Public Const COL_ELIGIBILITY As Long = 23
-Public Const COL_FIRMSTATUS As Long = 24
-Public Const COL_MAPSTATUS As Long = 25
+' Street name(s) from the U.S. Census Bureau's TIGERweb Local Roads layer.
+' Dense (covers most addresses) where COL_ROADNAME / MDOT 543 only gets
+' trunkline route designations like "I-94 BL". Pipe-joined when multiple
+' streets fall inside the search buffer (intersection points).
+Public Const COL_STREET As Long = 23
+Public Const COL_ELIGIBILITY As Long = 24
+Public Const COL_FIRMSTATUS As Long = 25
+Public Const COL_MAPSTATUS As Long = 26
 ' Per-row deep-link into the inspector's own AGOL webmap (Setup NR_AGOLMAP).
 ' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
 ' nobody has wired up an AGOL map.
-Public Const COL_AGOLMAP As Long = 26
-Public Const COL_LAST As Long = 26
+Public Const COL_AGOLMAP As Long = 27
+Public Const COL_LAST As Long = 27
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
 Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"
@@ -87,7 +92,15 @@ Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?la
 ' The previous link pointed at the MDOT Experience app, whose popup chrome
 ' blocked the inspector from clicking through to the actual damage point;
 ' the FEMA webmap is the same data without the experience's UI wrapper.
-Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
+'
+' `visibleLayers=` is the legacy-Classic but still partially honored URL
+' param that names which operational layers should be visible; everything
+' else in the webmap defaults to off. The two IDs below are the National
+' Functional System (NfcNhsPub_8332) and the 2020 Adjusted Census Urban
+' Boundary (193df725e5e-layer-20), read from the webmap's item/data
+' JSON. If a future Map Viewer release drops this param, the link still
+' opens the webmap — visibility just falls back to whatever's saved.
+Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}&visibleLayers=NfcNhsPub_8332%2C193df725e5e-layer-20"
 
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"
@@ -95,6 +108,12 @@ Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/
 Public Const REST_MDOT_ROUTE As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"
 Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"
 Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+' U.S. Census Bureau TIGERweb — Local Roads (full detail layer 8 of the
+' Transportation MapServer). Returns the NAME field for any street whose
+' centerline intersects the search buffer. Covers every state, free, no
+' auth. We hit this in addition to MDOT 543 because MDOT only carries
+' designated trunkline routes — TIGER fills in the local street names.
+Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8"
 
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"

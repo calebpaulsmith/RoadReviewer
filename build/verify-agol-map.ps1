@@ -18,7 +18,7 @@ $excel.DisplayAlerts = $false
 try {
   $wb = $excel.Workbooks.Open($XlsmPath)
   $sites = $wb.Worksheets('Sites')
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   # Test point (Kalamazoo)
@@ -30,7 +30,7 @@ try {
   Write-Host "=== Case A: JobAgolMap blank ===" -ForegroundColor Cyan
   $wb.Names('JobAgolMap').RefersToRange.Value2 = ''
   $excel.Calculate()
-  $cellA = [string]$sites.Cells(2, 26).Value2
+  $cellA = [string]$sites.Cells(2, 27).Value2
   Write-Host ("  AGOL Map cell value: '" + $cellA + "'")
   if ($cellA -ne '') { throw "Expected blank AGOL cell when JobAgolMap is empty" }
   Write-Host "  Case A pass" -ForegroundColor Green
@@ -41,8 +41,8 @@ try {
   $urlB = 'https://www.arcgis.com/apps/mapviewer/index.html?webmap=abc123'
   $wb.Names('JobAgolMap').RefersToRange.Value2 = $urlB
   $excel.Calculate()
-  $cellB = [string]$sites.Cells(2, 26).Value2
-  $formulaB = [string]$sites.Cells(2, 26).Formula
+  $cellB = [string]$sites.Cells(2, 27).Value2
+  $formulaB = [string]$sites.Cells(2, 27).Formula
   Write-Host ("  AGOL Map cell value: '" + $cellB + "'")
   Write-Host ("  Formula length: " + $formulaB.Length)
   if ($cellB -ne 'Open') { throw ("Expected cell text 'Open' (the hyperlink friendly name), got: '" + $cellB + "'") }
@@ -61,7 +61,7 @@ try {
   $urlC = 'https://www.arcgis.com/apps/mapviewer/index.html'
   $wb.Names('JobAgolMap').RefersToRange.Value2 = $urlC
   $excel.Calculate()
-  $cellC = [string]$sites.Cells(2, 26).Value2
+  $cellC = [string]$sites.Cells(2, 27).Value2
   if ($cellC -ne 'Open') { throw ("Expected cell text 'Open' in Case C, got: '" + $cellC + "'") }
   Write-Host "  Case C pass" -ForegroundColor Green
 
@@ -89,7 +89,7 @@ try {
   if (-not $csv.Contains('center=-85.57025,42.28536')) { throw "CSV AGOL URL doesn't have center coords" }
   Write-Host "  CSV row contains resolved AGOL URL with center + marker" -ForegroundColor Green
 
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas before save
   $wb.Names('JobAgolMap').RefersToRange.Value2 = ''
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''

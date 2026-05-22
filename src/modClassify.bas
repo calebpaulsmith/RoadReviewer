@@ -123,13 +123,39 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWire
     If Len(errMsg) = 0 Then roadName = BuildRouteName(routeJson)
     ws.Cells(r, COL_ROADNAME).Value = roadName
 
-    ' --- Class label + eligibility verdict ---
+    ' --- Street name(s) via Census TIGER (covers everything MDOT 543 misses) ---
+    ' Failures here are non-fatal — keep going so the classification still
+    ' lands even if TIGER is briefly unavailable.
+    Dim tigerErr As String, streets As String
+    streets = LookupStreetNames(lat, lon, tigerErr)
+    ws.Cells(r, COL_STREET).Value = streets
+
+    ' --- Class label + Federal Aid Status verdict ---
     ws.Cells(r, COL_CLASS).Value = ClassLabels(codes)
     ws.Cells(r, COL_ELIGIBILITY).Value = FederalAidVerdict(codes, isUrban)
 End Sub
 
+' Query Census TIGER Local Roads (layer 8) within the search buffer and
+' return a pipe-joined list of unique street names. Returns "" with errMsg
+' set if the call failed; "" with errMsg empty if no streets matched.
+Private Function LookupStreetNames(ByVal lat As String, ByVal lon As String, _
+        ByRef errMsg As String) As String
+    Dim json As String, names As Collection, seen As String, out As String, nm As Variant
+    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", False, BufferFeet(), errMsg)
+    If Len(errMsg) > 0 Then Exit Function
+    Set names = ExtractStrings(json, "NAME")
+    For Each nm In names
+        If Len(Trim$(CStr(nm))) > 0 And InStr(seen, "|" & CStr(nm) & "|") = 0 Then
+            seen = seen & "|" & CStr(nm) & "|"
+            out = out & IIf(Len(out) > 0, " | ", "") & CStr(nm)
+        End If
+    Next nm
+    LookupStreetNames = out
+End Function
+
 Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
     ws.Cells(r, COL_CLASS).ClearContents
+    ws.Cells(r, COL_STREET).ClearContents
     ws.Cells(r, COL_URBANRURAL).ClearContents
     ws.Cells(r, COL_ACUBNAME).ClearContents
     ws.Cells(r, COL_ROADNAME).ClearContents

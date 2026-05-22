@@ -321,6 +321,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_URBANRURAL) = "Urban/Rural"
     h(COL_ACUBNAME) = "ACUB Name"
     h(COL_ROADNAME) = "Road Name"
+    h(COL_STREET) = "Street Name"
     h(COL_ELIGIBILITY) = "Federal Aid Status"
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
@@ -436,6 +437,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_CLASS).ColumnWidth = 16
     ws.Columns(COL_ACUBNAME).ColumnWidth = 16
     ws.Columns(COL_ROADNAME).ColumnWidth = 16
+    ws.Columns(COL_STREET).ColumnWidth = 22
     ws.Columns(COL_ELIGIBILITY).ColumnWidth = 24
     ws.Columns(COL_GEOCODE).ColumnWidth = 16
     ws.Columns(COL_FIRMSTATUS).ColumnWidth = 18
