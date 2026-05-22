@@ -479,12 +479,19 @@ Private Function BuildMapTextboxString(ByVal wsSites As Worksheet, ByVal r As Lo
     ' Build the stamp top-down, skipping the WO/DI line entirely when the
     ' inspector didn't enter either ID. The applicant line still anchors
     ' the rest of the textbox.
+    Dim costs As String, workComp As String
+    costs = Trim$(CStr(wsSites.Cells(r, COL_COSTS).Value))
+    workComp = Trim$(CStr(wsSites.Cells(r, COL_WORKCOMP).Value))
+
     If Len(woDiLine) > 0 Then BuildMapTextboxString = woDiLine & vbLf
     BuildMapTextboxString = BuildMapTextboxString & _
         applicant & vbLf & _
         siteLine & vbLf & _
         lat & ", " & lon
     If Len(catLine) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & catLine
+    ' Two optional money/progress lines, only emitted when populated.
+    If Len(costs) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Cost: " & costs
+    If Len(workComp) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Work: " & workComp
 End Function
 
 Public Sub ExportCombinedMapPdf()
@@ -664,8 +671,7 @@ Private Function PlacemarkXml(ByVal ws As Worksheet, ByVal r As Long) As String
     nm = XmlEscape(CStr(ws.Cells(r, COL_SITENAME).Value))
     If Len(nm) = 0 Then nm = "Site row " & r
     status = CStr(ws.Cells(r, COL_ELIGIBILITY).Value)
-    desc = XmlEscape(CStr(ws.Cells(r, COL_DESC).Value) & _
-        IIf(Len(Trim$(status)) = 0, "", " | " & status))
+    desc = XmlEscape(BuildDescBlock(ws, r, status))
     lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
     lon = InvariantNum(ws.Cells(r, COL_LON).Value)
     styleId = PinStyleId(status)
@@ -673,6 +679,28 @@ Private Function PlacemarkXml(ByVal ws As Worksheet, ByVal r As Long) As String
     PlacemarkXml = "<Placemark><name>" & nm & "</name>" & styleTag & _
         IIf(Len(desc) > 0, "<description>" & desc & "</description>", "") & _
         "<Point><coordinates>" & lon & "," & lat & ",0</coordinates></Point></Placemark>" & vbCrLf
+End Function
+
+' Pipe-separated description block used in KML <description>. Each field
+' is omitted when blank, so we never produce dangling " | " separators.
+' Order: Description, Costs, Work Completion, Federal Aid Status. Status
+' goes last so it reads like a tag suffix.
+Private Function BuildDescBlock(ByVal ws As Worksheet, ByVal r As Long, _
+        ByVal status As String) As String
+    Dim parts() As String, n As Integer, v As String
+    ReDim parts(3)
+    n = 0
+    v = Trim$(CStr(ws.Cells(r, COL_DESC).Value))
+    If Len(v) > 0 Then parts(n) = v: n = n + 1
+    v = Trim$(CStr(ws.Cells(r, COL_COSTS).Value))
+    If Len(v) > 0 Then parts(n) = "Cost: " & v: n = n + 1
+    v = Trim$(CStr(ws.Cells(r, COL_WORKCOMP).Value))
+    If Len(v) > 0 Then parts(n) = "Work: " & v: n = n + 1
+    v = Trim$(status)
+    If Len(v) > 0 Then parts(n) = v: n = n + 1
+    If n = 0 Then Exit Function
+    ReDim Preserve parts(n - 1)
+    BuildDescBlock = Join(parts, " | ")
 End Function
 
 Private Function XmlEscape(ByVal s As String) As String

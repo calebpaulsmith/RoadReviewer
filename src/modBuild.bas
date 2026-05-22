@@ -292,6 +292,8 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_LON) = "Longitude"
     h(COL_CATEGORY) = "Category"
     h(COL_DESC) = "Description"
+    h(COL_COSTS) = "Costs"
+    h(COL_WORKCOMP) = "Work Completion"
     h(COL_GEOCODE) = "Geocode Status"
     h(COL_GMAP) = "Google Maps"
     h(COL_STREETVIEW) = "Street View"
@@ -413,6 +415,8 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_SITENAME).ColumnWidth = 22
     ws.Columns(COL_ADDRESS).ColumnWidth = 28
     ws.Columns(COL_DESC).ColumnWidth = 26
+    ws.Columns(COL_COSTS).ColumnWidth = 14
+    ws.Columns(COL_WORKCOMP).ColumnWidth = 16
     ws.Columns(COL_CLASS).ColumnWidth = 16
     ws.Columns(COL_ACUBNAME).ColumnWidth = 16
     ws.Columns(COL_ROADNAME).ColumnWidth = 16

@@ -72,7 +72,7 @@ try {
 
   Write-Host "=== Sites headers ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')
-  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
+  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
   for ($c = 1; $c -le $expectedHeaders.Count; $c++) {
     $got = [string]$sites.Cells(1,$c).Value2
     $want = $expectedHeaders[$c-1]
@@ -90,7 +90,7 @@ try {
   $sites.Cells(2, 7).Value = -85.57025             # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 11='Google Maps'; 12='Street View'; 13='Bing'; 14='FEMA Viewer'; 15='FIRMette Portal'; 16='MDOT NFC Map' }
+  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='FEMA Viewer'; 17='FIRMette Portal'; 18='MDOT NFC Map' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells(2, $k)
     $f = [string]$cell.Formula
@@ -111,7 +111,7 @@ try {
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
   Write-Host "=== Conditional formatting on Federal Aid Status column ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells(2,17), $sites.Cells(2,21))
+  $r = $sites.Range($sites.Cells(2,19), $sites.Cells(2,23))
   $fcCount = $r.FormatConditions.Count
   Write-Host ("  format conditions count on class..eligibility row 2: " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }

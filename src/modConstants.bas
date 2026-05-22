@@ -45,25 +45,30 @@ Public Const COL_LAT As Long = 6
 Public Const COL_LON As Long = 7
 Public Const COL_CATEGORY As Long = 8
 Public Const COL_DESC As Long = 9
-Public Const COL_GEOCODE As Long = 10
-Public Const COL_GMAP As Long = 11
-Public Const COL_STREETVIEW As Long = 12
-Public Const COL_BING As Long = 13
-Public Const COL_FEMAVIEW As Long = 14
-Public Const COL_FIRMPORTAL As Long = 15
-Public Const COL_NFCMAP As Long = 16
-Public Const COL_CLASS As Long = 17
-Public Const COL_URBANRURAL As Long = 18
-Public Const COL_ACUBNAME As Long = 19
-Public Const COL_ROADNAME As Long = 20
-Public Const COL_ELIGIBILITY As Long = 21
-Public Const COL_FIRMSTATUS As Long = 22
-Public Const COL_MAPSTATUS As Long = 23
+' Two optional user-data columns right after Description. Both flow into
+' the KML description tag, the MapPages textbox stamp, and the CSV
+' export — anywhere Description shows up — when they have values.
+Public Const COL_COSTS As Long = 10
+Public Const COL_WORKCOMP As Long = 11
+Public Const COL_GEOCODE As Long = 12
+Public Const COL_GMAP As Long = 13
+Public Const COL_STREETVIEW As Long = 14
+Public Const COL_BING As Long = 15
+Public Const COL_FEMAVIEW As Long = 16
+Public Const COL_FIRMPORTAL As Long = 17
+Public Const COL_NFCMAP As Long = 18
+Public Const COL_CLASS As Long = 19
+Public Const COL_URBANRURAL As Long = 20
+Public Const COL_ACUBNAME As Long = 21
+Public Const COL_ROADNAME As Long = 22
+Public Const COL_ELIGIBILITY As Long = 23
+Public Const COL_FIRMSTATUS As Long = 24
+Public Const COL_MAPSTATUS As Long = 25
 ' Per-row deep-link into the inspector's own AGOL webmap (Setup NR_AGOLMAP).
 ' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
 ' nobody has wired up an AGOL map.
-Public Const COL_AGOLMAP As Long = 24
-Public Const COL_LAST As Long = 24
+Public Const COL_AGOLMAP As Long = 26
+Public Const COL_LAST As Long = 26
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
 Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"

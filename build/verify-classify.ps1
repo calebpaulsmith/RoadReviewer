@@ -30,7 +30,7 @@ try {
   $sites = $wb.Worksheets('Sites')
 
   Write-Host "Clearing any prior test rows (2..10)..."
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10, 26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   Write-Host "Writing test rows..."
@@ -65,11 +65,11 @@ try {
   $failures = @()
   foreach ($t in $tests) {
     $r = $t.Row
-    $cls = [string]$sites.Cells($r, 17).Value2  # FHWA Class
-    $ur  = [string]$sites.Cells($r, 18).Value2  # Urban/Rural
-    $ac  = [string]$sites.Cells($r, 19).Value2  # ACUB Name
-    $rn  = [string]$sites.Cells($r, 20).Value2  # Road Name
-    $el  = [string]$sites.Cells($r, 21).Value2  # Eligibility
+    $cls = [string]$sites.Cells($r, 19).Value2  # FHWA Class       (was 17, shifted +2 by Costs/Work Completion)
+    $ur  = [string]$sites.Cells($r, 20).Value2  # Urban/Rural      (was 18)
+    $ac  = [string]$sites.Cells($r, 21).Value2  # ACUB Name        (was 19)
+    $rn  = [string]$sites.Cells($r, 22).Value2  # Road Name        (was 20)
+    $el  = [string]$sites.Cells($r, 23).Value2  # Federal Aid Status (was 21)
     Write-Host ""
     Write-Host ("  row {0}: {1}" -f $r, $t.Name)
     Write-Host ("    class       : {0}" -f $cls)
@@ -95,7 +95,7 @@ try {
   }
 
   # Cleanup the test data so the saved file stays empty for the user.
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10, 26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Save()
   $wb.Close($true)

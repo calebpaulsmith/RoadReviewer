@@ -18,7 +18,7 @@ $excel.DisplayAlerts = $false
 try {
   $wb = $excel.Workbooks.Open($XlsmPath)
   $sites = $wb.Worksheets('Sites')
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,24)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   # Test point (Kalamazoo)
@@ -30,7 +30,7 @@ try {
   Write-Host "=== Case A: JobAgolMap blank ===" -ForegroundColor Cyan
   $wb.Names('JobAgolMap').RefersToRange.Value2 = ''
   $excel.Calculate()
-  $cellA = [string]$sites.Cells(2, 24).Value2
+  $cellA = [string]$sites.Cells(2, 26).Value2
   Write-Host ("  AGOL Map cell value: '" + $cellA + "'")
   if ($cellA -ne '') { throw "Expected blank AGOL cell when JobAgolMap is empty" }
   Write-Host "  Case A pass" -ForegroundColor Green
@@ -41,8 +41,8 @@ try {
   $urlB = 'https://www.arcgis.com/apps/mapviewer/index.html?webmap=abc123'
   $wb.Names('JobAgolMap').RefersToRange.Value2 = $urlB
   $excel.Calculate()
-  $cellB = [string]$sites.Cells(2, 24).Value2
-  $formulaB = [string]$sites.Cells(2, 24).Formula
+  $cellB = [string]$sites.Cells(2, 26).Value2
+  $formulaB = [string]$sites.Cells(2, 26).Formula
   Write-Host ("  AGOL Map cell value: '" + $cellB + "'")
   Write-Host ("  Formula length: " + $formulaB.Length)
   if ($cellB -ne 'Open') { throw ("Expected cell text 'Open' (the hyperlink friendly name), got: '" + $cellB + "'") }
@@ -61,14 +61,14 @@ try {
   $urlC = 'https://www.arcgis.com/apps/mapviewer/index.html'
   $wb.Names('JobAgolMap').RefersToRange.Value2 = $urlC
   $excel.Calculate()
-  $cellC = [string]$sites.Cells(2, 24).Value2
+  $cellC = [string]$sites.Cells(2, 26).Value2
   if ($cellC -ne 'Open') { throw ("Expected cell text 'Open' in Case C, got: '" + $cellC + "'") }
   Write-Host "  Case C pass" -ForegroundColor Green
 
   # ---- MDOT NFC Map (col 16) — confirm it now hits the FEMA webmap, not the Experience ----
   Write-Host ""
   Write-Host "=== MDOT NFC Map (col 16) URL ===" -ForegroundColor Cyan
-  $f16 = [string]$sites.Cells(2, 16).Formula
+  $f16 = [string]$sites.Cells(2, 18).Formula   # MDOT NFC Map (was col 16, +2 after Costs/Work Completion)
   if (-not $f16.Contains('fema.maps.arcgis.com')) { throw "Col 16 formula no longer points at the FEMA webmap: $f16" }
   if (-not $f16.Contains('webmap=6a1702b9147243d1a5ee62cd614bc681')) { throw "Col 16 missing the expected webmap id: $f16" }
   if ($f16.Contains('experience.arcgis.com')) { throw "Col 16 still references the Experience app: $f16" }
@@ -89,7 +89,7 @@ try {
   if (-not $csv.Contains('center=-85.57025,42.28536')) { throw "CSV AGOL URL doesn't have center coords" }
   Write-Host "  CSV row contains resolved AGOL URL with center + marker" -ForegroundColor Green
 
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,24)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas before save
   $wb.Names('JobAgolMap').RefersToRange.Value2 = ''
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''

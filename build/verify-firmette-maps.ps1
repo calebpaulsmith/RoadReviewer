@@ -34,7 +34,7 @@ try {
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
   # Clear and write one Sites row
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,23)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(2, 3).Value2 = 1                     # Site #
   $sites.Cells(2, 4).Value2 = 'Kalamazoo test'      # Site Name
@@ -52,7 +52,7 @@ try {
   $excel.Run('DownloadFirmettes') | Out-Null
   $sw.Stop()
   Write-Host ("  finished in " + $sw.Elapsed.TotalSeconds + "s")
-  $firmStatus = [string]$sites.Cells(2, 22).Value2
+  $firmStatus = [string]$sites.Cells(2, 24).Value2   # FIRMette Status, was col 22 before Costs+Work Completion shifted +2
   Write-Host ("  FIRMette Status: " + $firmStatus)
 
   $pdfFiles = Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf'
@@ -89,7 +89,7 @@ try {
   # ---- Cleanup workbook state ----
   $excel.Run('SetHeadless', $false) | Out-Null
   $excel.Run('SetTrace', '') | Out-Null
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,23)).ClearContents()
+  $sites.Range($sites.Cells(2,1), $sites.Cells(10,26)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   # Reset Setup so the user's saved workbook doesn't carry test values
   $wb.Names('JobWO').RefersToRange.Value2 = ''
