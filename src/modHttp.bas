@@ -14,7 +14,7 @@ Option Explicit
 Public Function HttpGetText(ByVal url As String, Optional ByRef errMsg As String) As String
     Dim http As Object
     errMsg = ""
-    TraceLine "HTTP GET " & Left$(url, 200)
+    TraceLine "HTTP GET " & Left$(url, 400)
     On Error GoTo Fail
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setTimeouts 5000, 5000, 20000, 30000

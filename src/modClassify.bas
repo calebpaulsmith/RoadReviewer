@@ -136,16 +136,36 @@ Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
     ws.Cells(r, COL_ELIGIBILITY).ClearContents
 End Sub
 
-' Exact point intersect first; if no hit, retry with a 150-ft buffer (§4.2).
+' Exact point intersect first; if no hit, retry with a buffer (§4.2).
+' Buffer size is configurable on Setup (NR_BUFFER, default 200 ft).
 Private Function QueryWithFallback(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
         ByVal outFields As String, ByVal retiredFilter As Boolean, ByRef errMsg As String) As String
     Dim json As String
     json = RunQuery(baseUrl, lat, lon, outFields, retiredFilter, 0, errMsg)
     If Len(errMsg) > 0 Then Exit Function
     If FeatureCount(json) = 0 And Not HasArcgisError(json) Then
-        json = RunQuery(baseUrl, lat, lon, outFields, retiredFilter, 150, errMsg)
+        json = RunQuery(baseUrl, lat, lon, outFields, retiredFilter, BufferFeet(), errMsg)
     End If
     QueryWithFallback = json
+End Function
+
+' Read the search-buffer radius (in feet) from Setup, with a sane default
+' and clamp. The cell can be anything (blank, text, a number out of range);
+' fall back to DEFAULT_BUFFER_FEET unless we get a positive Long between
+' 1 and 1000.
+Public Function BufferFeet() As Long
+    Dim raw As String, v As Double
+    raw = SetupValue(NR_BUFFER)
+    If Len(raw) = 0 Or Not IsNumeric(raw) Then
+        BufferFeet = DEFAULT_BUFFER_FEET
+        Exit Function
+    End If
+    v = CDbl(raw)
+    If v < 1 Or v > 1000 Then
+        BufferFeet = DEFAULT_BUFFER_FEET
+        Exit Function
+    End If
+    BufferFeet = CLng(v)
 End Function
 
 Private Function RunQuery(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
@@ -174,7 +194,7 @@ End Function
 Private Function ClassLabels(ByVal codes As Collection) As String
     Dim seen As String, c As Variant, label As String, out As String
     If codes.Count = 0 Then
-        ClassLabels = "No road segment within 150 ft"
+        ClassLabels = "No road segment within " & BufferFeet() & " ft"
         Exit Function
     End If
     For Each c In codes
@@ -197,7 +217,7 @@ Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As B
     Dim worstCode As Long: worstCode = 99
 
     If codes.Count = 0 Then
-        FederalAidVerdict = "No road segment within 150 ft - review manually"
+        FederalAidVerdict = "No road segment within " & BufferFeet() & " ft - review manually"
         Exit Function
     End If
 

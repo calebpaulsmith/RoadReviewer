@@ -29,6 +29,12 @@ Public Const NR_OUTFOLDER As String = "JobOutputFolder"
 ' the Sites table's "AGOL Map" column (COL_AGOLMAP) produces per-row
 ' deep-links that open the webmap centered on the row's coordinates.
 Public Const NR_AGOLMAP As String = "JobAgolMap"
+' Search radius (in feet) used when the exact point-on-polyline intersect
+' returns no road segments. The classifier always tries an exact intersect
+' first; this buffer is the second-chance fallback. Default 200 ft (read
+' from Setup, capped to [1, 1000] in modClassify.BufferFeet).
+Public Const NR_BUFFER As String = "JobBufferFeet"
+Public Const DEFAULT_BUFFER_FEET As Long = 200
 
 ' ---- Sites table geometry ----
 Public Const SITES_HEADER_ROW As Long = 1

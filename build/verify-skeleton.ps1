@@ -65,7 +65,7 @@ try {
   }
 
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
-  $expectedNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobState','JobOutputFolder','JobAgolMap')
+  $expectedNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobState','JobOutputFolder','JobAgolMap','JobBufferFeet')
   foreach ($n in $expectedNames) {
     try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
   }

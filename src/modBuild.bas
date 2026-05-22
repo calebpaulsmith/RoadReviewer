@@ -211,6 +211,7 @@ Private Sub BuildSetup()
     LabelValue ws, 9, "State", NR_STATE, "MI"
     LabelValue ws, 10, "Output Folder", NR_OUTFOLDER, ""
     LabelValue ws, 11, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 12, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
 
     ' State dropdown (F8).
     With ws.Range("B9").Validation
@@ -220,15 +221,30 @@ Private Sub BuildSetup()
         .InCellDropdown = True
     End With
 
+    ' Buffer must be a whole number between 1 and 1000 ft. Out-of-range
+    ' values fall back to DEFAULT_BUFFER_FEET via modClassify.BufferFeet,
+    ' but the validation catches mistakes at entry time.
+    With ws.Range("B12").Validation
+        .Delete
+        .Add Type:=xlValidateWholeNumber, AlertStyle:=xlValidAlertStop, _
+            Operator:=xlBetween, Formula1:="1", Formula2:="1000"
+        .IgnoreBlank = True
+        .ErrorMessage = "Enter a whole number between 1 and 1000 ft."
+        .ShowError = True
+    End With
+
     AddButton ws, ws.Range("D10").Left, ws.Range("B10").Top - 2, 150, 22, "Browse for folder...", "SelectOutputFolder"
 
-    ws.Range("A13").Value = "Only Michigan's road-class layer is wired in V1. Other states still run the ACUB check."
-    ws.Range("A13").Font.Italic = True
-    ws.Range("A13").Font.Color = RGB(90, 90, 90)
-    ws.Range("A14").Value = "AGOL Webmap URL is optional. Paste a https://www.arcgis.com/apps/mapviewer/...?webmap=<id> URL " & _
-        "(or your org's equivalent) to enable the AGOL Map column and the Send-to-AGOL button."
+    ws.Range("A14").Value = "Only Michigan's road-class layer is wired in V1. Other states still run the ACUB check."
     ws.Range("A14").Font.Italic = True
     ws.Range("A14").Font.Color = RGB(90, 90, 90)
+    ws.Range("A15").Value = "AGOL Webmap URL is optional. Paste a https://www.arcgis.com/apps/mapviewer/...?webmap=<id> URL " & _
+        "(or your org's equivalent) to enable the AGOL Map column and the Send-to-AGOL button."
+    ws.Range("A15").Font.Italic = True
+    ws.Range("A15").Font.Color = RGB(90, 90, 90)
+    ws.Range("A16").Value = "Search buffer is the radius used when no road segment intersects the exact point. 200 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
+    ws.Range("A16").Font.Italic = True
+    ws.Range("A16").Font.Color = RGB(90, 90, 90)
     ws.Tab.Color = RGB(70, 130, 180)
 End Sub
 
@@ -430,7 +446,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     '   red    — cell starts with "Federal aid"  (federal-aid road)
     '   green  — cell starts with "Non-federal aid"
     '   yellow — cell starts with "Review" (non-certified class or no
-    '            road found within 150 ft)
+    '            road found within the Setup search-buffer radius)
     ' "Non-federal aid" intentionally tests for the literal prefix
     ' (LEFT … 15) because a substring search for "Federal aid" would
     ' also match "Non-federal aid". Order matters when format rules
