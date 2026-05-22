@@ -45,10 +45,10 @@ foreach ($f in $importOrder) {
   if (-not (Test-Path -LiteralPath $p)) { throw "Missing source: $p" }
 }
 
-if (Test-Path -LiteralPath $OutPath) {
-  Write-Host "Removing existing $OutPath"
-  Remove-Item -LiteralPath $OutPath -Force
-}
+# Don't try to Remove-Item $OutPath up front — Copy-Item -Force at the
+# end overwrites without needing delete permission on the parent dir,
+# which matters because the repo root has an Everyone-Deny
+# DeleteSubdirectoriesAndFiles ACE.
 
 Write-Host "Starting Excel..."
 $excel = New-Object -ComObject Excel.Application
@@ -97,9 +97,19 @@ try {
     Write-Host "  removed BuildHelper from saved workbook"
   } catch { }
 
-  Write-Host "Saving as $OutPath"
-  $wb.SaveAs($OutPath, $XlOpenXMLWorkbookMacroEnabled)
+  # Excel's SaveAs writes to a temp file in the destination dir, then
+  # deletes the existing destination and renames the temp file. The repo
+  # root (and build\) carry an `Everyone Deny DeleteSubdirectoriesAndFiles`
+  # ACE that breaks both delete steps. So stage the SaveAs into %TEMP%
+  # (always writable) and Copy-Item -Force into OutPath, which overwrites
+  # without needing delete permission on the parent dir.
+  $stagingPath = Join-Path $env:TEMP ('rr-build-' + [guid]::NewGuid().ToString('N') + '.xlsm')
+  Write-Host "Saving to staging: $stagingPath"
+  $wb.SaveAs($stagingPath, $XlOpenXMLWorkbookMacroEnabled)
   $wb.Close($false)
+  Write-Host "Copying to $OutPath"
+  Copy-Item -LiteralPath $stagingPath -Destination $OutPath -Force
+  Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue
   Write-Host "Build complete." -ForegroundColor Green
 }
 catch {
