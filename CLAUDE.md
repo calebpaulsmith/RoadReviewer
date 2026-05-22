@@ -670,13 +670,72 @@ These came up reading the prototypes; capturing them so they aren't lost.
 /                                  this README — CLAUDE.md
 GPS Checker - TN updated 3.5.2026.xlsm   prototype 1 (reference, do not modify)
 Site Inspector Tool 1.xlsm              prototype 2 (reference, do not modify)
-RoadReviewer.xlsm                       V1 deliverable (to be built)
-docs/                                   user-facing one-pagers (to be added)
+RoadReviewer.xlsm                       V1 deliverable (built locally from src/, not committed)
+src/                                    V1 VBA source (importable .bas modules)
+  modConstants.bas                      sheet names, column indices, URLs, FunctionalSystem domain
+  modUtil.bas                           shared helpers (hard-bound Sites sheet, URL builder, etc.)
+  modHttp.bas                           browser-UA GET + narrow JSON extraction (VBScript.RegExp)
+  modBuild.bas                          BuildWorkbook — constructs every sheet/range/button at run time
+  modClassify.bas                       Workflow 1 — NFC + ACUB + route name + eligibility (F7/F12)
+  modGeocode.bas                        Census one-line geocoder → lat/lon (F4)
+  modImagery.bas                        Workflow 2 — open curated imagery set for selected rows
+  modMaps.bas                           output-folder resolution + KML; FIRMette/MapPages stubbed
+  modExport.bas                         Sites table → CSV with resolved link URLs (F10)
+docs/
+  probe-mdot-layers.md                  how to re-run the §5.1 schema probe locally
+  probe.py                              stdlib probe script for the four FeatureServers
+  build-and-import.md                   how to assemble RoadReviewer.xlsm from src/ on a Windows laptop
 ```
 
 The two prototype `.xlsm` files are kept in the repo as references. The V1
 deliverable is a new workbook so we don't drag along the VBA-stomping
-warning from the Site Inspector Tool.
+warning from the Site Inspector Tool. The workbook itself is **built on the
+user's Windows laptop** from `src/` (see `docs/build-and-import.md`) because
+the cloud build environment has no Excel; the `.xlsm` binary is not committed.
+
+---
+
+## 7a. Implementation status (V1)
+
+**Increment 1 — built, not yet smoke-tested in Excel.** All code authored as
+importable `.bas` modules + a `BuildWorkbook` macro. Authored on a headless
+Linux environment with no Excel, so it is **structurally verified only**
+(block balance, every button `OnAction` resolves to a defined `Sub`, formula
+strings traced by hand) — it has NOT been compiled or run. The Excel smoke
+tests in §5 are the gate before this is "working".
+
+| Capability | Module | Status |
+|---|---|---|
+| Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | built (run §5.2) |
+| Sites hyperlinks + lat/lon validation + INELIGIBLE red highlight | modBuild | built (run §5.3) |
+| Workflow 1 — Classify Roads (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | built (run §5.4, §5.7, §5.8) |
+| Workflow 2 — Review Imagery (open curated set for selected rows) | modImagery | built (run §5.5) |
+| Geocode addresses → lat/lon (never overwrites) | modGeocode | built |
+| KML export + Sites-table CSV export | modMaps, modExport | built |
+| Output-folder resolution (§8.9) | modMaps | built |
+| Workflow 3 — Download FIRMettes / Re-run failed FIRMettes | modMaps | **stub** (port next) |
+| Workflow 3 — Prepare Map Pages / Export Combined Map PDF | modMaps | **stub** (port next) |
+
+**Next increment:** port the FIRMette download (FEMA GP submitJob → poll →
+OutputFile → write PDF via `ADODB.Stream`) and the MapPages layout from the
+prototypes, both driven from the shared Sites table (§5.6).
+
+**Testing checklist for the local (Excel-equipped) session:**
+
+1. Assemble per `docs/build-and-import.md`; confirm `BuildWorkbook` runs
+   clean and every button is wired (§5.2).
+2. Paste the three §4.2 test coordinates into Sites; confirm hyperlinks
+   open the right points (§5.3).
+3. Run **Classify All Rows**; confirm against the expected outcomes:
+   - `42.28536, -85.57025` → INELIGIBLE, Urban Minor Collector, Kalamazoo
+   - `42.6911, -84.5360` → ELIGIBLE, Urban Local, Lansing
+   - `44.2700, -83.5200` → ELIGIBLE, Rural Local, no ACUB
+   Also drop a Tennessee point and a non-MI state to exercise F8 (§5.4/§5.8).
+4. Select rows, run **Open Imagery for Selected Row(s)** (§5.5).
+5. Simulate a failure (disconnect network), run, reconnect, **Re-run Failed
+   Rows** — confirm only failed rows retry (§5.7).
+6. Fix any VBA errors that surface, then proceed to the FIRMette/MapPages
+   port (§5.6).
 
 ---
 
