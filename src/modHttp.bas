@@ -100,6 +100,47 @@ Private Function CountMatches(ByVal s As String, ByVal pattern As String) As Lon
     CountMatches = re.Execute(s).Count
 End Function
 
+' GET a URL and write its body to disk as binary (PDF). Returns True on
+' success. Verifies the response is actually a PDF by checking
+' Content-Type — FEMA's GP service has been known to return an HTML error
+' page with status 200, which would otherwise produce a corrupted .pdf.
+Public Function HttpDownloadPdf(ByVal url As String, ByVal fullPath As String, _
+        Optional ByRef errMsg As String) As Boolean
+    Dim http As Object, stm As Object, contentType As String
+    errMsg = ""
+    TraceLine "HTTP GET (PDF) " & Left$(url, 200)
+    On Error GoTo Fail
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.setTimeouts 30000, 60000, 60000, 120000
+    http.Open "GET", url, False
+    http.setRequestHeader "User-Agent", BROWSER_UA
+    http.setRequestHeader "Accept", "application/pdf,application/octet-stream,*/*"
+    http.send
+    If CLng(http.Status) <> 200 Then
+        errMsg = "HTTP " & http.Status
+        TraceLine "  -> " & errMsg
+        Exit Function
+    End If
+    contentType = LCase$(CStr(http.getResponseHeader("Content-Type")))
+    If InStr(1, contentType, "pdf", vbTextCompare) = 0 Then
+        errMsg = "Response was not a PDF (Content-Type=" & contentType & ")"
+        TraceLine "  -> " & errMsg
+        Exit Function
+    End If
+    Set stm = CreateObject("ADODB.Stream")
+    stm.Type = 1                       ' adTypeBinary
+    stm.Open
+    stm.Write http.responseBody
+    stm.SaveToFile fullPath, 2          ' adSaveCreateOverWrite
+    stm.Close
+    HttpDownloadPdf = True
+    TraceLine "  -> 200 PDF saved (" & Len(http.responseBody) & " bytes)"
+    Exit Function
+Fail:
+    errMsg = Err.Description
+    TraceLine "  -> EXCEPTION: " & errMsg
+End Function
+
 Public Function JsonUnescape(ByVal s As String) As String
     s = Replace(s, "\""", """")
     s = Replace(s, "\/", "/")

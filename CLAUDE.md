@@ -670,17 +670,37 @@ These came up reading the prototypes; capturing them so they aren't lost.
 /                                  this README — CLAUDE.md
 GPS Checker - TN updated 3.5.2026.xlsm   prototype 1 (reference, do not modify)
 Site Inspector Tool 1.xlsm              prototype 2 (reference, do not modify)
-RoadReviewer.xlsm                       V1 deliverable (built locally from src/, not committed)
+RoadReviewer.xlsm                       V1 deliverable (built into %TEMP%, not committed)
 src/                                    V1 VBA source (importable .bas modules)
-  modConstants.bas                      sheet names, column indices, URLs, FunctionalSystem domain
-  modUtil.bas                           shared helpers (hard-bound Sites sheet, URL builder, etc.)
+  modConstants.bas                      sheet names, column indices, URLs, FunctionalSystem domain,
+                                          FIRMette poll constants, MapPages layout constants
+  modUtil.bas                           shared helpers + gHeadless/gTrace plumbing
+                                          (Sites-sheet binder, URL builder, WaitSeconds, CleanFileName)
   modHttp.bas                           browser-UA GET + narrow JSON extraction (VBScript.RegExp)
+                                          + HttpDownloadPdf (binary PDF via ADODB.Stream)
   modBuild.bas                          BuildWorkbook — constructs every sheet/range/button at run time
   modClassify.bas                       Workflow 1 — NFC + ACUB + route name + eligibility (F7/F12)
   modGeocode.bas                        Census one-line geocoder → lat/lon (F4)
   modImagery.bas                        Workflow 2 — open curated imagery set for selected rows
-  modMaps.bas                           output-folder resolution + KML; FIRMette/MapPages stubbed
+  modMaps.bas                           Workflow 3 — FIRMette download (FEMA GP service),
+                                          MapPages layout, ExportCombinedMapPdf, KML export
   modExport.bas                         Sites table → CSV with resolved link URLs (F10)
+build/                                  Local assembly + verification scripts (not for end users)
+  build.ps1                             COM-driven build: imports every .bas, runs BuildWorkbook,
+                                          saves RoadReviewer.xlsm into %TEMP% (the repo's build/
+                                          dir has an Everyone-Deny ACE from the sandbox that
+                                          breaks Excel's SaveAs temp-file pattern)
+  BuildHelper.bas                       Build-time-only module; sets gHeadless + traps errors
+                                          to %TEMP%\RoadReviewer_build_error.txt, removed
+                                          before save
+  verify-skeleton.ps1                   §5.2 + §5.3 — sheets, buttons, named ranges, headers,
+                                          hyperlink formulas, decimal validation
+  verify-classify.ps1                   §5.4 — three test coords against live MDOT + NTAD
+  verify-rerun-and-state.ps1            §5.7 + §5.8 — re-run-failed-rows + state selector
+  verify-firmette-maps.ps1              Workflow 3 — DownloadFirmettes + PrepareMapPages
+                                          + ExportCombinedMapPdf against live FEMA GP
+  dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
+                                          for reference (not version-controlled)
 docs/
   probe-mdot-layers.md                  how to re-run the §5.1 schema probe locally
   probe.py                              stdlib probe script for the four FeatureServers
@@ -697,45 +717,71 @@ the cloud build environment has no Excel; the `.xlsm` binary is not committed.
 
 ## 7a. Implementation status (V1)
 
-**Increment 1 — built, not yet smoke-tested in Excel.** All code authored as
-importable `.bas` modules + a `BuildWorkbook` macro. Authored on a headless
-Linux environment with no Excel, so it is **structurally verified only**
-(block balance, every button `OnAction` resolves to a defined `Sub`, formula
-strings traced by hand) — it has NOT been compiled or run. The Excel smoke
-tests in §5 are the gate before this is "working".
+**Increment 2 — every capability built, every automated verifier passes
+against the live services.** The fixes from the cloud-only authoring pass
+(see commits `fa26093` and `ece6c29` for the gory detail) landed during
+the local smoke-test pass; what was a "structurally verified only" build
+in increment 1 is now a workbook that drives Workflows 1, 2 and 3 end to
+end. End-user (button-click) smoke is still the final gate — the
+automated verifiers exercise the same code paths but in headless mode.
 
 | Capability | Module | Status |
 |---|---|---|
-| Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | built (run §5.2) |
-| Sites hyperlinks + lat/lon validation + INELIGIBLE red highlight | modBuild | built (run §5.3) |
-| Workflow 1 — Classify Roads (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | built (run §5.4, §5.7, §5.8) |
-| Workflow 2 — Review Imagery (open curated set for selected rows) | modImagery | built (run §5.5) |
-| Geocode addresses → lat/lon (never overwrites) | modGeocode | built |
+| Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | **tested** (§5.2 — verify-skeleton.ps1) |
+| Sites hyperlinks + lat/lon validation + INELIGIBLE red highlight | modBuild | **tested** (§5.3 — verify-skeleton.ps1) |
+| Workflow 1 — Classify Roads (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | **tested** (§5.4/§5.7/§5.8 — verify-classify.ps1, verify-rerun-and-state.ps1) |
+| Workflow 2 — Review Imagery (open curated set for selected rows) | modImagery | built; uses the same URL templates §5.3 already verified resolve correctly. End-user click test pending |
+| Geocode addresses → lat/lon (never overwrites) | modGeocode | built; no automated verifier yet (one-shot Census call) |
 | KML export + Sites-table CSV export | modMaps, modExport | built |
-| Output-folder resolution (§8.9) | modMaps | built |
-| Workflow 3 — Download FIRMettes / Re-run failed FIRMettes | modMaps | **stub** (port next) |
-| Workflow 3 — Prepare Map Pages / Export Combined Map PDF | modMaps | **stub** (port next) |
+| Output-folder resolution (§8.9) | modMaps | built (exercised via verify-firmette-maps.ps1) |
+| Workflow 3 — Download FIRMettes / Re-run failed FIRMettes | modMaps | **tested** (verify-firmette-maps.ps1 — 17.9s end-to-end against FEMA Print FIRMette GP, 828 KB PDF written) |
+| Workflow 3 — Prepare Map Pages / Export Combined Map PDF | modMaps | **tested** (verify-firmette-maps.ps1 — MapPages sheet + textbox shape created, 50 KB Location Map PDF exported) |
 
-**Next increment:** port the FIRMette download (FEMA GP submitJob → poll →
-OutputFile → write PDF via `ADODB.Stream`) and the MapPages layout from the
-prototypes, both driven from the shared Sites table (§5.6).
+**Bugs found and fixed during increment 2** (full commit-message detail in
+`ece6c29`):
+
+1. `Worksheet.DisplayGridlines = False` is a compile error — that property
+   lives on `Window`. New `HideGridlines` helper activates the sheet and
+   flips `ActiveWindow.DisplayGridlines`.
+2. `Public gTracePath As String` was placed between two Subs in modUtil —
+   VBA's "Only comments may appear after End Sub" compile error. All
+   module-level Public state moved to the top of modUtil.
+3. `NewRegex(...)` had a parameter named `global` — that's a VBA reserved
+   word (synonym for `Public`). JIT compilation later threw "Sub or
+   Function not defined" on the callers and Excel sat in VBE break mode
+   forever. Renamed to `isGlobal`.
+4. The narrow JSON regex defaulted `IgnoreCase=True`, so `FirstString("NAME")`
+   on an ArcGIS response found the lower-case `"name":"OBJECTID"` field-
+   metadata entry instead of the upper-case attribute `"NAME":"Kalamazoo, MI"`.
+   ArcGIS attribute names are case-sensitive in the JSON anyway —
+   defaulted IgnoreCase to False.
+5. The repo's `build/` folder carries an `Everyone Deny
+   DeleteSubdirectoriesAndFiles` ACE from the Claude Code sandbox, which
+   breaks Excel's SaveAs (it writes a temp file then deletes/renames).
+   `build/build.ps1` now defaults the OutPath to `%TEMP%`, and a
+   `.gitignore` keeps the binary out of the repo either way.
+
+**Headless plumbing** — every public workflow Sub checks `gHeadless` and
+suppresses its success/failure MsgBox when an automation host (build.ps1,
+verify-*.ps1) sets it via `Application.Run "SetHeadless", True`. Cell +
+StatusBar state remain, so results stay observable when running headless.
 
 **Testing checklist for the local (Excel-equipped) session:**
 
-1. Assemble per `docs/build-and-import.md`; confirm `BuildWorkbook` runs
-   clean and every button is wired (§5.2).
-2. Paste the three §4.2 test coordinates into Sites; confirm hyperlinks
-   open the right points (§5.3).
-3. Run **Classify All Rows**; confirm against the expected outcomes:
-   - `42.28536, -85.57025` → INELIGIBLE, Urban Minor Collector, Kalamazoo
-   - `42.6911, -84.5360` → ELIGIBLE, Urban Local, Lansing
-   - `44.2700, -83.5200` → ELIGIBLE, Rural Local, no ACUB
-   Also drop a Tennessee point and a non-MI state to exercise F8 (§5.4/§5.8).
-4. Select rows, run **Open Imagery for Selected Row(s)** (§5.5).
-5. Simulate a failure (disconnect network), run, reconnect, **Re-run Failed
-   Rows** — confirm only failed rows retry (§5.7).
-6. Fix any VBA errors that surface, then proceed to the FIRMette/MapPages
-   port (§5.6).
+```
+# One-time:
+powershell -ExecutionPolicy Bypass -File build\build.ps1
+
+# Verify in order. Each script opens %TEMP%\RoadReviewer.xlsm.
+powershell -ExecutionPolicy Bypass -File build\verify-skeleton.ps1        # §5.2 + §5.3
+powershell -ExecutionPolicy Bypass -File build\verify-classify.ps1        # §5.4
+powershell -ExecutionPolicy Bypass -File build\verify-rerun-and-state.ps1 # §5.7 + §5.8
+powershell -ExecutionPolicy Bypass -File build\verify-firmette-maps.ps1   # Workflow 3
+```
+
+Open `%TEMP%\RoadReviewer.xlsm` in Excel for the button-click smoke pass:
+imagery one-click (§5.5), geocoder, and any UI feel-test before handing
+off to a non-developer co-worker (§5.10).
 
 ---
 

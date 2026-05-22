@@ -1,5 +1,9 @@
 # Build artifact - assembled per docs/build-and-import.md
 build/RoadReviewer.xlsm
 
+# Prototype VBA dump (for reading reference only; the source of truth
+# is the prototype .xlsm files themselves)
+build/prototype-vba/
+
 # Local IDE/agent state
 .claude/

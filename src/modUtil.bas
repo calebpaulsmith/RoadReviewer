@@ -161,6 +161,12 @@ Public Function ColLetter(ByVal n As Long) As String
     ColLetter = r
 End Function
 
+' Sleep n seconds without blocking other Excel work.
+Public Sub WaitSeconds(ByVal seconds As Long)
+    If seconds <= 0 Then Exit Sub
+    Application.Wait Now + TimeSerial(0, 0, seconds)
+End Sub
+
 ' Strip characters that are illegal in Windows file names.
 Public Function CleanFileName(ByVal s As String) As String
     Dim bad As Variant, ch As Variant
