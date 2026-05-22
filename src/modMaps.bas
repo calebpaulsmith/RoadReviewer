@@ -35,9 +35,13 @@ Public Function ResolveOutputFolder() As String
     End If
 End Function
 
-' {base}\Desktop\Script\RoadReviewer\{Disaster}\WO{WO}-DI{DI}\  (§8.9)
+' {base}\Desktop\Script\RoadReviewer\{Disaster}\{WO-DI}\  (§8.9)
+' Each segment is omitted when its corresponding Setup value is blank:
+'   WO=123 DI=456 Disaster=DR-TEST -> ...\RoadReviewer\DR-TEST\WO123-DI456\
+'   WO=123 DI=""  Disaster=DR-TEST -> ...\RoadReviewer\DR-TEST\WO123\
+'   WO=""  DI=""  Disaster=""       -> ...\RoadReviewer\
 Private Function DefaultOutputFolder() As String
-    Dim profile As String, base As String, disaster As String, wo As String, di As String
+    Dim profile As String, base As String, disaster As String, wo As String, di As String, jobSeg As String
     profile = Environ$("USERPROFILE")
     If FolderExists(profile & "\OneDrive - FEMA") Then
         base = profile & "\OneDrive - FEMA"
@@ -49,9 +53,10 @@ Private Function DefaultOutputFolder() As String
     disaster = CleanFileName(SetupValue(NR_DISASTER))
     wo = CleanFileName(SetupValue(NR_WO))
     di = CleanFileName(SetupValue(NR_DI))
+    jobSeg = JobIds(wo, di, "-", "WO", "DI")
     DefaultOutputFolder = base & "\Desktop\Script\RoadReviewer\" & _
         IIf(Len(disaster) > 0, disaster & "\", "") & _
-        "WO" & wo & "-DI" & di & "\"
+        IIf(Len(jobSeg) > 0, jobSeg & "\", "")
 End Function
 
 Private Function FolderExists(ByVal path As String) As Boolean
@@ -178,13 +183,13 @@ Private Function ShouldRunFirmetteRow(ByVal ws As Worksheet, ByVal r As Long, _
     End If
 End Function
 
+' "WO123 DI456 - DR-TEST - SiteName FIRMette.pdf" — each piece omitted
+' when blank, so no dangling "WO " or trailing " - " ever appears.
 Private Function FirmetteFileName(ByVal wo As String, ByVal di As String, _
         ByVal disaster As String, ByVal siteName As String) As String
-    Dim s As String
-    s = ""
-    If Len(wo) > 0 Or Len(di) > 0 Then
-        s = s & "WO" & wo & " DI" & di & " - "
-    End If
+    Dim s As String, jobs As String
+    jobs = JobIds(wo, di, " ", "WO", "DI")
+    If Len(jobs) > 0 Then s = jobs & " - "
     If Len(disaster) > 0 Then s = s & disaster & " - "
     s = s & siteName & " FIRMette.pdf"
     FirmetteFileName = CleanFileName(s)
@@ -468,7 +473,14 @@ Private Function BuildMapTextboxString(ByVal wsSites As Worksheet, ByVal r As Lo
         catLine = desc
     End If
 
-    BuildMapTextboxString = "WO #" & wo & " DI #" & di & vbLf & _
+    Dim woDiLine As String
+    woDiLine = JobIds(wo, di, " ", "WO #", "DI #")     ' "" when both blank
+
+    ' Build the stamp top-down, skipping the WO/DI line entirely when the
+    ' inspector didn't enter either ID. The applicant line still anchors
+    ' the rest of the textbox.
+    If Len(woDiLine) > 0 Then BuildMapTextboxString = woDiLine & vbLf
+    BuildMapTextboxString = BuildMapTextboxString & _
         applicant & vbLf & _
         siteLine & vbLf & _
         lat & ", " & lon
@@ -494,8 +506,10 @@ Public Sub ExportCombinedMapPdf()
     wo = SetupValue(NR_WO)
     di = SetupValue(NR_DI)
 
+    Dim jobs As String
+    jobs = JobIds(wo, di, " ", "WO", "DI")
     fileName = ""
-    If Len(wo) > 0 Or Len(di) > 0 Then fileName = "WO" & wo & " DI" & di & " - "
+    If Len(jobs) > 0 Then fileName = jobs & " - "
     If Len(disaster) > 0 Then fileName = fileName & disaster & " - "
     fileName = fileName & "Location Map.pdf"
     fileName = CleanFileName(fileName)

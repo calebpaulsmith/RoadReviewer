@@ -167,6 +167,29 @@ Public Sub WaitSeconds(ByVal seconds As Long)
     Application.Wait Now + TimeSerial(0, 0, seconds)
 End Sub
 
+' Join a WO and DI into one display/filename string with a chosen
+' separator and per-id prefix. Each piece is omitted when its value is
+' blank, and the separator is only inserted between two present pieces:
+'   JobIds("123", "456", " ", "WO", "DI")  -> "WO123 DI456"
+'   JobIds("",    "456", " ", "WO", "DI")  -> "DI456"
+'   JobIds("123", "",    "-", "WO", "DI")  -> "WO123"
+'   JobIds("",    "",    " ", "WO", "DI")  -> ""
+' Used by the FIRMette / Map filename builders, the default output folder
+' path, and the WO #... map-page textbox so a missing WO or DI never
+' leaves a dangling "WO " or trailing "-DI" in the output.
+Public Function JobIds(ByVal wo As String, ByVal di As String, _
+        ByVal sep As String, ByVal woPrefix As String, _
+        ByVal diPrefix As String) As String
+    Dim out As String
+    wo = Trim$(wo): di = Trim$(di)
+    If Len(wo) > 0 Then out = woPrefix & wo
+    If Len(di) > 0 Then
+        If Len(out) > 0 Then out = out & sep
+        out = out & diPrefix & di
+    End If
+    JobIds = out
+End Function
+
 ' Strip characters that are illegal in Windows file names.
 Public Function CleanFileName(ByVal s As String) As String
     Dim bad As Variant, ch As Variant

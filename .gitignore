@@ -1,5 +1,8 @@
-# Build artifact - assembled per docs/build-and-import.md
-build/RoadReviewer.xlsm
+# Build artifacts - assembled per docs/build-and-import.md.
+# Pattern catches RoadReviewer.xlsm, "RoadReviewer (1).xlsm" downloads-style
+# duplicates, and Excel's ~$ lock files.
+build/RoadReviewer*.xlsm
+build/~$*.xlsm
 
 # Prototype VBA dump (for reading reference only; the source of truth
 # is the prototype .xlsm files themselves)
