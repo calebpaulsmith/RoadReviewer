@@ -206,6 +206,7 @@ Private Sub BuildSetup()
     LabelValue ws, 8, "Applicant", NR_APPLICANT, ""
     LabelValue ws, 9, "State", NR_STATE, "MI"
     LabelValue ws, 10, "Output Folder", NR_OUTFOLDER, ""
+    LabelValue ws, 11, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
 
     ' State dropdown (F8).
     With ws.Range("B9").Validation
@@ -217,9 +218,13 @@ Private Sub BuildSetup()
 
     AddButton ws, ws.Range("D10").Left, ws.Range("B10").Top - 2, 150, 22, "Browse for folder...", "SelectOutputFolder"
 
-    ws.Range("A12").Value = "Only Michigan's road-class layer is wired in V1. Other states still run the ACUB check."
-    ws.Range("A12").Font.Italic = True
-    ws.Range("A12").Font.Color = RGB(90, 90, 90)
+    ws.Range("A13").Value = "Only Michigan's road-class layer is wired in V1. Other states still run the ACUB check."
+    ws.Range("A13").Font.Italic = True
+    ws.Range("A13").Font.Color = RGB(90, 90, 90)
+    ws.Range("A14").Value = "AGOL Webmap URL is optional. Paste a https://www.arcgis.com/apps/mapviewer/...?webmap=<id> URL " & _
+        "(or your org's equivalent) to enable the AGOL Map column and the Send-to-AGOL button."
+    ws.Range("A14").Font.Italic = True
+    ws.Range("A14").Font.Color = RGB(90, 90, 90)
     ws.Tab.Color = RGB(70, 130, 180)
 End Sub
 
@@ -289,7 +294,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_BING) = "Bing"
     h(COL_FEMAVIEW) = "FEMA Viewer"
     h(COL_FIRMPORTAL) = "FIRMette Portal"
-    h(COL_NFCMAP) = "Open in NFC/ACUB Map"
+    h(COL_NFCMAP) = "MDOT NFC Map"
     h(COL_CLASS) = "FHWA Class"
     h(COL_URBANRURAL) = "Urban/Rural"
     h(COL_ACUBNAME) = "ACUB Name"
@@ -297,11 +302,20 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_ELIGIBILITY) = "Eligibility"
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
+    h(COL_AGOLMAP) = "AGOL Map"
 
     Dim c As Long
     For c = 1 To COL_LAST
         ws.Cells(SITES_HEADER_ROW, c).Value = h(c)
     Next c
+End Sub
+
+' Re-apply every link formula on the Sites sheet. Called by BuildWorkbook as
+' part of the initial build, and exposed as a Public sub so automation
+' hosts and the in-Excel "Build / Reset Workbook" path can restore the
+' link columns after a clear without redoing the whole sheet build.
+Public Sub RefreshSitesFormulas()
+    FillSitesFormulas SitesSheet()
 End Sub
 
 ' Hyperlink columns are pure formulas off lat/lon (zero macro cost). Assigning
@@ -318,10 +332,33 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     SetLinkFormula ws, COL_BING, r1, r2, URL_BING, "Bing", latC, lonC
     SetLinkFormula ws, COL_FEMAVIEW, r1, r2, URL_FEMAVIEW, "FEMA", latC, lonC
     SetLinkFormula ws, COL_FIRMPORTAL, r1, r2, URL_FIRMPORTAL, "FIRMette", latC, lonC
-    ' Per-row "Open in map" (F11). MI uses the NFC Experience app; the marker
-    ' deep-link param is still TBD, so this opens the app for the inspector to
-    ' centre. Gated on coordinates so empty rows stay blank.
-    SetLinkFormula ws, COL_NFCMAP, r1, r2, URL_NFC_EXPERIENCE, "Open", latC, lonC, True
+    ' Per-row "Open in map" (F11). Now points at the ArcGIS Online Map
+    ' Viewer with the MDOT NFC FeatureServer side-loaded via the `url=`
+    ' query param — bypasses the Experience app popup the inspector
+    ' previously had to dismiss before they could see their point.
+    SetLinkFormula ws, COL_NFCMAP, r1, r2, URL_NFC_MAPVIEW, "Open", latC, lonC, True
+    ' The AGOL Map column is driven by the inspector's own webmap URL
+    ' on Setup. The formula handles all three "blank" states (no URL
+    ' set, missing coords) and stitches center/level/marker query
+    ' params onto whatever URL was pasted.
+    SetAgolMapFormula ws, r1, r2, latC, lonC
+End Sub
+
+' The AGOL formula is bespoke enough (depends on the dynamic Setup URL,
+' picks ? vs & based on whether the URL already has query params) that
+' it doesn't fit SetLinkFormula. Built as its own helper.
+Private Sub SetAgolMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
+        ByVal latC As String, ByVal lonC As String)
+    Dim sep As String, urlExpr As String, f As String
+    ' If the user's pasted URL already contains "?", join with "&", else with "?".
+    sep = "IF(ISNUMBER(FIND(""?""," & NR_AGOLMAP & ")),""&"",""?"")"
+    urlExpr = NR_AGOLMAP & "&" & sep & _
+        "&""center=""&" & lonC & "&"",""&" & latC & _
+        "&""&level=16&marker=""&" & lonC & "&"",""&" & latC
+    ' Blank cell when either the AGOL URL isn't set OR the row has no coords.
+    f = "=IF(OR(" & NR_AGOLMAP & "="""", " & latC & "="""", " & lonC & "=""""),""""," & _
+        "HYPERLINK(" & urlExpr & ",""Open""))"
+    ws.Range(ws.Cells(r1, COL_AGOLMAP), ws.Cells(r2, COL_AGOLMAP)).Formula = f
 End Sub
 
 Private Sub SetLinkFormula(ByVal ws As Worksheet, ByVal col As Long, ByVal r1 As Long, ByVal r2 As Long, _
@@ -379,6 +416,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_GEOCODE).ColumnWidth = 16
     ws.Columns(COL_FIRMSTATUS).ColumnWidth = 18
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
+    ws.Columns(COL_AGOLMAP).ColumnWidth = 10
 
     ' Red highlight when Eligibility says INELIGIBLE (eligibility rule, F7).
     eligCol = "$" & ColLetter(COL_ELIGIBILITY) & SITES_FIRST_DATA_ROW
@@ -439,6 +477,7 @@ Private Sub BuildMapsSheet()
     AddButton ws, 218, 180, 190, 32, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN
     AddButton ws, 18, 220, 190, 32, "Export Sites to KML", "ExportSitesToKML", CLR_BTN
     AddButton ws, 218, 220, 190, 32, "Export Sites Table (CSV)", "ExportSitesCsv", CLR_BTN
+    AddButton ws, 18, 260, 390, 32, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap", CLR_BTN
     ws.Tab.Color = RGB(184, 134, 11)
 End Sub
 

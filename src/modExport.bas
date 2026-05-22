@@ -10,7 +10,7 @@ Public Sub ExportSitesCsv()
     Set ws = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
-        MsgBox "No site rows to export.", vbInformation, "Export CSV"
+        If Not gHeadless Then MsgBox "No site rows to export.", vbInformation, "Export CSV"
         Exit Sub
     End If
 
@@ -34,16 +34,16 @@ Public Sub ExportSitesCsv()
     Dim folder As String, file As String
     folder = ResolveOutputFolder()
     If Not EnsureFolderExists(folder) Then
-        MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export CSV"
+        If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export CSV"
         Exit Sub
     End If
     file = folder & "RoadReviewer Sites.csv"
 
     If Not WriteCsvFile(file, csv) Then
-        MsgBox "Could not write the CSV (is it open in another program?).", vbExclamation, "Export CSV"
+        If Not gHeadless Then MsgBox "Could not write the CSV (is it open in another program?).", vbExclamation, "Export CSV"
         Exit Sub
     End If
-    MsgBox "Exported the Sites table to:" & vbCrLf & file, vbInformation, "Export CSV"
+    If Not gHeadless Then MsgBox "Exported the Sites table to:" & vbCrLf & file, vbInformation, "Export CSV"
 End Sub
 
 ' For hyperlink-formula columns, export the resolved URL rather than "Map".
@@ -54,14 +54,30 @@ Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Lon
         Case COL_BING: CellText = BuildUrl(URL_BING, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FEMAVIEW: CellText = BuildUrl(URL_FEMAVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FIRMPORTAL: CellText = BuildUrl(URL_FIRMPORTAL, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
-        Case COL_NFCMAP: CellText = URL_NFC_EXPERIENCE
+        Case COL_NFCMAP: CellText = BuildUrl(URL_NFC_MAPVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
+        Case COL_AGOLMAP: CellText = AgolUrlForRow(ws, r)
         Case Else: CellText = CStr(ws.Cells(r, c).Value)
     End Select
     ' Blank the link columns when the row has no coordinates.
     Select Case c
-        Case COL_GMAP, COL_STREETVIEW, COL_BING, COL_FEMAVIEW, COL_FIRMPORTAL
+        Case COL_GMAP, COL_STREETVIEW, COL_BING, COL_FEMAVIEW, COL_FIRMPORTAL, COL_NFCMAP, COL_AGOLMAP
             If Not HasValidCoords(ws, r) Then CellText = ""
     End Select
+End Function
+
+' Resolve the inspector's pasted AGOL webmap URL into a per-row deep-link
+' that centers the map on this row's coords. Matches the cell formula
+' generated in SetAgolMapFormula. Returns "" when NR_AGOLMAP is blank.
+Private Function AgolUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
+    Dim base As String, sep As String, lat As String, lon As String
+    base = SetupValue(NR_AGOLMAP)
+    If Len(base) = 0 Then Exit Function
+    If Not HasValidCoords(ws, r) Then Exit Function
+    sep = IIf(InStr(base, "?") > 0, "&", "?")
+    lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
+    lon = InvariantNum(ws.Cells(r, COL_LON).Value)
+    AgolUrlForRow = base & sep & "center=" & lon & "," & lat & _
+        "&level=16&marker=" & lon & "," & lat
 End Function
 
 Private Function CsvField(ByVal s As String) As String

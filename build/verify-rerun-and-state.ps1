@@ -26,6 +26,7 @@ try {
 
   Write-Host "Clearing rows..."
   $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_state_trace.txt')) | Out-Null
 
@@ -55,6 +56,7 @@ try {
   # Clear + plant: row 2 has a stale "Failed - simulated" mark (should retry);
   # row 3 has a previous OK Classify (should NOT change).
   $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(2, 4).Value2 = 'Failed row (will retry)'
   $sites.Cells(2, 6).Value2 = [double]42.28536
   $sites.Cells(2, 7).Value2 = [double]-85.57025
@@ -86,6 +88,7 @@ try {
 
   # Cleanup
   $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null
   $excel.Run('SetTrace', '') | Out-Null

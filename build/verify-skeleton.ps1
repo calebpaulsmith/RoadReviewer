@@ -65,14 +65,14 @@ try {
   }
 
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
-  $expectedNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobState','JobOutputFolder')
+  $expectedNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobState','JobOutputFolder','JobAgolMap')
   foreach ($n in $expectedNames) {
     try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
   }
 
   Write-Host "=== Sites headers ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')
-  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','Open in NFC/ACUB Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Eligibility','FIRMette Status','Map Status')
+  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Eligibility','FIRMette Status','Map Status','AGOL Map')
   for ($c = 1; $c -le $expectedHeaders.Count; $c++) {
     $got = [string]$sites.Cells(1,$c).Value2
     $want = $expectedHeaders[$c-1]
@@ -90,7 +90,7 @@ try {
   $sites.Cells(2, 7).Value = -85.57025             # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 11='Google Maps'; 12='Street View'; 13='Bing'; 14='FEMA Viewer'; 15='FIRMette Portal'; 16='Open in NFC/ACUB Map' }
+  $linkCols = @{ 11='Google Maps'; 12='Street View'; 13='Bing'; 14='FEMA Viewer'; 15='FIRMette Portal'; 16='MDOT NFC Map' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells(2, $k)
     $f = [string]$cell.Formula

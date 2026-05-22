@@ -31,6 +31,7 @@ try {
 
   Write-Host "Clearing any prior test rows (2..10)..."
   $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   Write-Host "Writing test rows..."
   foreach ($t in $tests) {
@@ -95,6 +96,7 @@ try {
 
   # Cleanup the test data so the saved file stays empty for the user.
   $sites.Range($sites.Cells(2,1), $sites.Cells(10, 23)).ClearContents()
+  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Save()
   $wb.Close($true)
 

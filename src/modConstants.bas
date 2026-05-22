@@ -25,6 +25,10 @@ Public Const NR_DISASTER As String = "JobDisaster"
 Public Const NR_APPLICANT As String = "JobApplicant"
 Public Const NR_STATE As String = "JobState"
 Public Const NR_OUTFOLDER As String = "JobOutputFolder"
+' Optional — when the inspector pastes an ArcGIS Online webmap URL here,
+' the Sites table's "AGOL Map" column (COL_AGOLMAP) produces per-row
+' deep-links that open the webmap centered on the row's coordinates.
+Public Const NR_AGOLMAP As String = "JobAgolMap"
 
 ' ---- Sites table geometry ----
 Public Const SITES_HEADER_ROW As Long = 1
@@ -55,7 +59,11 @@ Public Const COL_ROADNAME As Long = 20
 Public Const COL_ELIGIBILITY As Long = 21
 Public Const COL_FIRMSTATUS As Long = 22
 Public Const COL_MAPSTATUS As Long = 23
-Public Const COL_LAST As Long = 23
+' Per-row deep-link into the inspector's own AGOL webmap (Setup NR_AGOLMAP).
+' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
+' nobody has wired up an AGOL map.
+Public Const COL_AGOLMAP As Long = 24
+Public Const COL_LAST As Long = 24
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
 Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"
@@ -63,7 +71,12 @@ Public Const URL_STREETVIEW As String = "https://www.google.com/maps?q&layer=c&c
 Public Const URL_BING As String = "https://www.bing.com/maps?cp={LAT}~{LON}&lvl=18&style=h"
 Public Const URL_FEMAVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?latitude={LAT}&longitude={LON}"
-Public Const URL_NFC_EXPERIENCE As String = "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce/page/NFC%2C-NHS-%26-ACUB"
+' Open the FEMA-hosted NFC/ACUB webmap (item 6a1702b9147243d1a5ee62cd614bc681)
+' in ArcGIS Online Map Viewer, centered + markered on the row's point.
+' The previous link pointed at the MDOT Experience app, whose popup chrome
+' blocked the inspector from clicking through to the actual damage point;
+' the FEMA webmap is the same data without the experience's UI wrapper.
+Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
 
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"

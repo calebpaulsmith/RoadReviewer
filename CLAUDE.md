@@ -964,6 +964,37 @@ a MsgBox; verifier scripts set it via `Application.Run "SetHeadless",
 $true` before kicking off work. Cell + StatusBar state stay so
 results are still observable when headless.
 
+### 9.3a AGOL Map column + Send-to-AGOL workflow
+
+The Sites table has **two** ArcGIS Online links per row:
+
+1. **MDOT NFC Map** (col 16) — hard-coded to open the FEMA-hosted
+   NFC/ACUB webmap (`webmap=6a1702b9147243d1a5ee62cd614bc681` on
+   `fema.maps.arcgis.com`) centered + markered on the row's coords. The
+   previous URL pointed at the MDOT Experience app, whose popup chrome
+   blocked the inspector from clicking through to the actual damage
+   point. Same underlying data, no UI wrapper.
+
+2. **AGOL Map** (col 24) — driven by Setup's `JobAgolMap` cell
+   (`Setup!$B$11`). When the inspector pastes their own AGOL webmap
+   URL there, every Sites row gets a hyperlink that opens that webmap
+   centered + markered on the row. Empty cell when Setup is blank, so
+   the column is unobtrusive when nobody has wired it up.
+
+The URL-stitching formula auto-detects whether the pasted URL already
+has a `?` (most AGOL share URLs do, e.g.
+`https://www.arcgis.com/apps/mapviewer/index.html?webmap=<id>`) and
+uses `&` or `?` accordingly.
+
+To push the *whole site set* into the inspector's AGOL webmap, the
+Maps sheet has a **Send Sites to AGOL Map (KML + open webmap)**
+button. It writes `RoadReviewer Sites.kml` into the output folder,
+opens the AGOL webmap in the default browser, and pops Explorer with
+the KML highlighted so it's a single drag-drop into the Map Viewer
+window. AGOL ingests the KML as a hosted-feature layer. (V2 could
+push directly via the AGOL REST API, but that needs auth and is
+out of V1 scope per §3.3.)
+
 ### 9.4 Excel / COM / PowerShell quirks
 
 **The repo's `build\` folder AND the repo root have `Everyone Deny

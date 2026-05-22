@@ -541,12 +541,60 @@ End Sub
 ' ---- KML export (F10) -----------------------------------------------------
 
 Public Sub ExportSitesToKML()
+    Dim file As String, n As Long, dialogTitle As String
+    dialogTitle = "Export KML"
+    If Not WriteSitesKml(file, n, dialogTitle) Then Exit Sub
+    If Not gHeadless Then
+        Dim q As String: q = Chr$(34)
+        Shell "cmd /c start " & q & q & " " & q & file & q, vbNormalFocus
+        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file, vbInformation, dialogTitle
+    End If
+End Sub
+
+' Build the Sites KML and open the inspector's AGOL webmap so they can
+' drag the file onto it (AGOL Map Viewer's "Add Layer from File" pattern).
+' Requires NR_AGOLMAP to be set on Setup.
+Public Sub SendSitesToAgolMap()
+    Dim agol As String: agol = SetupValue(NR_AGOLMAP)
+    If Len(agol) = 0 Then
+        If Not gHeadless Then MsgBox _
+            "No AGOL Webmap URL set. Paste your map's URL on the Setup sheet " & _
+            "first, then click this again.", vbExclamation, "Send to AGOL Map"
+        Exit Sub
+    End If
+
+    Dim file As String, n As Long, dialogTitle As String
+    dialogTitle = "Send to AGOL Map"
+    If Not WriteSitesKml(file, n, dialogTitle) Then Exit Sub
+
+    If Not gHeadless Then
+        ' Open the inspector's AGOL webmap in their default browser.
+        On Error Resume Next
+        ThisWorkbook.FollowHyperlink Address:=agol, NewWindow:=False
+        On Error GoTo 0
+        ' And open Explorer at the KML's folder so it's a single drag-drop
+        ' onto the AGOL Map Viewer window.
+        Dim q As String: q = Chr$(34)
+        Shell "explorer.exe /select," & q & file & q, vbNormalFocus
+        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & vbCrLf & _
+            "Your AGOL webmap should now be open in the browser." & vbCrLf & _
+            "Drag the highlighted KML file from Explorer onto the Map Viewer window" & vbCrLf & _
+            "to add the sites as a new layer.", _
+            vbInformation, dialogTitle
+    End If
+End Sub
+
+' Shared KML builder: writes the file to the resolved output folder, sets
+' filePath + featureCount on success, returns False on any failure (with a
+' MsgBox already shown if gHeadless is False).
+Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As Long, _
+        ByVal dialogTitle As String) As Boolean
     Dim ws As Worksheet, last As Long, r As Long, kml As String, n As Long
     Set ws = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
-        If Not gHeadless Then MsgBox "No site rows to export.", vbInformation, "Export KML"
-        Exit Sub
+        If Not gHeadless Then MsgBox "No site rows to export.", vbInformation, dialogTitle
+        Exit Function
     End If
 
     kml = "<?xml version=""1.0"" encoding=""UTF-8""?>" & vbCrLf & _
@@ -561,29 +609,27 @@ Public Sub ExportSitesToKML()
     kml = kml & "</Document></kml>"
 
     If n = 0 Then
-        If Not gHeadless Then MsgBox "No rows have valid coordinates to export.", vbInformation, "Export KML"
-        Exit Sub
+        If Not gHeadless Then MsgBox "No rows have valid coordinates to export.", vbInformation, dialogTitle
+        Exit Function
     End If
 
     Dim folder As String, file As String
     folder = ResolveOutputFolder()
     If Not EnsureFolderExists(folder) Then
-        If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export KML"
-        Exit Sub
+        If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, dialogTitle
+        Exit Function
     End If
     file = folder & "RoadReviewer Sites.kml"
 
     If Not WriteTextFile(file, kml) Then
-        If Not gHeadless Then MsgBox "Could not write the KML file.", vbExclamation, "Export KML"
-        Exit Sub
+        If Not gHeadless Then MsgBox "Could not write the KML file.", vbExclamation, dialogTitle
+        Exit Function
     End If
 
-    If Not gHeadless Then
-        Dim q As String: q = Chr$(34)
-        Shell "cmd /c start " & q & q & " " & q & file & q, vbNormalFocus
-        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file, vbInformation, "Export KML"
-    End If
-End Sub
+    filePath = file
+    featureCount = n
+    WriteSitesKml = True
+End Function
 
 Private Function PlacemarkXml(ByVal ws As Worksheet, ByVal r As Long) As String
     Dim nm As String, desc As String, lat As String, lon As String
