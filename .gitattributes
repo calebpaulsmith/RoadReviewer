@@ -1,0 +1,18 @@
+# Office binary formats — never let autocrlf or any text filter touch
+# these. Git can autodetect most binaries but Windows/macOS clients
+# occasionally disagree, and a single CRLF substitution in the middle
+# of an .xlsm ZIP stream corrupts the whole workbook.
+*.xlsm binary
+*.xlsx binary
+*.xlsb binary
+*.xltm binary
+*.xltx binary
+*.xls  binary
+
+# PDF too — same logic.
+*.pdf  binary
+
+# Keep PowerShell + .bas as text so diffs are sane.
+*.ps1  text
+*.bas  text
+*.md   text
