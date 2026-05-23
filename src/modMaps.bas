@@ -607,13 +607,12 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As L
     kml = "<?xml version=""1.0"" encoding=""UTF-8""?>" & vbCrLf & _
         "<kml xmlns=""http://www.opengis.net/kml/2.2""><Document>" & vbCrLf & _
         "<name>RoadReviewer Sites</name>" & vbCrLf & _
+        "<open>1</open>" & vbCrLf & _
         KmlPinStyles()
-    For r = SITES_FIRST_DATA_ROW To last
-        If HasValidCoords(ws, r) Then
-            kml = kml & PlacemarkXml(ws, r)
-            n = n + 1
-        End If
-    Next r
+    ' Bucket rows by Category into <Folder> elements so the inspector can
+    ' expand / collapse by category in Google Earth's left-side tree (and
+    ' AGOL Map Viewer's contents panel when the KML is loaded as a layer).
+    kml = kml & BuildCategoryFolders(ws, last, n)
     kml = kml & "</Document></kml>"
 
     If n = 0 Then
@@ -639,26 +638,71 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As L
     WriteSitesKml = True
 End Function
 
+' Walk the Sites table twice:
+'   pass 1 — collect every unique Category value (trimmed, case-preserved
+'            but case-insensitive grouping) into the order it first
+'            appears, so the folder list is predictable
+'   pass 2 — for each Category bucket, emit a <Folder> with all its rows
+' Rows with a blank Category fall into a "(no category)" folder so they
+' aren't lost. Updates featureCount with the number of placemarks emitted.
+Private Function BuildCategoryFolders(ByVal ws As Worksheet, ByVal last As Long, _
+        ByRef featureCount As Long) As String
+    Dim r As Long, cat As String, key As String
+    Dim order As Object, rows As Object   ' Scripting.Dictionary
+    Set order = CreateObject("Scripting.Dictionary")    ' key -> display label
+    Set rows = CreateObject("Scripting.Dictionary")     ' key -> "|row1|row2|..."
+
+    For r = SITES_FIRST_DATA_ROW To last
+        If HasValidCoords(ws, r) Then
+            cat = Trim$(CStr(ws.Cells(r, COL_CATEGORY).Value))
+            If Len(cat) = 0 Then
+                key = "__nocat__"
+                If Not order.Exists(key) Then order.Add key, "(no category)"
+            Else
+                key = LCase$(cat)
+                If Not order.Exists(key) Then order.Add key, "Category " & cat
+            End If
+            If Not rows.Exists(key) Then rows.Add key, ""
+            rows(key) = rows(key) & "|" & r
+        End If
+    Next r
+
+    Dim out As String, k As Variant, parts() As String, p As Variant
+    For Each k In order.Keys
+        out = out & "<Folder><name>" & XmlEscape(CStr(order(k))) & "</name>" & _
+            "<open>1</open>" & vbCrLf
+        parts = Split(Mid$(CStr(rows(k)), 2), "|")  ' drop leading | then split
+        For Each p In parts
+            out = out & PlacemarkXml(ws, CLng(p))
+            featureCount = featureCount + 1
+        Next p
+        out = out & "</Folder>" & vbCrLf
+    Next k
+    BuildCategoryFolders = out
+End Function
+
 ' KML style block. Three named styles for the three Federal Aid Status
 ' buckets the classifier produces. Rows that haven't been classified
-' (blank Federal Aid Status cell) get no styleUrl and render as the
-' default pushpin.
+' (blank Federal Aid Status cell) fall back to the "review" style so the
+' inspector can still see them on the map as something-to-look-at.
+' Colors are KML's ABGR hex (alpha-blue-green-red, NOT RGBA).
 Private Function KmlPinStyles() As String
     KmlPinStyles = _
         "<Style id=""fedAid""><IconStyle><color>ff0000ff</color>" & _
         "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>" & vbCrLf & _
         "<Style id=""nonFedAid""><IconStyle><color>ff00ff00</color>" & _
         "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>" & vbCrLf & _
-        "<Style id=""review""><IconStyle><color>ff00ffff</color>" & _
-        "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon></IconStyle></Style>" & vbCrLf
+        "<Style id=""review""><IconStyle><color>ffffffff</color>" & _
+        "<Icon><href>http://maps.google.com/mapfiles/kml/paddle/ltblu-circle.png</href></Icon></IconStyle></Style>" & vbCrLf
 End Function
 
 ' Map the Federal Aid Status cell text to one of the style ids defined
-' in KmlPinStyles. Blank / Failed / out-of-state rows fall through to
-' default (no styleUrl emitted, default pushpin renders).
+' in KmlPinStyles. Blank / Failed / out-of-state rows fall back to
+' "review" (light blue) so unclassified points still show on the map
+' as something the inspector should look at.
 Private Function PinStyleId(ByVal status As String) As String
     Dim s As String: s = LCase$(Trim$(status))
-    If Len(s) = 0 Then Exit Function
+    If Len(s) = 0 Then PinStyleId = "review": Exit Function
     If Left$(s, 15) = "non-federal aid" Then PinStyleId = "nonFedAid": Exit Function
     If Left$(s, 11) = "federal aid" Then PinStyleId = "fedAid": Exit Function
     If Left$(s, 6) = "review" Then PinStyleId = "review": Exit Function
