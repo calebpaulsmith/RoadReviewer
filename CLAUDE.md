@@ -966,6 +966,56 @@ loop in §9.1/§9.2, same as every other capability in this table. Run
 `verify-classify.ps1` (now covers all three wired states, §9.2) before
 trusting IN/WI output on a real WO.
 
+**Increment 4 — federal-aid verdict audit, three bugs fixed in
+`modClassify.bas`.** Prompted by a previously-observed field issue: a site
+point sitting just outside an ACUB polygon (e.g. on the wrong side of a
+road that itself touches the urban boundary) got flagged Rural instead of
+Urban. Root-caused and fixed, plus two more bugs found auditing
+`FederalAidVerdict`/`PrefixedClass` against the §4.2 eligibility table
+while in there:
+
+1. **ACUB boundary buffer decoupled from the road-search buffer, with a
+   200 ft floor (`AcubBufferFeet`/`ACUB_MIN_BUFFER_FEET`).** The ACUB
+   point-in-polygon check already fell back to a buffered search when the
+   exact point missed (`QueryWithFallback`), which is what makes the edge
+   case survivable at all — but it reused `JobBufferFeet`, the same knob
+   Setup's help text says to *narrow* "for dense urban grids" to get more
+   precise road matching. Narrowing it for that purpose silently
+   shrank the urban-boundary tolerance too, reopening the exact bug
+   above. Now `QueryWithFallback` takes an explicit fallback distance per
+   call site; ACUB always gets `Max(JobBufferFeet, 200 ft)` while road
+   queries keep using the raw `JobBufferFeet` as before.
+2. **Rural Minor Collector mislabeled "...Rural Local".** `FederalAidVerdict`
+   correctly withheld the federal-aid flag for a rural class-6 segment (no
+   behavior bug in the flag itself), but the `Else` branch that builds the
+   display string unconditionally appended "Local" regardless of which
+   class was actually found — so the Federal Aid Status column read
+   "Non-federal aid - Rural Local" for a road the FHWA Class column (right
+   next to it) correctly labeled "Minor Collector". Never caught because
+   no test coordinate exercised a rural class-6 segment. Fixed: a
+   dedicated `hasRuralMinorCollector` branch now outputs "Non-federal aid
+   - Rural Minor Collector", matching the eligibility table this code was
+   always supposed to implement.
+3. **Codes 1-3 (Interstate/Freeway/Other Principal Arterial) weren't
+   Urban/Rural-prefixed** the way codes 4-6 were, even though the §4.2
+   table's "Federal aid - <Urban/Rural class>" format implies every
+   federal-aid class gets the prefix. `PrefixedClass` simplified to
+   always prefix + reuse `FunctionalSystemLabel`, which was already
+   returning byte-identical text for 4-6 (`"Minor Arterial"`, `"Major
+   Collector"`, `"Minor Collector"`) — so this is a pure fix, not a
+   behavior change, for the classes that were already correct.
+
+Two live-verified WI coordinates were added to `verify-classify.ps1`
+(rows 9-10) as regression tests for fixes #2 and #3: STH 52 near
+Rhinelander (`45.169879, -89.102452`, FED_FC_CD=6/Rural, confirmed clean
+of any other class within 200 ft and outside every ACUB polygon) must
+read exactly "Non-federal aid - Rural Minor Collector", and I-94 through
+Eau Claire (`44.764850, -91.406533`, FED_FC_CD=1, inside the "Eau Claire,
+WI" ACUB) must read exactly "Federal aid - Urban Interstate". Fix #1 (the
+ACUB buffer floor) doesn't have an automated regression test - it only
+matters when `JobBufferFeet` is manually narrowed below 200 ft, which
+none of the verifiers configure.
+
 | Capability | Module | Status |
 |---|---|---|
 | Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | **tested** (§5.2 — verify-skeleton.ps1) |
