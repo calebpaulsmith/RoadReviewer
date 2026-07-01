@@ -105,6 +105,23 @@ Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/service
 Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353"
 Public Const REST_MDOT_ROUTE As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"
 Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"
+
+' Indiana NFC (§4.2a). LRSE_Functional_Class carries the bare FHWA 1-7 code
+' (field functional_class) with no urban/rural embedded - same shape as MDOT
+' 353. Road name is NOT on this layer (no shared LRS join key), so it's a
+' separate point-intersect query against the statewide centerline layer.
+Public Const REST_IN_NFC As String = "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22"
+Public Const REST_IN_ROADNAME As String = "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15"
+
+' Wisconsin NFC (§4.2b) - two layers, queried in sequence. The State Trunk
+' Network (interstates/state highways) carries a bare FHWA 1-7 code
+' (FED_FC_CD, string) plus its own separate URB_TYPE field (unused - ACUB
+' stays the single urban/rural source of truth per §4.2). When no state-trunk
+' segment intersects, fall back to the Local Road Network snapshot, whose
+' FNCT_CLS_CTGY_TYCD field encodes urban/rural INTO the class code and needs
+' WisconsinLocalCategoryToFhwa() below to normalize back to bare FHWA 1-7.
+Public Const REST_WI_STATE_TRUNK As String = "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3"
+Public Const REST_WI_LOCAL_ROADS As String = "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1"
 Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 ' U.S. Census Bureau TIGERweb — Local Roads (full detail layer 8 of the
 ' Transportation MapServer). Returns the NAME field for any street whose
@@ -116,7 +133,7 @@ Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgi
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-' ---- State selector (F8). Only MI's NFC layer is wired in V1. ----
+' ---- State selector (F8). MI/IN/WI NFC layers are wired in V1; MN/IL/OH are placeholders. ----
 Public Const STATE_LIST As String = "WI,IN,MI,MN,IL,OH"
 
 ' ---- Status-prefix used by the "re-run failed rows" feature (F12). ----
@@ -137,8 +154,14 @@ Public Const MAP_PAGE_WIDTH_PTS As Double = 792
 Public Const MAP_TEXTBOX_WIDTH As Double = 230
 Public Const MAP_TEXTBOX_HEIGHT As Double = 80
 
-' Returns the FHWA functional-class label for an MDOT FunctionalSystem code
-' (layer 353 coded-value domain LrseFunctionalSystem, §4.2).
+' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
+' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,
+' dFunctionalClass domain) and Wisconsin (FED_FC_CD, plus the local-roads
+' layer once normalized by WisconsinLocalCategoryToFhwa) all share this same
+' numeric FHWA standard, so one label table covers all three wired states
+' (§4.2). Code 0 only comes out of Michigan's domain ("Non-Certified
+' Roadway") or an unrecognized Wisconsin local-road category - both fall
+' into FederalAidVerdict's "review manually" bucket rather than a verdict.
 Public Function FunctionalSystemLabel(ByVal code As Long) As String
     Select Case code
         Case 0: FunctionalSystemLabel = "Non-Certified Roadway"
@@ -150,5 +173,30 @@ Public Function FunctionalSystemLabel(ByVal code As Long) As String
         Case 6: FunctionalSystemLabel = "Minor Collector"
         Case 7: FunctionalSystemLabel = "Local"
         Case Else: FunctionalSystemLabel = "Unknown (" & code & ")"
+    End Select
+End Function
+
+' Wisconsin's local-roads layer (REST_WI_LOCAL_ROADS) encodes urban/rural
+' directly into FNCT_CLS_CTGY_TYCD instead of carrying a bare FHWA code
+' (confirmed live via the layer's renderer uniqueValueInfos, §4.2b):
+'   10 Rural Principal Arterial   60 Urban Principal Arterial
+'   20 Rural Minor Arterial       86 Urban Minor Arterial Other
+'   30 Rural Major Collector      96 Urban Collector Other
+'   40 Rural Minor Collector
+'   45 Rural Local                97 Urban Local
+' "Urban Collector Other" (96) doesn't distinguish major vs minor collector.
+' That split only changes the federal-aid verdict for RURAL collectors (rural
+' major = federal aid, rural minor = not) - every *urban* collector is federal
+' aid regardless of major/minor, so mapping 96 to Major Collector (5) is safe
+' either way. ACUB (not this field) remains the source of truth for the
+' Urban/Rural column; the rural/urban half of each code is discarded here.
+Public Function WisconsinLocalCategoryToFhwa(ByVal categoryCode As Long) As Long
+    Select Case categoryCode
+        Case 10, 60: WisconsinLocalCategoryToFhwa = 3    ' Principal Arterial
+        Case 20, 86: WisconsinLocalCategoryToFhwa = 4    ' Minor Arterial
+        Case 30, 96: WisconsinLocalCategoryToFhwa = 5    ' Major Collector (96 = Urban Collector, major/minor unresolved)
+        Case 40: WisconsinLocalCategoryToFhwa = 6         ' Rural Minor Collector
+        Case 45, 97: WisconsinLocalCategoryToFhwa = 7     ' Local
+        Case Else: WisconsinLocalCategoryToFhwa = 0       ' unrecognized - flagged for manual review
     End Select
 End Function

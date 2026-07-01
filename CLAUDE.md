@@ -247,9 +247,11 @@ hand-rolled JSON parsing.
   Geocoder — free, no auth, US-only) that fills lat/lon on the row. A
   Geocode Status column shows pass/fail per row. *Lat/lon already in the
   row is never overwritten by the geocoder.*
-- **F5. Michigan-only road classification in V1.** Hard-code MDOT NFC
-  layer for class + road name. WI / IN / MN / IL / OH are placeholders.
-  *(See* [§4 Data sources](#4-data-sources) *.)*
+- **F5. Michigan, Indiana and Wisconsin road classification in V1.**
+  Hard-code each state's own NFC layer(s) for class + road name (MDOT for
+  MI, INDOT/IndianaMap for IN, WisDOT for WI — WI queries a state-trunk
+  layer first and falls back to a local-roads layer). MN / IL / OH are
+  still placeholders. *(See* [§4 Data sources](#4-data-sources) *.)*
 - **F6. ACUB is nationwide.** Use the user-provided AGOL nationwide ACUB
   feature service for all six Region V states (see §4.2). One lookup
   call per row, regardless of state.
@@ -279,10 +281,10 @@ hand-rolled JSON parsing.
     Cat F (Public Utilities), and Cat G (Parks/Rec/Other) sometimes
     also touching federal-aid routes.
 - **F8. State selector.** Setup sheet has a State dropdown with WI / IN
-  / MI / MN / IL / OH. Only MI's NFC layer is wired in V1; selecting
-  another state pops a "NFC lookup not yet wired for {state} — ACUB
-  still runs" message and the workflow continues with the ACUB-only
-  check.
+  / MI / MN / IL / OH. MI, IN and WI's NFC layers are wired in V1;
+  selecting MN, IL or OH pops a "NFC lookup not yet wired for {state} —
+  ACUB still runs" message and the workflow continues with the
+  ACUB-only check.
 - **F9. NHS column.** Dropped from V1 per user direction. Re-add if
   needed in a later version.
 - **F10. Single export across all points.** Provide:
@@ -328,7 +330,7 @@ hand-rolled JSON parsing.
 
 ### 3.3 Out of scope for V1
 
-- WI / IN / MN / IL / OH road-classification queries.
+- MN / IL / OH road-classification queries.
 - Address geocoding *(see open question — may move into V1)*.
 - Route-optimization integration (V2).
 - Embedding ArcGIS-native widgets in Excel.
@@ -584,6 +586,213 @@ class-7 polyline that intersects an ACUB polygon is by definition
 is "a class-7 (Local) road inside an ACUB" — that's test case #2
 above.
 
+### 4.2a Indiana road classification (V1)
+
+Source: INDOT's public GIS platform at `gisdata.in.gov` (the "IndianaMap"
+hosted-services back end), confirmed live 2026-07-01.
+
+#### Layer `LRSE_Functional_Class` — the class code
+
+- URL: `https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22`
+- Type: `Feature Layer` (esriGeometryPolyline), spatial reference WKID
+  26916 (NAD83 UTM 16N). Hand it WGS84 with `inSR=4326`, same pattern as
+  MDOT.
+- displayField: `from_date`
+- Confirmed fields: `from_date`, `to_date` (Date), `event_id` (String),
+  `route_id` (String — LRS event key), `from_measure`/`to_measure`
+  (Double), `record_status` (SmallInteger), **`functional_class`**
+  (SmallInteger), `created_by`, `date_created`, `edited_by`,
+  `date_edited`, `locerror` (String), `objectid` (OID),
+  `date_attr_effective` (Date), `globalid` (GlobalID),
+  `SHAPE__Length`.
+- **`functional_class` coded-value domain (`dFunctionalClass`)** — same
+  structure and numbering as MDOT's `LrseFunctionalSystem` domain, no
+  urban/rural embedded:
+
+  | code | name |
+  |---|---|
+  | 1 | Interstate |
+  | 2 | Principal Arterial - Other Freeways/Expressways |
+  | 3 | Principal Arterial - Other |
+  | 4 | Minor Arterial |
+  | 5 | Major Collector |
+  | 6 | Minor Collector |
+  | 7 | Local |
+
+- **`record_status` coded-value domain (`dRecordCode`)** — Indiana's
+  analog to Michigan's `RHRetireDate IS NULL` filter:
+
+  | code | name |
+  |---|---|
+  | 0 | Work In Progress |
+  | 1 | Proposed |
+  | 2 | Withdrawn |
+  | 3 | Rejected |
+  | 4 | Accepted |
+  | 5 | Active |
+  | 6 | Replaced |
+  | 7 | Retired |
+
+  Production queries filter **`where=record_status=5`** (Active). All
+  live test points below returned status 5.
+
+#### Layer `Road_Centerlines_of_Indiana_2021` — road name (separate, un-keyed)
+
+- URL: `https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15`
+- Type: `Feature Layer` (esriGeometryPolyline), WKID 26916, displayField
+  `st_name`.
+- Confirmed fields: `st_name`, **`st_full`** (best display value, e.g.
+  `"MERIDIAN ST"` — this is what RoadReviewer reads), directional/type
+  modifier components, and a `roadclass` string field (returned null in
+  every sample — not reliable, not used).
+- **This layer is not LRS-keyed to `LRSE_Functional_Class`** — there is
+  no shared join field, unlike MDOT where 353/543 both key off
+  `PR`/`PRBmp`/`PREmp`. Road name is resolved via a fully separate
+  point-intersect query (same exact-point-then-150-ft-buffer pattern).
+  Indiana's functional-class layer carries no name field at all — not
+  even a trunkline-only one like MDOT 543 — so this comes back blank
+  more often than Michigan's Road Name column; Census TIGER (already
+  wired for every state) backs it up.
+
+#### UA / header quirks
+
+None observed. `gisdata.in.gov` answered plain `f=json` GET requests
+without a browser User-Agent (unlike `mdotgis.state.mi.us`). RoadReviewer
+sends the browser UA on every request regardless (`modHttp.HttpGetText`),
+which is harmless here.
+
+#### Confirmed test coordinates (verified live 2026-07-01)
+
+| # | Expected outcome | lat | lon | `functional_class` | `record_status` |
+|---|---|---|---|---|---|
+| 1 | Higher-class road | `39.7684` | `-86.1581` | `6` (Minor Collector), downtown Indianapolis / Monument Circle area, route_id `549095041900000R1` | `5` (Active) |
+| 2 | Higher-class road | `39.4234` | `-86.7628` | `3` (Principal Arterial - Other), near Martinsville, route_id `20000002310000001` | `5` (Active) |
+| 3 | Local road | `39.9876` | `-86.0128` | `7` (Local), rural Hancock County, route_id `52901903520000001` | `5` (Active) |
+
+### 4.2b Wisconsin road classification (V1)
+
+Source: two companion AGOL-hosted feature services owned by WisDOT
+(`services5.arcgis.com`, account `wisnipsvki_WisDOT`), both explicitly
+built for damage-assessment use — confirmed live 2026-07-01. Same
+hosting pattern as the nationwide NTAD ACUB layer (§4.2), not a
+state-hosted server like MDOT's — so no browser-UA workaround needed.
+
+Wisconsin is the only wired state that needs **two layers queried in
+sequence**: the State Trunk Network covers interstates/state highways
+with a clean bare FHWA code; the Local Road Network snapshot covers
+everything else (county/municipal/town roads) but encodes urban/rural
+into its own class code instead of carrying a bare FHWA number.
+
+#### Layer `FFCL_gdb/3` — State Trunk Network (primary; state highways/interstates)
+
+- URL: `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3`
+  ("Extract of the Functional Class - State Trunk Network for IDA
+  Application")
+- Type: `Feature Layer` (esriGeometryPolyline), spatial reference WKID
+  102100/3857 (Web Mercator). Hand it WGS84 with `inSR=4326`; the
+  service reprojects automatically.
+- Confirmed fields: `OBJECTID`, `FED_FUNC_CLS_ID`, `RWLK_ID`, `FC_CD`
+  (WisDOT's own internal code), `FC_ABBR_DESC`, `FC_DESC`,
+  `LAST_CHANGED_BY`, `LAST_CHANGED_ON`, **`FED_FC_CD`** (String — bare
+  FHWA class code, `"1"`–`"7"`), `URB_TYPE` (String: `"Urban"` /
+  `"Rural"` / null — **not used**; RoadReviewer keeps ACUB as the single
+  urban/rural source of truth for every state, per §4.2), `FED_FC_DESC`,
+  `FC_TYPE`, **`HWYTYPE`** (STH/USH/IH/OFF), **`HWYNUM`**, **`HWYDIR`**,
+  `SEGLEN`, `DIV_STATUS`, `FROM_OFFSET`, `TO_OFFSET`, `Shape__Length`.
+- **`FED_FC_CD` values (confirmed live via `returnDistinctValues=true`)**
+  — standard FHWA 1-7, identical numbering to Michigan and Indiana:
+
+  | FED_FC_CD | FED_FC_DESC |
+  |---|---|
+  | 1 | Principal Arterial - Interstate |
+  | 2 | Principal Arterial - Freeways and Expressways |
+  | 3 | Principal Arterial - Other |
+  | 4 | Minor Arterial |
+  | 5 | Major Collector |
+  | 6 | Minor Collector |
+  | 7 | Local |
+  | *(null)* | unclassified / off-network (ramps, etc.) |
+
+- Road name is built from `HWYTYPE` + `HWYNUM` + `HWYDIR` (e.g. `"STH 32
+  S"`, `"USH 18 E"`).
+- No retired-segment filter needed — this is described as a point-in-time
+  snapshot/extract service (no version/retire-date field in the schema),
+  unlike MDOT's editable production layer.
+
+#### Layer `WI_Local_Roads_Flood_Damage_Assessment_Snapshot/1` — Local Road Network (fallback; everything else)
+
+- URL: `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1`
+- Type: `Feature Layer` (esriGeometryPolyline). Same WISLR-derived ~90-field
+  schema as WisDOT's general-purpose `WISLR_Functional_Road_Classification`
+  hosted layer, filtered to the local-road network — state highways
+  return null functional-class fields here (confirmed at WIS 181 and
+  I-41), which is why the State Trunk layer above is tried first.
+- Relevant fields: **`ST_LABL_NM`** (road name — populated for local
+  streets, better coverage here than MDOT's trunkline-only layer 543),
+  `FNCT_CLS_TYCD` / **`FNCT_CLS_CTGY_TYCD`** (WisDOT's own class scheme —
+  see domain below), `FEDUA_TYCD` (3-digit urban-area code, `'000'` =
+  rural/no urban area, e.g. `'057'` = Milwaukee urban area — not used,
+  same ACUB-is-source-of-truth reasoning as `URB_TYPE` above),
+  `NHS_CLS_TYCD` (`'NHS'`/`'NON'` — unused, NHS is out of scope per F9).
+- **`FNCT_CLS_CTGY_TYCD` domain** — confirmed live via the layer's
+  renderer `uniqueValueInfos` (no formal coded-value domain is published
+  in the service metadata, so this was read off the map-symbology
+  config instead):
+
+  | value | label |
+  |---|---|
+  | 10 | Rural Principal Arterial |
+  | 60 | Urban Principal Arterial |
+  | 20 | Rural Minor Arterial |
+  | 86 | Urban Minor Arterial Other |
+  | 30 | Rural Major Collector |
+  | 96 | Urban Collector Other |
+  | 40 | Rural Minor Collector |
+  | 45 | Rural Local |
+  | 97 | Urban Local |
+
+  Unlike the state-trunk layer's `FED_FC_CD`, **this field embeds
+  urban/rural directly into the code** (like Tennessee's `FUNC_CLASS` in
+  the prototype) instead of carrying a bare FHWA number.
+  `WisconsinLocalCategoryToFhwa()` in `modConstants.bas` strips the
+  urban/rural digit back out to a bare FHWA 1-7 code before this feeds
+  into the shared `FederalAidVerdict()` logic. One quirk: `96` ("Urban
+  Collector Other") doesn't distinguish Major from Minor Collector.
+  That split only changes the federal-aid verdict for *rural* collectors
+  (rural major = federal aid, rural minor = not) — every *urban*
+  collector is federal aid regardless of major/minor (§4.2's eligibility
+  table), so mapping `96` to Major Collector (5) is safe either way and
+  never produces a wrong verdict.
+- No retired-segment filter needed (same "point-in-time snapshot" pattern
+  as the state-trunk layer).
+
+#### Query strategy (Wisconsin)
+
+1. Point-intersect (then 150-ft/configured-buffer fallback) against
+   `FFCL_gdb/3`. If any segment is returned, read `FED_FC_CD` directly
+   as the bare FHWA code and stop — state highways are always resolved
+   here.
+2. Only if step 1 returns nothing: point-intersect (then buffer
+   fallback) against `WI_Local_Roads_Flood_Damage_Assessment_Snapshot/1`,
+   decode `FNCT_CLS_CTGY_TYCD` via `WisconsinLocalCategoryToFhwa()`.
+3. ACUB (urban/rural) runs exactly as it does for every other state —
+   independently of whichever WI layer answered the class query.
+
+#### UA / header quirks
+
+None. Both layers are AGOL-hosted `services5.arcgis.com` feature
+services — default UA (or any UA) returns 200, same as the nationwide
+ACUB layer. RoadReviewer sends its browser UA on every request
+regardless; harmless here.
+
+#### Confirmed test coordinates (verified live 2026-07-01)
+
+| # | Expected outcome | lat | lon | Layer / result |
+|---|---|---|---|---|
+| 1 | Higher-class, urban | `43.0389` | `-87.9065` | State Trunk: `FED_FC_CD='4'` (Minor Arterial), `URB_TYPE='Urban'` — E Wisconsin Ave / USH 18 / STH 32, downtown Milwaukee |
+| 2 | Higher-class, rural | `45.4711` | `-89.7345` | State Trunk: `HWYTYPE='STH'`, `HWYNUM='86'`, `FED_FC_CD='5'` (Major Collector), `URB_TYPE='Rural'` — near Tomahawk, WI |
+| 3 | Local road, rural | ~`46.65` | ~`-90.86` | Local Roads (state-trunk layer returns nothing here): `FNCT_CLS_CTGY_TYCD=45` (Rural Local), `FEDUA_TYCD='000'` — Ballard Rd, Washburn County |
+
 ### 4.3 Verification map URLs
 
 - Google Maps: `https://www.google.com/maps?q={lat},{lon}`
@@ -611,10 +820,11 @@ developer (or reviewer) actually runs in Excel before moving on.
 3. **Sites table.** Wire up the hyperlink formulas and lat/lon validation.
    Manual check: paste in the three known coordinates, confirm every
    hyperlink opens the right map at the right zoom.
-4. **Workflow 1 — Classify Roads.** Implement against MDOT layers.
-   Manual check: run on the three known coordinates and confirm class,
-   road name, urban/rural, federal-aid status match expectations. Also
-   try a point in Tennessee → should report "out of state" not crash.
+4. **Workflow 1 — Classify Roads.** Implement against MDOT (MI), INDOT
+   (IN) and WisDOT (WI) layers. Manual check: run on each state's known
+   coordinates (§4.2, §4.2a, §4.2b) and confirm class, road name,
+   urban/rural, federal-aid status match expectations. Also try a point
+   in Tennessee → should report "out of state" not crash.
 5. **Workflow 2 — Review Imagery.** Implement the one-click open-many-tabs
    button. Manual check: click on a row, verify every URL opens to the
    correct point.
@@ -626,8 +836,8 @@ developer (or reviewer) actually runs in Excel before moving on.
 7. **Re-run-failed-rows.** Simulate a failure (kill network briefly), run
    the workflow, then reconnect and click "Re-run failed". Confirm only
    the failed rows are retried.
-8. **State selector.** Switch to a non-MI state, confirm the friendly
-   "coming in v1.1" message.
+8. **State selector.** Switch to an unwired state (MN/IL/OH), confirm
+   the friendly "not yet wired" message. MI/IN/WI must NOT show it.
 9. **Cold-open test.** Close the workbook, copy it to a different
    directory, reopen. Confirm all buttons still work and the macros are
    trusted by Office (this is the most common real-world failure for
@@ -662,10 +872,13 @@ These came up reading the prototypes; capturing them so they aren't lost.
   This sidesteps any limitation of "only public maps" because AGOL is
   already licensed for the user's organisation.
 - **Historical Google Earth / Nearmap links** for pre-disaster imagery.
-- **State expansion.** Wire up the NFC layer for WI / IN / MN / IL / OH.
-  Each state's DOT publishes the layer differently; we'll need one
-  layer-URL block per state plus a normalisation function that maps each
-  state's NFC codes back to the FHWA standard classes. ACUB stays
+- **State expansion.** MI, IN and WI are wired (§4.2, §4.2a, §4.2b).
+  Wire up the NFC layer for MN / IL / OH next. Each state's DOT publishes
+  the layer differently; we'll need one layer-URL block per state plus a
+  normalisation function that maps each state's NFC codes back to the
+  FHWA standard classes (see `WisconsinLocalCategoryToFhwa` in
+  `modConstants.bas` for a worked example — WI's local-roads layer embeds
+  urban/rural into its own class code and needs unpacking). ACUB stays
   nationwide.
 - **NHS column.** Surface MDOT's NHS layer (and the equivalent in other
   states) so the inspector can see federal-aid-system status alongside
@@ -705,7 +918,7 @@ build/                                  Local assembly + verification scripts (n
                                           before save
   verify-skeleton.ps1                   §5.2 + §5.3 — sheets, buttons, named ranges, headers,
                                           hyperlink formulas, decimal validation
-  verify-classify.ps1                   §5.4 — three test coords against live MDOT + NTAD
+  verify-classify.ps1                   §5.4 — test coords for MI/IN/WI against live MDOT/INDOT/WisDOT + NTAD
   verify-rerun-and-state.ps1            §5.7 + §5.8 — re-run-failed-rows + state selector
   verify-firmette-maps.ps1              Workflow 3 — DownloadFirmettes + PrepareMapPages
                                           + ExportCombinedMapPdf against live FEMA GP
@@ -738,11 +951,28 @@ in increment 1 is now a workbook that drives Workflows 1, 2 and 3 end to
 end. End-user (button-click) smoke is still the final gate — the
 automated verifiers exercise the same code paths but in headless mode.
 
+**Increment 3 — Indiana + Wisconsin NFC wired, schema-verified but not
+yet Excel-tested.** `modClassify.bas` now dispatches per state (MI/IN/WI)
+instead of hardcoding MDOT; see §4.2a/§4.2b for the live-verified INDOT
+and WisDOT schemas this was built against. The schema/field-name research
+was done by fetching each service's `?f=pjson` metadata and running live
+point-intersect queries directly (this repo's cloud sandbox can reach
+`gisdata.in.gov` and `services5.arcgis.com`, unlike `mdotgis.state.mi.us`
+which needed the local-workstation probe workflow in §4.2's dev notes).
+What has **not** been exercised yet is the VBA HTTP stack itself
+(`MSXML2.ServerXMLHTTP` through `modHttp.HttpGetText`) against these two
+new endpoints — that requires the local Windows+Excel rebuild-and-verify
+loop in §9.1/§9.2, same as every other capability in this table. Run
+`verify-classify.ps1` (now covers all three wired states, §9.2) before
+trusting IN/WI output on a real WO.
+
 | Capability | Module | Status |
 |---|---|---|
 | Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | **tested** (§5.2 — verify-skeleton.ps1) |
 | Sites hyperlinks + lat/lon validation + INELIGIBLE red highlight | modBuild | **tested** (§5.3 — verify-skeleton.ps1) |
-| Workflow 1 — Classify Roads (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | **tested** (§5.4/§5.7/§5.8 — verify-classify.ps1, verify-rerun-and-state.ps1) |
+| Workflow 1 — Classify Roads, Michigan (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | **tested** (§5.4/§5.7/§5.8 — verify-classify.ps1, verify-rerun-and-state.ps1) |
+| Workflow 1 — Classify Roads, Indiana (LRSE_Functional_Class + centerline road name) | modClassify | built against a live-verified schema (§4.2a); needs a local `verify-classify.ps1` run before first real use |
+| Workflow 1 — Classify Roads, Wisconsin (state-trunk + local-roads fallback, category-code normalization) | modClassify | built against a live-verified schema (§4.2b); needs a local `verify-classify.ps1` run before first real use |
 | Workflow 2 — Review Imagery (open curated set for selected rows) | modImagery | built; uses the same URL templates §5.3 already verified resolve correctly. End-user click test pending |
 | Geocode addresses → lat/lon (never overwrites) | modGeocode | built; no automated verifier yet (one-shot Census call) |
 | KML export + Sites-table CSV export | modMaps, modExport | built |
@@ -843,13 +1073,38 @@ off to a non-developer co-worker (§5.10).
     (`RouteDesignation`/`RouteNumber`), blank for local streets. ACUB is
     the NTAD layer's `NAME` field (native WGS84). Full schema, eligibility
     table, and three live-verified test coordinates are in §4.2.
+11. **INDOT + WisDOT NFC field names — confirmed live 2026-07-01.**
+    `gisdata.in.gov` and `services5.arcgis.com` are both reachable from
+    this repo's cloud sandbox (unlike `mdotgis.state.mi.us`), so this
+    round was verified directly rather than via the local-workstation
+    probe workflow. Indiana's `functional_class` (LRSE_Functional_Class,
+    layer 22) and Wisconsin's `FED_FC_CD` (state-trunk layer) both share
+    Michigan's bare-FHWA-1-7-code shape with no urban/rural embedded.
+    Wisconsin's local-roads fallback layer is the one exception — its
+    `FNCT_CLS_CTGY_TYCD` embeds urban/rural into the code itself, handled
+    by `WisconsinLocalCategoryToFhwa()` in `modConstants.bas`. Full
+    schemas, eligibility mapping, and live-verified test coordinates for
+    both states are in §4.2a and §4.2b.
 
 ### Still open
 
-*Nothing blocking V1 implementation.* One cosmetic item: the MDOT
-NFC/NHS/ACUB Experience-app marker URL parameter format (§4.3) is still
-TBD — only affects the per-row "Open in map" deep link (F11), not the
-classification logic. Can be pinned down during the §5.4 smoke test.
+One cosmetic item unchanged from before: the MDOT NFC/NHS/ACUB
+Experience-app marker URL parameter format (§4.3) is still TBD — only
+affects the per-row "Open in map" deep link (F11), not the classification
+logic. Can be pinned down during the §5.4 smoke test. That deep link
+(`URL_NFC_MAPVIEW`, the "MDOT NFC Map" Sites column) also still only
+opens the FEMA-hosted Michigan-specific webmap regardless of which state
+is selected on Setup — it was never made state-aware, so it's cosmetically
+mislabeled once IN/WI are wired. Not blocking (classification itself
+doesn't depend on it), but worth a follow-up if it's confusing in the
+field.
+
+One thing blocking *trusting* Indiana/Wisconsin output on a real WO (not
+blocking the code itself): §4.2a/§4.2b's schemas were confirmed by
+fetching each service's live JSON directly, not by running RoadReviewer's
+actual VBA HTTP stack against them from Excel. Run the local
+`verify-classify.ps1` (§9.2, now covers all three wired states) at least
+once before relying on IN/WI classifications for real inspection work.
 
 ---
 
@@ -900,8 +1155,8 @@ root when verifying a build that's already been shipped.
 | Script | What it covers | Network? |
 |---|---|---|
 | `verify-skeleton.ps1` | §5.2 + §5.3 — sheets, buttons (every OnAction resolves), named ranges, Sites headers, hyperlink formulas, lat/lon decimal validation, INELIGIBLE conditional formatting | no |
-| `verify-classify.ps1` | §5.4 — Workflow 1 against the three §4.2 test coords | MDOT + NTAD |
-| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=WI gates NFC; ReRunFailed only retries `Failed - ` rows | MDOT + NTAD |
+| `verify-classify.ps1` | §5.4 — Workflow 1 against the §4.2/§4.2a/§4.2b test coords for MI, IN and WI | MDOT + INDOT + WisDOT + NTAD |
+| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=MN gates NFC (MI/IN/WI must NOT gate); ReRunFailed only retries `Failed - ` rows | MDOT + NTAD |
 | `verify-firmette-maps.ps1` | Workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | FEMA Print FIRMette GP |
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | FEMA GP |
 

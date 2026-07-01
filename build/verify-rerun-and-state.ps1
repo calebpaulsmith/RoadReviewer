@@ -1,10 +1,11 @@
 # Verification §5.7 (Re-run Failed Rows) + §5.8 (State selector).
 #
-# §5.8: set State to a non-MI value (WI). Run Classify on a coord that
-#       both Michigan AND Wisconsin would happily report ACUB for.
-#       Expect the ACUB lookup to still run, but NFC/class/road name
-#       to be blank with a "class lookup not wired for this state"
-#       eligibility message.
+# §5.8: set State to an unwired value (MN — MI/IN/WI are all wired now,
+#       see CLAUDE.md §4.2/§4.2a/§4.2b, so this must be one of the
+#       still-unwired states). Run Classify on a coord that reports ACUB
+#       regardless of state. Expect the ACUB lookup to still run, but
+#       NFC/class/road name to be blank with a "class lookup not wired
+#       for this state" eligibility message.
 #
 # §5.7: with State back to MI, plant a fake "Failed - ..." marker in the
 #       Eligibility column of one row, run ReRunFailedClassifications,
@@ -30,11 +31,11 @@ try {
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_state_trace.txt')) | Out-Null
 
-  # ---- §5.8: WI state, classify a Detroit-area coord ----
+  # ---- §5.8: MN state (unwired), classify a Detroit-area coord ----
   Write-Host ""
-  Write-Host "=== §5.8: State=WI on Detroit coord ===" -ForegroundColor Cyan
-  $wb.Names('JobState').RefersToRange.Value2 = 'WI'
-  $sites.Cells(2, 4).Value2 = 'WI-state Detroit'
+  Write-Host "=== §5.8: State=MN on Detroit coord ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = 'MN'
+  $sites.Cells(2, 4).Value2 = 'MN-state Detroit'
   $sites.Cells(2, 6).Value2 = [double]42.331
   $sites.Cells(2, 7).Value2 = [double]-83.045
   $excel.Run('ClassifyAllRows') | Out-Null
@@ -46,7 +47,7 @@ try {
   $row2_acub  = [string]$sites.Cells(2,21).Value2
   $row2_elig  = [string]$sites.Cells(2,24).Value2
   Write-Host ("  class: '" + $row2_class + "'  urban/rural: '" + $row2_urban + "'  ACUB: '" + $row2_acub + "'  elig: '" + $row2_elig + "'")
-  if ($row2_class -ne '') { throw "Row 2 should have blank class when state=WI (NFC not wired), got '$row2_class'" }
+  if ($row2_class -ne '') { throw "Row 2 should have blank class when state=MN (NFC not wired), got '$row2_class'" }
   if ($row2_acub -notlike "*Detroit*") { throw ("Row 2 ACUB should still resolve to Detroit (ACUB is nationwide), got '" + $row2_acub + "'") }
   if ($row2_elig -notlike "*not wired*") { throw ("Row 2 eligibility should mention NFC not wired, got '" + $row2_elig + "'") }
   Write-Host "  §5.8 PASSED" -ForegroundColor Green
