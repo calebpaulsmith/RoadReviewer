@@ -205,7 +205,7 @@ Private Sub BuildSetup()
     TitleBlock ws, "Setup", "Job-wide values. WO/DI default onto every Sites row; override per row if needed."
 
     LabelValue ws, 5, "Work Order (WO #)", NR_WO, ""
-    LabelValue ws, 6, "Disaster Incident (DI #)", NR_DI, ""
+    LabelValue ws, 6, "Impact (DI #)", NR_DI, ""
     LabelValue ws, 7, "Disaster Number", NR_DISASTER, ""
     LabelValue ws, 8, "Applicant", NR_APPLICANT, ""
     LabelValue ws, 9, "State", NR_STATE, "MI"
@@ -316,7 +316,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_BING) = "Bing"
     h(COL_FEMAVIEW) = "FEMA Viewer"
     h(COL_FIRMPORTAL) = "FIRMette Portal"
-    h(COL_NFCMAP) = "MDOT NFC Map"
+    h(COL_NFCMAP) = "NFC Map"
     h(COL_CLASS) = "FHWA Class"
     h(COL_URBANRURAL) = "Urban/Rural"
     h(COL_ACUBNAME) = "ACUB Name"
@@ -355,11 +355,10 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     SetLinkFormula ws, COL_BING, r1, r2, URL_BING, "Bing", latC, lonC
     SetLinkFormula ws, COL_FEMAVIEW, r1, r2, URL_FEMAVIEW, "FEMA", latC, lonC
     SetLinkFormula ws, COL_FIRMPORTAL, r1, r2, URL_FIRMPORTAL, "FIRMette", latC, lonC
-    ' Per-row "Open in map" (F11). Now points at the ArcGIS Online Map
-    ' Viewer with the MDOT NFC FeatureServer side-loaded via the `url=`
-    ' query param — bypasses the Experience app popup the inspector
-    ' previously had to dismiss before they could see their point.
-    SetLinkFormula ws, COL_NFCMAP, r1, r2, URL_NFC_MAPVIEW, "Open", latC, lonC, True
+    ' Per-row "Open in map" (F11), state-aware (F8): the URL depends on
+    ' Setup's State dropdown, not just lat/lon, so it gets its own formula
+    ' builder rather than SetLinkFormula's single-template pattern.
+    SetNfcMapFormula ws, r1, r2, latC, lonC
     ' The AGOL Map column is driven by the inspector's own webmap URL
     ' on Setup. The formula handles all three "blank" states (no URL
     ' set, missing coords) and stitches center/level/marker query
@@ -388,14 +387,42 @@ Private Sub SetLinkFormula(ByVal ws As Worksheet, ByVal col As Long, ByVal r1 As
         ByVal urlTemplate As String, ByVal friendly As String, ByVal latC As String, ByVal lonC As String, _
         Optional ByVal needsCoords As Boolean = True)
     Dim urlExpr As String, f As String
-    ' Build a formula expression that substitutes lat/lon into the template.
-    urlExpr = """" & Replace(Replace(urlTemplate, "{LAT}", """&" & latC & "&"""), "{LON}", """&" & lonC & "&""") & """"
+    urlExpr = UrlExprFromTemplate(urlTemplate, latC, lonC)
     If needsCoords Then
         f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""" & friendly & """))"
     Else
         f = "=HYPERLINK(" & urlExpr & ",""" & friendly & """)"
     End If
     ws.Range(ws.Cells(r1, col), ws.Cells(r2, col)).Formula = f
+End Sub
+
+' Builds an Excel formula-EXPRESSION (not a full formula - no leading "=")
+' for a URL template with {LAT}/{LON} placeholders substituted by cell
+' references, e.g. """https://x?lat=""&$F2&""&lon=""&$G2".
+Private Function UrlExprFromTemplate(ByVal urlTemplate As String, ByVal latC As String, ByVal lonC As String) As String
+    UrlExprFromTemplate = """" & Replace(Replace(urlTemplate, "{LAT}", """&" & latC & "&"""), "{LON}", """&" & lonC & "&""") & """"
+End Function
+
+' Per-row "Open in map" (F11), keyed off Setup's State dropdown (F8) since
+' MI/IN/WI each need a different URL (§4.2/§4.2a/§4.2b) - the only wired
+' states get their own map link; anything else (MN/IL/OH, or blank) falls
+' back to the plain FEMA Map Viewer pin so the column is never broken, just
+' generic.
+Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
+        ByVal latC As String, ByVal lonC As String)
+    Dim miExpr As String, inExpr As String, wiExpr As String, fallbackExpr As String
+    Dim urlExpr As String, f As String
+    miExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW, latC, lonC)
+    inExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IN, latC, lonC)
+    wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC)
+    fallbackExpr = UrlExprFromTemplate(URL_FEMAVIEW, latC, lonC)
+    ' Blank State (never happens once Setup is built - B9 defaults to "MI" -
+    ' but cheap to guard) matches ClassifyRows's default-to-MI behavior.
+    urlExpr = "IF(OR(" & NR_STATE & "=""MI""," & NR_STATE & "="""")," & miExpr & _
+        ",IF(" & NR_STATE & "=""IN""," & inExpr & _
+        ",IF(" & NR_STATE & "=""WI""," & wiExpr & "," & fallbackExpr & ")))"
+    f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""Open""))"
+    ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
 End Sub
 
 Private Sub ApplySitesValidation(ByVal ws As Worksheet)

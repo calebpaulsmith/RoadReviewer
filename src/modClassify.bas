@@ -15,6 +15,15 @@ Private Const WI_TRUNK_OUTFIELDS As String = "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR"
 Private Const WI_LOCAL_OUTFIELDS As String = "FNCT_CLS_CTGY_TYCD,ST_LABL_NM"
 Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 
+' The ACUB (urban-boundary) fallback search always uses at least this many
+' feet, even if JobBufferFeet has been narrowed below it for precise road
+' matching in a dense urban grid. Without this floor, narrowing the shared
+' buffer for road-matching purposes would silently widen the "point right on
+' the edge of the urban boundary gets flagged Rural" bug this exists to
+' prevent - a site sitting a few feet on the wrong side of a road that
+' itself touches the boundary should still resolve Urban.
+Private Const ACUB_MIN_BUFFER_FEET As Long = 200
+
 Public Sub ClassifyAllRows()
     ClassifyRows False
 End Sub
@@ -292,15 +301,6 @@ Public Function BufferFeet() As Long
     End If
     BufferFeet = CLng(v)
 End Function
-
-' The ACUB (urban-boundary) fallback search always uses at least this many
-' feet, even if JobBufferFeet has been narrowed below it for precise road
-' matching in a dense urban grid. Without this floor, narrowing the shared
-' buffer for road-matching purposes would silently widen the "point right on
-' the edge of the urban boundary gets flagged Rural" bug this exists to
-' prevent - a site sitting a few feet on the wrong side of a road that
-' itself touches the boundary should still resolve Urban.
-Private Const ACUB_MIN_BUFFER_FEET As Long = 200
 
 Private Function AcubBufferFeet() As Long
     If BufferFeet() > ACUB_MIN_BUFFER_FEET Then

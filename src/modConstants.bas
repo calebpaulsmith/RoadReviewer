@@ -100,6 +100,17 @@ Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?la
 ' point this URL there instead.)
 Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
 
+' Indiana and Wisconsin don't have a curated combined NFC+ACUB webmap the
+' way MI does, so these side-load the state's own live NFC FeatureServer
+' (§4.2a/§4.2b) directly into the same FEMA Map Viewer base URL + params
+' already proven working for URL_FEMAVIEW above (find=/marker=/level=)
+' rather than the webmap=+center= combination that broke when a
+' visibleLayers param was added (see the note above). Degrades gracefully
+' even if the Map Viewer version in use doesn't render the `url=` layer -
+' the pin+zoom still resolves correctly either way.
+Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+Public Const URL_NFC_MAPVIEW_WI As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"
 Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353"
