@@ -26,6 +26,11 @@ $tests = @(
   @{ Row=6; State='IN'; Name='Hancock County Rural Local';      Lat=39.9876;  Lon=-86.0128;   ExpectElig='Non-federal aid'; ExpectClass='Local';            ExpectAcub=''           }
   @{ Row=7; State='WI'; Name='Milwaukee Minor Arterial';        Lat=43.0389;  Lon=-87.9065;   ExpectElig='Federal aid';     ExpectClass='Minor Arterial';   ExpectAcub='Milwaukee'  }
   @{ Row=8; State='WI'; Name='Tomahawk Rural Major Collector';  Lat=45.4711;  Lon=-89.7345;   ExpectElig='Federal aid';     ExpectClass='Major Collector';  ExpectAcub=''           }
+  # Regression tests for the Increment 4 FederalAidVerdict/PrefixedClass fixes (CLAUDE.md §7a):
+  # a rural class-6 segment must read "...Rural Minor Collector", never "...Rural Local",
+  # and class 1-3 (here Interstate) must get the Urban/Rural prefix same as 4-6.
+  @{ Row=9; State='WI'; Name='STH 52 Rural Minor Collector';    Lat=45.169879; Lon=-89.102452; ExpectElig='Non-federal aid - Rural Minor Collector'; ExpectClass='Minor Collector'; ExpectAcub='' }
+  @{ Row=10; State='WI'; Name='I-94 Eau Claire Urban Interstate'; Lat=44.764850; Lon=-91.406533; ExpectElig='Federal aid - Urban Interstate'; ExpectClass='Interstate'; ExpectAcub='Eau Claire' }
 )
 
 $excel = New-Object -ComObject Excel.Application

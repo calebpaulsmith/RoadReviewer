@@ -106,9 +106,14 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
 
     ' --- ACUB (urban/rural) - runs for every state, and is the single
     ' source of truth for the Urban/Rural column even on states whose own
-    ' NFC layer happens to carry its own urban/rural flag (§4.2). ---
+    ' NFC layer happens to carry its own urban/rural flag (§4.2). Uses its
+    ' own floor-guaranteed buffer (AcubBufferFeet), not the raw road-search
+    ' BufferFeet, so a point sitting just outside an ACUB polygon - e.g. on
+    ' the wrong side of a road that itself touches the boundary - still
+    ' resolves Urban even if JobBufferFeet has been narrowed for precise
+    ' road matching in a dense grid. ---
     Dim acubJson As String, isUrban As Boolean, acubName As String
-    acubJson = QueryWithFallback(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", errMsg)
+    acubJson = QueryWithFallback(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", AcubBufferFeet(), errMsg)
     If Len(errMsg) > 0 Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "ACUB query (" & errMsg & ")"
         Exit Sub
@@ -157,11 +162,11 @@ End Sub
 Private Sub QueryMichiganNfc(ByVal lat As String, ByVal lon As String, _
         ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
     Dim nfcJson As String, routeJson As String, routeErr As String
-    nfcJson = QueryWithFallback(REST_MDOT_NFC, lat, lon, MI_NFC_OUTFIELDS, "RHRetireDate IS NULL", errMsg)
+    nfcJson = QueryWithFallback(REST_MDOT_NFC, lat, lon, MI_NFC_OUTFIELDS, "RHRetireDate IS NULL", BufferFeet(), errMsg)
     If Len(errMsg) > 0 Then Exit Sub
     Set codes = ExtractIntegers(nfcJson, "FunctionalSystem")
 
-    routeJson = QueryWithFallback(REST_MDOT_ROUTE, lat, lon, MI_ROUTE_OUTFIELDS, "RHRetireDate IS NULL", routeErr)
+    routeJson = QueryWithFallback(REST_MDOT_ROUTE, lat, lon, MI_ROUTE_OUTFIELDS, "RHRetireDate IS NULL", BufferFeet(), routeErr)
     If Len(routeErr) = 0 Then roadName = BuildRouteName(routeJson)
 End Sub
 
@@ -175,11 +180,11 @@ End Sub
 Private Sub QueryIndianaNfc(ByVal lat As String, ByVal lon As String, _
         ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
     Dim nfcJson As String, nameJson As String, nameErr As String
-    nfcJson = QueryWithFallback(REST_IN_NFC, lat, lon, IN_NFC_OUTFIELDS, "record_status=5", errMsg)
+    nfcJson = QueryWithFallback(REST_IN_NFC, lat, lon, IN_NFC_OUTFIELDS, "record_status=5", BufferFeet(), errMsg)
     If Len(errMsg) > 0 Then Exit Sub
     Set codes = ExtractIntegers(nfcJson, "functional_class")
 
-    nameJson = QueryWithFallback(REST_IN_ROADNAME, lat, lon, IN_ROADNAME_OUTFIELDS, "1=1", nameErr)
+    nameJson = QueryWithFallback(REST_IN_ROADNAME, lat, lon, IN_ROADNAME_OUTFIELDS, "1=1", BufferFeet(), nameErr)
     If Len(nameErr) = 0 Then roadName = FirstString(nameJson, "st_full")
 End Sub
 
@@ -197,7 +202,7 @@ Private Sub QueryWisconsinNfc(ByVal lat As String, ByVal lon As String, _
     Dim trunkJson As String, localJson As String, fc As Variant, cat As Variant
     Set codes = New Collection
 
-    trunkJson = QueryWithFallback(REST_WI_STATE_TRUNK, lat, lon, WI_TRUNK_OUTFIELDS, "1=1", errMsg)
+    trunkJson = QueryWithFallback(REST_WI_STATE_TRUNK, lat, lon, WI_TRUNK_OUTFIELDS, "1=1", BufferFeet(), errMsg)
     If Len(errMsg) > 0 Then Exit Sub
 
     If FeatureCount(trunkJson) > 0 Then
@@ -208,7 +213,7 @@ Private Sub QueryWisconsinNfc(ByVal lat As String, ByVal lon As String, _
         Exit Sub
     End If
 
-    localJson = QueryWithFallback(REST_WI_LOCAL_ROADS, lat, lon, WI_LOCAL_OUTFIELDS, "1=1", errMsg)
+    localJson = QueryWithFallback(REST_WI_LOCAL_ROADS, lat, lon, WI_LOCAL_OUTFIELDS, "1=1", BufferFeet(), errMsg)
     If Len(errMsg) > 0 Then Exit Sub
     For Each cat In ExtractIntegers(localJson, "FNCT_CLS_CTGY_TYCD")
         codes.Add WisconsinLocalCategoryToFhwa(CLng(cat))
@@ -251,15 +256,15 @@ Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
     ws.Cells(r, COL_ELIGIBILITY).ClearContents
 End Sub
 
-' Exact point intersect first; if no hit, retry with a buffer (§4.2).
-' Buffer size is configurable on Setup (NR_BUFFER, default 200 ft).
+' Exact point intersect first; if no hit, retry with the given buffer (§4.2).
 Private Function QueryWithFallback(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
-        ByVal outFields As String, ByVal whereClause As String, ByRef errMsg As String) As String
+        ByVal outFields As String, ByVal whereClause As String, ByVal fallbackDistanceFt As Long, _
+        ByRef errMsg As String) As String
     Dim json As String
     json = RunQuery(baseUrl, lat, lon, outFields, whereClause, 0, errMsg)
     If Len(errMsg) > 0 Then Exit Function
     If FeatureCount(json) = 0 And Not HasArcgisError(json) Then
-        json = RunQuery(baseUrl, lat, lon, outFields, whereClause, BufferFeet(), errMsg)
+        json = RunQuery(baseUrl, lat, lon, outFields, whereClause, fallbackDistanceFt, errMsg)
     End If
     QueryWithFallback = json
 End Function
@@ -281,6 +286,23 @@ Public Function BufferFeet() As Long
         Exit Function
     End If
     BufferFeet = CLng(v)
+End Function
+
+' The ACUB (urban-boundary) fallback search always uses at least this many
+' feet, even if JobBufferFeet has been narrowed below it for precise road
+' matching in a dense urban grid. Without this floor, narrowing the shared
+' buffer for road-matching purposes would silently widen the "point right on
+' the edge of the urban boundary gets flagged Rural" bug this exists to
+' prevent - a site sitting a few feet on the wrong side of a road that
+' itself touches the boundary should still resolve Urban.
+Private Const ACUB_MIN_BUFFER_FEET As Long = 200
+
+Private Function AcubBufferFeet() As Long
+    If BufferFeet() > ACUB_MIN_BUFFER_FEET Then
+        AcubBufferFeet = BufferFeet()
+    Else
+        AcubBufferFeet = ACUB_MIN_BUFFER_FEET
+    End If
 End Function
 
 Private Function RunQuery(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
@@ -327,7 +349,7 @@ End Function
 ' it isn't. The inspector decides what that means for their work order;
 ' we don't pre-judge eligibility.
 Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As Boolean) As String
-    Dim c As Variant, isFederalAid As Boolean, manual As Boolean
+    Dim c As Variant, isFederalAid As Boolean, manual As Boolean, hasRuralMinorCollector As Boolean
     Dim worstCode As Long: worstCode = 99
 
     If codes.Count = 0 Then
@@ -337,8 +359,14 @@ Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As B
 
     For Each c In codes
         Select Case CLng(c)
-            Case 7:                 ' Local - never federal aid
-            Case 6: If isUrban Then isFederalAid = True: If 6 < worstCode Then worstCode = 6
+            Case 7   ' Local - never federal aid
+            Case 6
+                If isUrban Then
+                    isFederalAid = True
+                    If 6 < worstCode Then worstCode = 6
+                Else
+                    hasRuralMinorCollector = True   ' non-federal, but not "Local" either
+                End If
             Case 1, 2, 3, 4, 5
                 isFederalAid = True
                 If CLng(c) < worstCode Then worstCode = CLng(c)
@@ -350,18 +378,20 @@ Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As B
         FederalAidVerdict = "Federal aid - " & PrefixedClass(worstCode, isUrban)
     ElseIf manual Then
         FederalAidVerdict = "Review - non-certified class, check manually"
+    ElseIf hasRuralMinorCollector Then
+        ' Reachable only when every code present is 6 (rural) and/or 7 - if a
+        ' 6 were urban it would have set isFederalAid above instead. Without
+        ' this branch a Rural Minor Collector displayed as "...Rural Local",
+        ' contradicting the FHWA Class column right next to it.
+        FederalAidVerdict = "Non-federal aid - Rural Minor Collector"
     Else
         FederalAidVerdict = "Non-federal aid - " & IIf(isUrban, "Urban", "Rural") & " Local"
     End If
 End Function
 
+' Prefixes a federal-aid FHWA class (1-6; code 7/Local never reaches here)
+' with Urban/Rural, matching the "Federal aid - <Urban/Rural class>" format
+' in CLAUDE.md §4.2's eligibility table for every class, not just 4-6.
 Private Function PrefixedClass(ByVal code As Long, ByVal isUrban As Boolean) As String
-    Dim prefix As String
-    prefix = IIf(isUrban, "Urban ", "Rural ")
-    Select Case code
-        Case 6: PrefixedClass = prefix & "Minor Collector"
-        Case 5: PrefixedClass = prefix & "Major Collector"
-        Case 4: PrefixedClass = prefix & "Minor Arterial"
-        Case Else: PrefixedClass = FunctionalSystemLabel(code)
-    End Select
+    PrefixedClass = IIf(isUrban, "Urban ", "Rural ") & FunctionalSystemLabel(code)
 End Function
