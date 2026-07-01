@@ -25,7 +25,7 @@ End Sub
 
 Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
     Dim ws As Worksheet, last As Long, r As Long
-    Dim stateCode As String, nfcWired As Boolean
+    Dim stateCode As String, stateHasNfc As Boolean
     Dim processed As Long, total As Long
 
     Set ws = SitesSheet()
@@ -37,8 +37,13 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
 
     stateCode = UCase$(SetupValue(NR_STATE))
     If Len(stateCode) = 0 Then stateCode = "MI"
-    nfcWired = NfcWired(stateCode)
-    If Not nfcWired Then
+    ' Local var deliberately NOT named NfcWired - VBA identifiers are
+    ' case-insensitive, so a local variable with the same name as the
+    ' module-level NfcWired() function shadows it, and `NfcWired(stateCode)`
+    ' on the right-hand side gets parsed as indexing a Boolean scalar like an
+    ' array ("Expected array" compile error) instead of calling the function.
+    stateHasNfc = NfcWired(stateCode)
+    If Not stateHasNfc Then
         If Not gHeadless Then MsgBox "Road-class (NFC) lookup is not yet wired for " & stateCode & "." & vbCrLf & _
             "The ACUB urban-boundary check will still run on every row.", vbInformation, "Classify Roads"
     End If

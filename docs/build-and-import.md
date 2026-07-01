@@ -44,17 +44,13 @@ the sheets while preserving the data you typed into the Sites table.
   name, eligibility verdict, "Re-run Failed Rows" (§5.4, F7, F12).
 - **2. Review Imagery** — opens the curated imagery set for the selected
   Sites row(s) (§5.5).
+- **3. Maps & FIRMettes** — Download FIRMettes / Re-run Failed FIRMettes
+  (FEMA Print FIRMette GP service), Prepare Map Pages, Export Combined
+  Map PDF / Export Individual Map PDFs.
 - **KML export** and **CSV export** of the full Sites table (F10).
 
-## Not in this build yet (next increment)
-
-- **Download FIRMettes** / **Re-run Failed FIRMettes**
-- **Prepare Map Pages** / **Export Combined Map PDF**
-
-Their buttons are present and show a "ported next" message so the workbook has
-no orphan controls. These reuse the prototype's FEMA GP-service flow
-(submitJob → poll → OutputFile → write PDF via `ADODB.Stream`) and the
-MapPages layout; they'll land in the next pass.
+See `CLAUDE.md` §7a for which of these have an automated verifier behind
+them versus "built but needs a manual smoke test."
 
 ## Trusting the macros after a move (verification step §5.9)
 
