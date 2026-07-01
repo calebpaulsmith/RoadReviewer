@@ -592,9 +592,13 @@ Public Sub SendSitesToAgolMap()
 End Sub
 
 ' Shared KML builder: writes the file to the resolved output folder, sets
-' filePath + featureCount on success, returns False on any failure (with a
+' filePath + placemarkCount on success, returns False on any failure (with a
 ' MsgBox already shown if gHeadless is False).
-Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As Long, _
+' Param deliberately not named featureCount - that would collide
+' (case-insensitively) with modHttp's FeatureCount() function; see the
+' NfcWired/nfcWired compile-error note in modClassify.bas for why that's a
+' real trap, not just a style nit.
+Private Function WriteSitesKml(ByRef filePath As String, ByRef placemarkCount As Long, _
         ByVal dialogTitle As String) As Boolean
     Dim ws As Worksheet, last As Long, r As Long, kml As String, n As Long
     Set ws = SitesSheet()
@@ -634,7 +638,7 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef featureCount As L
     End If
 
     filePath = file
-    featureCount = n
+    placemarkCount = n
     WriteSitesKml = True
 End Function
 
@@ -644,9 +648,9 @@ End Function
 '            appears, so the folder list is predictable
 '   pass 2 — for each Category bucket, emit a <Folder> with all its rows
 ' Rows with a blank Category fall into a "(no category)" folder so they
-' aren't lost. Updates featureCount with the number of placemarks emitted.
+' aren't lost. Updates placemarkCount with the number of placemarks emitted.
 Private Function BuildCategoryFolders(ByVal ws As Worksheet, ByVal last As Long, _
-        ByRef featureCount As Long) As String
+        ByRef placemarkCount As Long) As String
     Dim r As Long, cat As String, key As String
     Dim order As Object, rows As Object   ' Scripting.Dictionary
     Set order = CreateObject("Scripting.Dictionary")    ' key -> display label
@@ -674,7 +678,7 @@ Private Function BuildCategoryFolders(ByVal ws As Worksheet, ByVal last As Long,
         parts = Split(Mid$(CStr(rows(k)), 2), "|")  ' drop leading | then split
         For Each p In parts
             out = out & PlacemarkXml(ws, CLng(p))
-            featureCount = featureCount + 1
+            placemarkCount = placemarkCount + 1
         Next p
         out = out & "</Folder>" & vbCrLf
     Next k
