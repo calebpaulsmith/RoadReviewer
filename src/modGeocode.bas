@@ -26,16 +26,19 @@ Public Sub GeocodeAddresses()
         Exit Sub
     End If
 
-    Application.ScreenUpdating = False
+    ' Leave ScreenUpdating on and stay on Sites so the inspector watches
+    ' Latitude/Longitude fill in row by row - each row is one Census
+    ' geocoder round trip, so redraw cost here is negligible.
+    ws.Activate
     For r = SITES_FIRST_DATA_ROW To last
         If NeedsGeocode(ws, r) Then
             done = done + 1
             SetStatus "Geocoding " & done & " of " & total & " - " & CStr(ws.Cells(r, COL_ADDRESS).Value)
+            ws.Cells(r, COL_ADDRESS).Select
             If GeocodeOneRow(ws, r) Then ok = ok + 1
             DoEvents
         End If
     Next r
-    Application.ScreenUpdating = True
     ClearStatus
     MsgBox "Geocoded " & ok & " of " & total & " address(es).", vbInformation, "Geocode"
 End Sub

@@ -67,7 +67,11 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         Exit Sub
     End If
 
-    Application.ScreenUpdating = False
+    ' Leave ScreenUpdating on and stay on the Sites sheet (not the Classify
+    ' Roads control sheet the button lives on) so the inspector watches each
+    ' row's cells fill in as it's classified - each row is dominated by
+    ' network latency (2-3 HTTP calls), so redraw cost here is negligible.
+    ws.Activate
     On Error GoTo Done
     For r = SITES_FIRST_DATA_ROW To last
         If RowIsEmpty(ws, r) Then GoTo NextRow
@@ -75,13 +79,13 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         processed = processed + 1
         SetStatus "Classifying " & processed & " of " & total & " - " & _
             CStr(ws.Cells(r, COL_SITENAME).Value)
+        ws.Cells(r, COL_SITENAME).Select
         ClassifyOneRow ws, r, stateCode
         DoEvents
 NextRow:
     Next r
 
 Done:
-    Application.ScreenUpdating = True
     ClearStatus
     If Err.Number <> 0 Then
         If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Classify Roads"

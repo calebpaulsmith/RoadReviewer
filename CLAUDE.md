@@ -1016,6 +1016,25 @@ ACUB buffer floor) doesn't have an automated regression test - it only
 matters when `JobBufferFeet` is manually narrowed below 200 ft, which
 none of the verifiers configure.
 
+**Increment 5 — live cell updates during long-running workflows.**
+`ClassifyRows`, `FirmetteRunRows` and `GeocodeAddresses` all previously
+set `Application.ScreenUpdating = False` for the duration of their
+per-row loop, then flipped it back on when done - the button-owning
+sheet (e.g. "1. Classify Roads") stayed on screen and the Sites table
+only visibly updated all at once at the end. Each row in these three
+workflows is dominated by network latency (2-3 HTTP round trips for
+classify, a submitJob/poll/download sequence for FIRMettes, one Census
+call for geocoding), so the redraw-suppression bought essentially
+nothing while hiding the one thing an inspector watching a multi-minute
+run most wants to see: progress. All three now `ws.Activate` the Sites
+sheet before the loop, drop the `ScreenUpdating = False`, and `.Select`
+the row's cell being written each iteration so the selection visibly
+tracks down the sheet as it fills in. `PrepareMapPages`/`AddMapPage`
+were deliberately left alone - that loop is CPU-bound shape/textbox
+creation with no per-row network wait, so suppressing redraws there is
+a real performance win, not a UX cost; it already activates MapPages
+once the run finishes.
+
 | Capability | Module | Status |
 |---|---|---|
 | Skeleton (Home/Setup/Sites + 3 workflow sheets, buttons, named ranges) | modBuild | **tested** (§5.2 — verify-skeleton.ps1) |

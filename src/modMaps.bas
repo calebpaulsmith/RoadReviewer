@@ -134,13 +134,18 @@ Private Sub FirmetteRunRows(ByVal onlyFailed As Boolean)
         Exit Sub
     End If
 
-    Application.ScreenUpdating = False
+    ' Leave ScreenUpdating on and stay on Sites so the inspector watches
+    ' FIRMette Status fill in row by row - each row is a submitJob/poll/
+    ' download round trip against FEMA's GP service, so redraw cost here
+    ' is negligible next to the network wait.
+    ws.Activate
     For r = SITES_FIRST_DATA_ROW To last
         If Not ShouldRunFirmetteRow(ws, r, onlyFailed) Then GoTo NextRow
         processed = processed + 1
         siteName = CStr(ws.Cells(r, COL_SITENAME).Value)
         If Len(Trim$(siteName)) = 0 Then siteName = "row" & r
         SetStatus "Downloading FIRMette " & processed & " of " & total & " - " & siteName
+        ws.Cells(r, COL_FIRMSTATUS).Select
         DoEvents
 
         lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
@@ -159,7 +164,6 @@ Private Sub FirmetteRunRows(ByVal onlyFailed As Boolean)
         DoEvents
 NextRow:
     Next r
-    Application.ScreenUpdating = True
     ClearStatus
 
     If Not gHeadless Then
