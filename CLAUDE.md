@@ -1141,13 +1141,20 @@ off to a non-developer co-worker (§5.10).
 One cosmetic item unchanged from before: the MDOT NFC/NHS/ACUB
 Experience-app marker URL parameter format (§4.3) is still TBD — only
 affects the per-row "Open in map" deep link (F11), not the classification
-logic. Can be pinned down during the §5.4 smoke test. That deep link
-(`URL_NFC_MAPVIEW`, the "MDOT NFC Map" Sites column) also still only
-opens the FEMA-hosted Michigan-specific webmap regardless of which state
-is selected on Setup — it was never made state-aware, so it's cosmetically
-mislabeled once IN/WI are wired. Not blocking (classification itself
-doesn't depend on it), but worth a follow-up if it's confusing in the
-field.
+logic. Can be pinned down during the §5.4 smoke test.
+
+The "NFC Map" Sites column (col 18, formerly labeled "MDOT NFC Map") is
+now state-aware (§9.3b): it dispatches on Setup's State dropdown between
+`URL_NFC_MAPVIEW` (MI's curated FEMA webmap), `URL_NFC_MAPVIEW_IN`, and
+`URL_NFC_MAPVIEW_WI` (the latter two side-load the state's own live NFC
+FeatureServer into the plain FEMA Map Viewer rather than a curated
+webmap, since no combined IN/WI NFC+ACUB webmap exists to point at).
+Unverified in a browser - built and reasoned through from the same
+Map Viewer URL parameters already proven for `URL_FEMAVIEW`, but the
+`url=`-sideload behavior itself hasn't been click-tested. Worth
+confirming during the §5.5/§5.4 smoke pass that the IN/WI links actually
+render the layer (they'll still open to the correct pin+zoom even if the
+layer overlay doesn't render, so this degrades gracefully either way).
 
 One thing blocking *trusting* Indiana/Wisconsin output on a real WO (not
 blocking the code itself): §4.2a/§4.2b's schemas were confirmed by
@@ -1282,12 +1289,13 @@ results are still observable when headless.
 
 The Sites table has **two** ArcGIS Online links per row:
 
-1. **MDOT NFC Map** (col 16) — hard-coded to open the FEMA-hosted
-   NFC/ACUB webmap (`webmap=6a1702b9147243d1a5ee62cd614bc681` on
-   `fema.maps.arcgis.com`) centered + markered on the row's coords. The
+1. **NFC Map** (col 18, `COL_NFCMAP`) — state-aware since §9.3b: MI opens
+   the FEMA-hosted NFC/ACUB webmap (`webmap=6a1702b9147243d1a5ee62cd614bc681`
+   on `fema.maps.arcgis.com`) centered + markered on the row's coords; the
    previous URL pointed at the MDOT Experience app, whose popup chrome
    blocked the inspector from clicking through to the actual damage
-   point. Same underlying data, no UI wrapper.
+   point, so the FEMA webmap link (same underlying data, no UI wrapper)
+   replaced it. IN/WI and any other state get a different URL - see §9.3b.
 
 2. **AGOL Map** (col 24) — driven by Setup's `JobAgolMap` cell
    (`Setup!$B$11`). When the inspector pastes their own AGOL webmap
@@ -1308,6 +1316,39 @@ the KML highlighted so it's a single drag-drop into the Map Viewer
 window. AGOL ingests the KML as a hosted-feature layer. (V2 could
 push directly via the AGOL REST API, but that needs auth and is
 out of V1 scope per §3.3.)
+
+### 9.3b State-aware NFC Map column
+
+The NFC Map column formula (`modBuild.SetNfcMapFormula`) and the CSV
+export's equivalent resolver (`modExport.NfcMapUrlForRow` - the two
+must be kept in sync by hand, there's no shared helper across the
+formula-string world and the plain-VBA-string world) both branch on
+Setup's `JobState` cell:
+
+- **MI** → `URL_NFC_MAPVIEW`, the curated FEMA-hosted webmap described
+  in §9.3a.
+- **IN** → `URL_NFC_MAPVIEW_IN`, **WI** → `URL_NFC_MAPVIEW_WI` - side-load
+  the state's own live NFC FeatureServer (§4.2a/§4.2b) via the Map
+  Viewer's `url=` parameter, using the same `find=`/`marker=`/`level=`
+  parameters already proven to work for `URL_FEMAVIEW` (rather than the
+  `webmap=`+`center=` combination MI's link uses, which broke once
+  before when a `visibleLayers` param was added - see the `URL_NFC_MAPVIEW`
+  comment in `modConstants.bas`). No curated combined NFC+ACUB webmap
+  exists for IN/WI to point at instead.
+- **Anything else** (MN/IL/OH, or a blank State cell) → `URL_FEMAVIEW`,
+  the plain pin+zoom with no data layer. A blank State cell is treated
+  as MI instead, matching `ClassifyRows`'s default-to-MI behavior - Setup
+  pre-fills `JobState` to `"MI"` at build time, so this only matters if
+  someone manually clears the cell.
+
+**Not yet click-tested.** The `url=`-sideload URLs were built by
+reasoning from a working pattern (`URL_FEMAVIEW`) and the ArcGIS REST
+`url=` parameter's documented behavior, not by opening them in a
+browser - this repo's cloud sandbox can't drive a JS single-page map
+app. Worst case if the layer overlay doesn't render: the link still
+opens to the correct pin+zoom, just without the NFC layer on top, so
+this degrades gracefully rather than breaking. Confirm the layer
+actually renders during the next local smoke pass.
 
 ### 9.4 Excel / COM / PowerShell quirks
 

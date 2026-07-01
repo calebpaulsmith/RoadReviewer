@@ -3,8 +3,10 @@
 #   A. JobAgolMap blank   -> cell is blank
 #   B. JobAgolMap set, URL already has "?" -> deep-link joined with "&"
 #   C. JobAgolMap set, URL has NO "?"      -> deep-link joined with "?"
-# Also confirms the MDOT NFC Map link (col 16) hits the ArcGIS Map Viewer
-# URL (not the Experience app).
+# Also confirms the state-aware NFC Map link (col 18, §9.3b) hits the
+# right URL per state: MI's curated FEMA webmap, IN/WI's own live NFC
+# FeatureServer side-loaded into the Map Viewer, and the generic FEMA
+# Map Viewer pin for an unwired state.
 
 param([string]$XlsmPath = (Join-Path $env:TEMP 'RoadReviewer.xlsm'))
 
@@ -65,14 +67,46 @@ try {
   if ($cellC -ne 'Open') { throw ("Expected cell text 'Open' in Case C, got: '" + $cellC + "'") }
   Write-Host "  Case C pass" -ForegroundColor Green
 
-  # ---- MDOT NFC Map (col 16) — confirm it now hits the FEMA webmap, not the Experience ----
+  # ---- NFC Map (col 18) — state-aware (§9.3b). Formula text always
+  # contains all three states' URL fragments (one nested-IF formula for
+  # every row) so assertions check the CALCULATED value (.Hyperlinks(1).Address)
+  # for the active State, not the raw formula text. ----
   Write-Host ""
-  Write-Host "=== MDOT NFC Map (col 16) URL ===" -ForegroundColor Cyan
-  $f16 = [string]$sites.Cells(2, 18).Formula   # MDOT NFC Map (was col 16, +2 after Costs/Work Completion)
-  if (-not $f16.Contains('fema.maps.arcgis.com')) { throw "Col 16 formula no longer points at the FEMA webmap: $f16" }
-  if (-not $f16.Contains('webmap=6a1702b9147243d1a5ee62cd614bc681')) { throw "Col 16 missing the expected webmap id: $f16" }
-  if ($f16.Contains('experience.arcgis.com')) { throw "Col 16 still references the Experience app: $f16" }
-  Write-Host "  col 16 routes through the FEMA-hosted NFC/ACUB webmap" -ForegroundColor Green
+  Write-Host "=== NFC Map (col 18) URL, State=MI (default) ===" -ForegroundColor Cyan
+  $excel.Calculate()
+  $vMi = [string]$sites.Cells(2, 18).Hyperlinks(1).Address
+  if (-not $vMi.Contains('fema.maps.arcgis.com')) { throw "MI link no longer points at the FEMA webmap: $vMi" }
+  if (-not $vMi.Contains('webmap=6a1702b9147243d1a5ee62cd614bc681')) { throw "MI link missing the expected webmap id: $vMi" }
+  if ($vMi.Contains('experience.arcgis.com')) { throw "MI link still references the Experience app: $vMi" }
+  Write-Host "  MI routes through the FEMA-hosted NFC/ACUB webmap" -ForegroundColor Green
+
+  Write-Host ""
+  Write-Host "=== NFC Map (col 18) URL, State=IN ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = 'IN'
+  $excel.Calculate()
+  $vIn = [string]$sites.Cells(2, 18).Hyperlinks(1).Address
+  if (-not $vIn.Contains('gisdata.in.gov')) { throw "IN link doesn't side-load the Indiana FeatureServer: $vIn" }
+  Write-Host "  IN side-loads gisdata.in.gov" -ForegroundColor Green
+
+  Write-Host ""
+  Write-Host "=== NFC Map (col 18) URL, State=WI ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = 'WI'
+  $excel.Calculate()
+  $vWi = [string]$sites.Cells(2, 18).Hyperlinks(1).Address
+  if (-not $vWi.Contains('services5.arcgis.com')) { throw "WI link doesn't side-load the WisDOT FeatureServer: $vWi" }
+  Write-Host "  WI side-loads services5.arcgis.com" -ForegroundColor Green
+
+  Write-Host ""
+  Write-Host "=== NFC Map (col 18) URL, State=MN (unwired) ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = 'MN'
+  $excel.Calculate()
+  $vMn = [string]$sites.Cells(2, 18).Hyperlinks(1).Address
+  if ($vMn.Contains('webmap=')) { throw "MN link shouldn't fall back to the MI-specific webmap: $vMn" }
+  if (-not $vMn.Contains('fema.maps.arcgis.com')) { throw "MN link should still open the generic FEMA Map Viewer: $vMn" }
+  Write-Host "  MN falls back to the generic FEMA Map Viewer pin" -ForegroundColor Green
+
+  $wb.Names('JobState').RefersToRange.Value2 = 'MI'
+  $excel.Calculate()
 
   # ---- CSV export resolves URLs for col 24 ----
   Write-Host ""
@@ -88,6 +122,11 @@ try {
   if (-not $csv.Contains($urlC)) { throw "CSV missing the AGOL base URL" }
   if (-not $csv.Contains('center=-85.57025,42.28536')) { throw "CSV AGOL URL doesn't have center coords" }
   Write-Host "  CSV row contains resolved AGOL URL with center + marker" -ForegroundColor Green
+  # State was reset to MI above, so the CSV's NFC Map column (modExport's
+  # NfcMapUrlForRow, kept in sync by hand with SetNfcMapFormula) should
+  # resolve to the same MI webmap the formula did.
+  if (-not $csv.Contains('webmap=6a1702b9147243d1a5ee62cd614bc681')) { throw "CSV NFC Map column doesn't resolve to the MI webmap" }
+  Write-Host "  CSV row contains resolved NFC Map URL for State=MI" -ForegroundColor Green
 
   $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas before save
@@ -100,7 +139,7 @@ try {
   Remove-Item $csvFolder -Force -ErrorAction SilentlyContinue
 
   Write-Host ""
-  Write-Host "VERIFICATION PASSED -- AGOL Map column + MDOT NFC Map URL change" -ForegroundColor Green
+  Write-Host "VERIFICATION PASSED -- AGOL Map column + state-aware NFC Map column" -ForegroundColor Green
 }
 catch {
   Write-Host ("VERIFICATION FAILED: " + $_.Exception.Message) -ForegroundColor Red

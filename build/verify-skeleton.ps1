@@ -72,7 +72,7 @@ try {
 
   Write-Host "=== Sites headers ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')
-  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','MDOT NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
+  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
   for ($c = 1; $c -le $expectedHeaders.Count; $c++) {
     $got = [string]$sites.Cells(1,$c).Value2
     $want = $expectedHeaders[$c-1]
@@ -90,7 +90,7 @@ try {
   $sites.Cells(2, 7).Value = -85.57025             # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='FEMA Viewer'; 17='FIRMette Portal'; 18='MDOT NFC Map' }
+  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='FEMA Viewer'; 17='FIRMette Portal'; 18='NFC Map' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells(2, $k)
     $f = [string]$cell.Formula

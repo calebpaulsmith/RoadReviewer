@@ -54,7 +54,7 @@ Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Lon
         Case COL_BING: CellText = BuildUrl(URL_BING, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FEMAVIEW: CellText = BuildUrl(URL_FEMAVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FIRMPORTAL: CellText = BuildUrl(URL_FIRMPORTAL, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
-        Case COL_NFCMAP: CellText = BuildUrl(URL_NFC_MAPVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
+        Case COL_NFCMAP: CellText = NfcMapUrlForRow(ws, r)
         Case COL_AGOLMAP: CellText = AgolUrlForRow(ws, r)
         Case Else: CellText = CStr(ws.Cells(r, c).Value)
     End Select
@@ -63,6 +63,21 @@ Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Lon
         Case COL_GMAP, COL_STREETVIEW, COL_BING, COL_FEMAVIEW, COL_FIRMPORTAL, COL_NFCMAP, COL_AGOLMAP
             If Not HasValidCoords(ws, r) Then CellText = ""
     End Select
+End Function
+
+' Resolve the state-specific NFC map link (F8/F11). Matches the cell
+' formula generated in SetNfcMapFormula - keep the two in sync.
+Private Function NfcMapUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
+    Dim stateCode As String, template As String
+    stateCode = UCase$(SetupValue(NR_STATE))
+    If Len(stateCode) = 0 Then stateCode = "MI"   ' matches ClassifyRows's default
+    Select Case stateCode
+        Case "MI": template = URL_NFC_MAPVIEW
+        Case "IN": template = URL_NFC_MAPVIEW_IN
+        Case "WI": template = URL_NFC_MAPVIEW_WI
+        Case Else: template = URL_FEMAVIEW
+    End Select
+    NfcMapUrlForRow = BuildUrl(template, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
 End Function
 
 ' Resolve the inspector's pasted AGOL webmap URL into a per-row deep-link
