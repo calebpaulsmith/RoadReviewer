@@ -40,8 +40,8 @@ the sheets while preserving the data you typed into the Sites table.
   the coordinate columns, INELIGIBLE rows auto-highlight red (§5.3).
 - **Geocode Addresses** — fills lat/lon from the Address column via the Census
   geocoder; never overwrites coordinates already present (F4).
-- **1. Classify Roads** — MDOT NFC class + NTAD ACUB urban/rural + route name,
-  eligibility verdict, "Re-run Failed Rows" (§5.4, F7, F12).
+- **1. Classify Roads** — MI/IN/WI NFC class + NTAD ACUB urban/rural + road
+  name, eligibility verdict, "Re-run Failed Rows" (§5.4, F7, F12).
 - **2. Review Imagery** — opens the curated imagery set for the selected
   Sites row(s) (§5.5).
 - **KML export** and **CSV export** of the full Sites table (F10).

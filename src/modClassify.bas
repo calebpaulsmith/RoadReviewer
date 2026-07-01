@@ -2,13 +2,17 @@ Attribute VB_Name = "modClassify"
 Option Explicit
 
 ' RoadReviewer V1 - Workflow 1: Classify Roads (§4.2 query strategy, F7 rule).
-' For each Sites row: query the MDOT NFC layer (class), the route layer (name)
-' and the nationwide NTAD ACUB layer (urban/rural), then write the eligibility
-' verdict back to the row. Michigan is wired in V1; other states still get the
-' ACUB check (F8).
+' For each Sites row: query the state's NFC layer (class + road name) and the
+' nationwide NTAD ACUB layer (urban/rural), then write the eligibility verdict
+' back to the row. Michigan, Indiana and Wisconsin are wired in V1; other
+' states still get the ACUB check (F8).
 
-Private Const NFC_OUTFIELDS As String = "FunctionalSystem,PR"
-Private Const ROUTE_OUTFIELDS As String = "RouteDesignation,RouteNumber"
+Private Const MI_NFC_OUTFIELDS As String = "FunctionalSystem,PR"
+Private Const MI_ROUTE_OUTFIELDS As String = "RouteDesignation,RouteNumber"
+Private Const IN_NFC_OUTFIELDS As String = "functional_class"
+Private Const IN_ROADNAME_OUTFIELDS As String = "st_full"
+Private Const WI_TRUNK_OUTFIELDS As String = "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR"
+Private Const WI_LOCAL_OUTFIELDS As String = "FNCT_CLS_CTGY_TYCD,ST_LABL_NM"
 Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 
 Public Sub ClassifyAllRows()
@@ -33,7 +37,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
 
     stateCode = UCase$(SetupValue(NR_STATE))
     If Len(stateCode) = 0 Then stateCode = "MI"
-    nfcWired = (stateCode = "MI")
+    nfcWired = NfcWired(stateCode)
     If Not nfcWired Then
         If Not gHeadless Then MsgBox "Road-class (NFC) lookup is not yet wired for " & stateCode & "." & vbCrLf & _
             "The ACUB urban-boundary check will still run on every row.", vbInformation, "Classify Roads"
@@ -57,7 +61,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         processed = processed + 1
         SetStatus "Classifying " & processed & " of " & total & " - " & _
             CStr(ws.Cells(r, COL_SITENAME).Value)
-        ClassifyOneRow ws, r, nfcWired
+        ClassifyOneRow ws, r, stateCode
         DoEvents
 NextRow:
     Next r
@@ -76,7 +80,16 @@ Private Function RowIsFailed(ByVal ws As Worksheet, ByVal r As Long) As Boolean
     RowIsFailed = (InStr(1, CStr(ws.Cells(r, COL_ELIGIBILITY).Value), STATUS_FAILED_PREFIX, vbTextCompare) = 1)
 End Function
 
-Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWired As Boolean)
+' States whose NFC (road class) layer is wired in V1. Every state still gets
+' the ACUB urban-boundary check regardless (F8).
+Private Function NfcWired(ByVal stateCode As String) As Boolean
+    Select Case stateCode
+        Case "MI", "IN", "WI": NfcWired = True
+        Case Else: NfcWired = False
+    End Select
+End Function
+
+Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCode As String)
     TraceLine "ClassifyOneRow row=" & r & " name=" & CStr(ws.Cells(r, COL_SITENAME).Value)
     ' Idempotent: clear prior lookup output before writing (N5).
     ClearLookupCells ws, r
@@ -91,9 +104,11 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWire
     lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
     lon = InvariantNum(ws.Cells(r, COL_LON).Value)
 
-    ' --- ACUB (urban/rural) - runs for every state ---
+    ' --- ACUB (urban/rural) - runs for every state, and is the single
+    ' source of truth for the Urban/Rural column even on states whose own
+    ' NFC layer happens to carry its own urban/rural flag (§4.2). ---
     Dim acubJson As String, isUrban As Boolean, acubName As String
-    acubJson = QueryWithFallback(REST_ACUB, lat, lon, ACUB_OUTFIELDS, False, errMsg)
+    acubJson = QueryWithFallback(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", errMsg)
     If Len(errMsg) > 0 Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "ACUB query (" & errMsg & ")"
         Exit Sub
@@ -103,29 +118,29 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWire
     ws.Cells(r, COL_URBANRURAL).Value = IIf(isUrban, "Urban", "Rural")
     ws.Cells(r, COL_ACUBNAME).Value = acubName
 
-    If Not nfcWired Then
+    If Not NfcWired(stateCode) Then
         ws.Cells(r, COL_ELIGIBILITY).Value = "ACUB only - class lookup not wired for this state"
         Exit Sub
     End If
 
-    ' --- NFC class (MDOT layer 353) ---
-    Dim nfcJson As String, codes As Collection
-    nfcJson = QueryWithFallback(REST_MDOT_NFC, lat, lon, NFC_OUTFIELDS, True, errMsg)
+    ' --- NFC class + road name (state-specific layer) ---
+    Dim codes As Collection, roadName As String
+    Select Case stateCode
+        Case "MI": QueryMichiganNfc lat, lon, codes, roadName, errMsg
+        Case "IN": QueryIndianaNfc lat, lon, codes, roadName, errMsg
+        Case "WI": QueryWisconsinNfc lat, lon, codes, roadName, errMsg
+    End Select
     If Len(errMsg) > 0 Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "NFC query (" & errMsg & ")"
         Exit Sub
     End If
-    Set codes = ExtractIntegers(nfcJson, "FunctionalSystem")
-
-    ' --- Route name (MDOT layer 543; blank for local streets) ---
-    Dim routeJson As String, roadName As String
-    routeJson = QueryWithFallback(REST_MDOT_ROUTE, lat, lon, ROUTE_OUTFIELDS, True, errMsg)
-    If Len(errMsg) = 0 Then roadName = BuildRouteName(routeJson)
     ws.Cells(r, COL_ROADNAME).Value = roadName
 
-    ' --- Street name(s) via Census TIGER (covers everything MDOT 543 misses) ---
-    ' Failures here are non-fatal — keep going so the classification still
-    ' lands even if TIGER is briefly unavailable.
+    ' --- Street name(s) via Census TIGER (covers everything the state's own
+    ' road-name field misses — e.g. MDOT 543 and Indiana's centerline layer
+    ' both only reliably carry designated/trunkline names). Failures here
+    ' are non-fatal — keep going so the classification still lands even if
+    ' TIGER is briefly unavailable. ---
     Dim tigerErr As String, streets As String
     streets = LookupStreetNames(lat, lon, tigerErr)
     ws.Cells(r, COL_STREET).Value = streets
@@ -135,13 +150,87 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal nfcWire
     ws.Cells(r, COL_ELIGIBILITY).Value = FederalAidVerdict(codes, isUrban)
 End Sub
 
+' Michigan: NFC class from MDOT layer 353 (FunctionalSystem, bare FHWA 1-7,
+' §4.2), road name from the companion route-designation layer 543 (blank for
+' local streets - that's expected, TIGER fills the gap). Both filtered to
+' exclude retired LRS segments.
+Private Sub QueryMichiganNfc(ByVal lat As String, ByVal lon As String, _
+        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
+    Dim nfcJson As String, routeJson As String, routeErr As String
+    nfcJson = QueryWithFallback(REST_MDOT_NFC, lat, lon, MI_NFC_OUTFIELDS, "RHRetireDate IS NULL", errMsg)
+    If Len(errMsg) > 0 Then Exit Sub
+    Set codes = ExtractIntegers(nfcJson, "FunctionalSystem")
+
+    routeJson = QueryWithFallback(REST_MDOT_ROUTE, lat, lon, MI_ROUTE_OUTFIELDS, "RHRetireDate IS NULL", routeErr)
+    If Len(routeErr) = 0 Then roadName = BuildRouteName(routeJson)
+End Sub
+
+' Indiana: NFC class from LRSE_Functional_Class layer 22 (functional_class,
+' bare FHWA 1-7, no urban/rural embedded - §4.2a). record_status=5 (Active)
+' is Indiana's analog to Michigan's RHRetireDate filter. Road name is a
+' separate, un-keyed point query against the statewide centerline layer -
+' Indiana's functional-class layer carries no name field at all (not even a
+' trunkline-only one like MDOT 543), so this is blank more often; TIGER
+' backs it up.
+Private Sub QueryIndianaNfc(ByVal lat As String, ByVal lon As String, _
+        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
+    Dim nfcJson As String, nameJson As String, nameErr As String
+    nfcJson = QueryWithFallback(REST_IN_NFC, lat, lon, IN_NFC_OUTFIELDS, "record_status=5", errMsg)
+    If Len(errMsg) > 0 Then Exit Sub
+    Set codes = ExtractIntegers(nfcJson, "functional_class")
+
+    nameJson = QueryWithFallback(REST_IN_ROADNAME, lat, lon, IN_ROADNAME_OUTFIELDS, "1=1", nameErr)
+    If Len(nameErr) = 0 Then roadName = FirstString(nameJson, "st_full")
+End Sub
+
+' Wisconsin: two layers queried in sequence (§4.2b). Try the State Trunk
+' Network first (FED_FC_CD is already a bare FHWA 1-7 string) since it's the
+' more authoritative/current source for state highways. Only when nothing
+' intersects there does it fall back to the Local Road Network snapshot,
+' whose FNCT_CLS_CTGY_TYCD needs WisconsinLocalCategoryToFhwa() to strip the
+' embedded urban/rural digit back out to a bare FHWA code. Neither layer
+' needs a retired-segment filter (both are point-in-time snapshot extracts,
+' confirmed via live schema probe) or a browser User-Agent (AGOL-hosted,
+' same pattern as the nationwide ACUB layer).
+Private Sub QueryWisconsinNfc(ByVal lat As String, ByVal lon As String, _
+        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
+    Dim trunkJson As String, localJson As String, fc As Variant, cat As Variant
+    Set codes = New Collection
+
+    trunkJson = QueryWithFallback(REST_WI_STATE_TRUNK, lat, lon, WI_TRUNK_OUTFIELDS, "1=1", errMsg)
+    If Len(errMsg) > 0 Then Exit Sub
+
+    If FeatureCount(trunkJson) > 0 Then
+        For Each fc In ExtractStrings(trunkJson, "FED_FC_CD")
+            If IsNumeric(fc) Then codes.Add CLng(fc)
+        Next fc
+        roadName = BuildWisconsinTrunkRoadName(trunkJson)
+        Exit Sub
+    End If
+
+    localJson = QueryWithFallback(REST_WI_LOCAL_ROADS, lat, lon, WI_LOCAL_OUTFIELDS, "1=1", errMsg)
+    If Len(errMsg) > 0 Then Exit Sub
+    For Each cat In ExtractIntegers(localJson, "FNCT_CLS_CTGY_TYCD")
+        codes.Add WisconsinLocalCategoryToFhwa(CLng(cat))
+    Next cat
+    roadName = FirstString(localJson, "ST_LABL_NM")
+End Sub
+
+Private Function BuildWisconsinTrunkRoadName(ByVal trunkJson As String) As String
+    Dim hwytype As String, hwynum As String, hwydir As String
+    hwytype = FirstString(trunkJson, "HWYTYPE")
+    hwynum = FirstString(trunkJson, "HWYNUM")
+    hwydir = FirstString(trunkJson, "HWYDIR")
+    BuildWisconsinTrunkRoadName = Trim$(hwytype & " " & hwynum & " " & hwydir)
+End Function
+
 ' Query Census TIGER Local Roads (layer 8) within the search buffer and
 ' return a pipe-joined list of unique street names. Returns "" with errMsg
 ' set if the call failed; "" with errMsg empty if no streets matched.
 Private Function LookupStreetNames(ByVal lat As String, ByVal lon As String, _
         ByRef errMsg As String) As String
     Dim json As String, names As Collection, seen As String, out As String, nm As Variant
-    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", False, BufferFeet(), errMsg)
+    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", "1=1", BufferFeet(), errMsg)
     If Len(errMsg) > 0 Then Exit Function
     Set names = ExtractStrings(json, "NAME")
     For Each nm In names
@@ -165,12 +254,12 @@ End Sub
 ' Exact point intersect first; if no hit, retry with a buffer (§4.2).
 ' Buffer size is configurable on Setup (NR_BUFFER, default 200 ft).
 Private Function QueryWithFallback(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
-        ByVal outFields As String, ByVal retiredFilter As Boolean, ByRef errMsg As String) As String
+        ByVal outFields As String, ByVal whereClause As String, ByRef errMsg As String) As String
     Dim json As String
-    json = RunQuery(baseUrl, lat, lon, outFields, retiredFilter, 0, errMsg)
+    json = RunQuery(baseUrl, lat, lon, outFields, whereClause, 0, errMsg)
     If Len(errMsg) > 0 Then Exit Function
     If FeatureCount(json) = 0 And Not HasArcgisError(json) Then
-        json = RunQuery(baseUrl, lat, lon, outFields, retiredFilter, BufferFeet(), errMsg)
+        json = RunQuery(baseUrl, lat, lon, outFields, whereClause, BufferFeet(), errMsg)
     End If
     QueryWithFallback = json
 End Function
@@ -195,10 +284,9 @@ Public Function BufferFeet() As Long
 End Function
 
 Private Function RunQuery(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
-        ByVal outFields As String, ByVal retiredFilter As Boolean, ByVal distanceFt As Long, _
+        ByVal outFields As String, ByVal whereClause As String, ByVal distanceFt As Long, _
         ByRef errMsg As String) As String
-    Dim url As String, whereClause As String
-    whereClause = IIf(retiredFilter, "RHRetireDate IS NULL", "1=1")
+    Dim url As String
     url = baseUrl & "/query?where=" & UrlEncode(whereClause) & _
         "&geometry=" & lon & "," & lat & _
         "&geometryType=esriGeometryPoint&inSR=4326" & _

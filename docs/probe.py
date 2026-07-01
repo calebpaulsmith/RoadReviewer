@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Probe MDOT NFC + NTAD ACUB FeatureServer schemas (verification step §5.1).
+"""Probe MI/IN/WI NFC + NTAD ACUB FeatureServer schemas (verification §5.1).
 
-Hits the four FeatureServer endpoints, prints each layer's schema, then
-runs a point-intersect query at downtown Detroit so you can see which
-fields actually carry useful data.
+Hits every wired-state FeatureServer endpoint, prints each layer's schema,
+then runs a point-intersect query at a known good coordinate for that state
+so you can see which fields actually carry useful data.
 
-Run from any machine with internet access (the cloud build sandbox is
-firewalled off `mdotgis.state.mi.us` and `services.arcgis.com`):
+Run from any machine with internet access. The cloud build sandbox is
+firewalled off `mdotgis.state.mi.us`, so the MI layers must be probed from a
+local workstation (see docs/probe-mdot-layers.md); `gisdata.in.gov` and
+`services5.arcgis.com` (IN/WI) are reachable from the cloud sandbox too.
 
     python3 docs/probe.py
 """
@@ -15,19 +17,33 @@ import sys
 import urllib.error
 import urllib.request
 
+# Each entry: (label, base FeatureServer URL, test lon, test lat)
 LAYERS = [
     ("MDOT 353 (Functional System)",
-     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353"),
+     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+     -83.045, 42.331),   # downtown Detroit
     ("MDOT 364 (Classification)",
-     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/364"),
+     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/364",
+     -83.045, 42.331),
     ("MDOT 543 (Route System)",
-     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"),
+     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+     -83.045, 42.331),
     ("NTAD ACUB (nationwide)",
-     "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"),
+     "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
+     -83.045, 42.331),
+    ("INDOT LRSE_Functional_Class",
+     "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+     -86.1581, 39.7684),   # downtown Indianapolis
+    ("INDOT Road_Centerlines_of_Indiana_2021",
+     "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+     -86.1581, 39.7684),
+    ("WisDOT State Trunk Network (FFCL_gdb/3)",
+     "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
+     -87.9065, 43.0389),   # downtown Milwaukee
+    ("WisDOT Local Road Network snapshot",
+     "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1",
+     -87.9065, 43.0389),
 ]
-
-# Downtown Detroit — should hit every Michigan road layer and be inside an ACUB
-TEST_LON, TEST_LAT = -83.045, 42.331
 
 
 def fetch_json(url, timeout=20):
@@ -37,7 +53,7 @@ def fetch_json(url, timeout=20):
 
 
 def main():
-    for label, base in LAYERS:
+    for label, base, test_lon, test_lat in LAYERS:
         print(f"\n=== {label} ===")
         print(f"  base: {base}")
         try:
@@ -56,7 +72,7 @@ def main():
 
         query_url = (
             f"{base}/query"
-            f"?geometry={TEST_LON},{TEST_LAT}"
+            f"?geometry={test_lon},{test_lat}"
             f"&geometryType=esriGeometryPoint"
             f"&inSR=4326"
             f"&spatialRel=esriSpatialRelIntersects"
@@ -67,11 +83,11 @@ def main():
         try:
             qresult = fetch_json(query_url)
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
-            print(f"  Detroit point query failed: {e}")
+            print(f"  point query failed: {e}")
             continue
 
         feats = qresult.get("features", [])
-        print(f"  Detroit point-intersect: {len(feats)} feature(s)")
+        print(f"  point-intersect ({test_lon},{test_lat}): {len(feats)} feature(s)")
         if feats:
             for k, v in feats[0].get("attributes", {}).items():
                 print(f"    {k:28s} = {v}")

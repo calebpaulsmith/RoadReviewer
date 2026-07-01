@@ -179,7 +179,7 @@ Private Sub BuildHome()
     ws.Range("E13").Value = "Need to rebuild the layout? (Sites data is preserved.)"
     AddButton ws, 320, 200, 180, 28, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
 
-    ws.Range("E16").Value = "Road classification is wired for Michigan in V1. " & _
+    ws.Range("E16").Value = "Road classification is wired for Michigan, Indiana and Wisconsin in V1. " & _
         "ACUB (urban-boundary) lookup is nationwide."
     ws.Range("E16").Font.Italic = True
     ws.Range("E16").Font.Color = RGB(70, 70, 70)
@@ -235,7 +235,7 @@ Private Sub BuildSetup()
 
     AddButton ws, ws.Range("D10").Left, ws.Range("B10").Top - 2, 150, 22, "Browse for folder...", "SelectOutputFolder"
 
-    ws.Range("A14").Value = "Only Michigan's road-class layer is wired in V1. Other states still run the ACUB check."
+    ws.Range("A14").Value = "Michigan, Indiana and Wisconsin road-class layers are wired in V1. Other states still run the ACUB check."
     ws.Range("A14").Font.Italic = True
     ws.Range("A14").Font.Color = RGB(90, 90, 90)
     ws.Range("A15").Value = "AGOL Webmap URL is optional. Paste a https://www.arcgis.com/apps/mapviewer/...?webmap=<id> URL " & _
@@ -484,7 +484,7 @@ Private Sub BuildClassifySheet()
         "Reads Latitude/Longitude from the Sites table.", _
         "Writes FHWA Class, Urban/Rural, ACUB Name, Road Name and Eligibility back to each row.", _
         "Federal aid rows (Urban Minor Collector or greater) are highlighted red, non-federal aid green, review yellow.", _
-        "Michigan road class is wired in V1; other states still get the ACUB check.")
+        "Michigan, Indiana and Wisconsin road class are wired in V1; other states still get the ACUB check.")
     AddButton ws, 18, 150, 200, 34, "Classify All Rows", "ClassifyAllRows", CLR_BTN_GO
     AddButton ws, 230, 150, 200, 34, "Re-run Failed Rows", "ReRunFailedClassifications", CLR_BTN
     ws.Tab.Color = RGB(46, 139, 87)
