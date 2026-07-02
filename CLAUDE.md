@@ -924,6 +924,13 @@ build/                                  Local assembly + verification scripts (n
                                           + ExportCombinedMapPdf against live FEMA GP
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
                                           for reference (not version-controlled)
+  verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
+                                          <script> block headless (Node + curl) against the live
+                                          services, asserting the §4.2/§4.2a/§4.2b test coords
+web/                                    FHWA Road Checker (provisional) — static web prototype (§7b)
+  index.html                            single-file page: paste coords → auto-classify → map pins
+  vendor/leaflet/                       Leaflet 1.9.4 vendored locally (no CDN calls)
+  README.md                             privacy model, hosting, verification
 docs/
   probe-mdot-layers.md                  how to re-run the §5.1 schema probe locally
   probe.py                              stdlib probe script for the four FeatureServers
@@ -1094,6 +1101,53 @@ powershell -ExecutionPolicy Bypass -File build\verify-firmette-maps.ps1   # Work
 Open `%TEMP%\RoadReviewer.xlsm` in Excel for the button-click smoke pass:
 imagery one-click (§5.5), geocoder, and any UI feel-test before handing
 off to a non-developer co-worker (§5.10).
+
+---
+
+## 7b. FHWA Road Checker (provisional title) — public web prototype
+
+A separate product exploration living in `web/`: RoadReviewer's Workflow 1
+as a public static page, aimed at applicants (county road commissions,
+municipal engineers) rather than inspectors. Full rationale and privacy
+model in `web/README.md`; the design conversation that produced it is
+summarized here so it isn't relitigated:
+
+- **Client-side only, by design.** No back end, no accounts, no storage,
+  no analytics. The visitor's browser queries the same public MDOT /
+  INDOT / WisDOT / NTAD / TIGER endpoints the Excel tool queries (every
+  one of them was confirmed to send CORS headers, 2026-07-02 — including
+  `mdotgis.state.mi.us`, which is also reachable from this repo's cloud
+  sandbox now, contrary to the older note in §7a). This is the answer to
+  "the audience won't upload damage data to the internet": the page never
+  asks for damage data (name + lat/lon only, no WO/DI/applicant fields)
+  and has no server to upload to. Static hosting also means "thousands of
+  visitors" costs nothing; the scaling risk is the upstream state servers,
+  mitigated by per-visitor IPs and the small per-point query count.
+- **Paste-and-see UX.** Coordinates pasted into the textarea are parsed,
+  classified and pinned on a Leaflet map automatically (debounced input
+  event — no submit button). Rows/pins use the same red/green/yellow
+  federal-aid buckets as the Sites table and KML export. A visible
+  network log lists every request the page makes; Leaflet is vendored
+  locally so there are no CDN calls. Exports: CSV download +
+  copy-for-Excel TSV, both generated in the browser.
+- **Same logic as Excel.** `web/index.html`'s `<script id="rr-core">`
+  block is a hand-port of `modClassify.bas`/`modConstants.bas` (same
+  where-clauses, fallback buffers incl. the 200-ft ACUB floor, verdict
+  table, state gate). The two must be kept in sync by hand — there is no
+  shared source between VBA and JS. `build/verify-web-core.mjs` executes
+  that exact script block headless against the live services and passed
+  on all §4.2/§4.2a/§4.2b test coordinates (2026-07-02), including the
+  two increment-4 WI regression points; a Playwright DOM smoke (paste →
+  table rows + colored markers, stubbed services) also passed. MDOT
+  throws occasional transient 503s; failed rows aren't cached and get a
+  per-row retry link (web analog of F12).
+- **Open items:** the "FHWA Road Checker" name risks implying agency
+  affiliation (page carries an "unofficial, not affiliated" disclaimer;
+  consider "Federal-Aid Road Checker"); basemap tiles necessarily reveal
+  the viewed area to Esri (disclosed in the footer); not yet click-tested
+  in a real browser by a human; state auto-detect uses rough bounding
+  boxes (wrong guesses fail soft to "review manually" + dropdown
+  override).
 
 ---
 

@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FHWA Road Checker (provisional) — Federal-Aid Road Classification</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  :root {
+    --fed:    #fdecea; --fed-border:    #d73027;
+    --nonfed: #e9f6ec; --nonfed-border: #1a9850;
+    --review: #fef7e0; --review-border: #b58900;
+    --failed: #f0f0f0; --failed-border: #888;
+    --ink: #1c2733; --muted: #5b6b7b; --line: #d9e1e8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, Segoe UI, Roboto, sans-serif; color: var(--ink); background: #f7f9fb; }
+  header { background: #17324d; color: #fff; padding: 14px 22px; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .sub { color: #b8c9da; font-size: 13px; margin-top: 3px; }
+  .privacy { background: #e8f1ea; border-bottom: 1px solid #c4d9c9; padding: 8px 22px; font-size: 13px; color: #2c4a33; }
+  .privacy b { color: #1d3a25; }
+  main { padding: 16px 22px; max-width: 1500px; margin: 0 auto; }
+  .top { display: flex; gap: 16px; flex-wrap: wrap; }
+  .input-col { flex: 1 1 380px; min-width: 320px; display: flex; flex-direction: column; }
+  .map-col { flex: 1.4 1 520px; min-width: 360px; }
+  #map { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 6px; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .controls label { font-size: 13px; color: var(--muted); }
+  select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+  textarea {
+    flex: 1; width: 100%; min-height: 300px; resize: vertical;
+    font: 13px/1.5 ui-monospace, Consolas, monospace;
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  }
+  textarea:focus { outline: 2px solid #4a7fb5; border-color: transparent; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .results { margin-top: 18px; }
+  .results-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .results-bar h2 { font-size: 16px; margin: 0; }
+  .count { font-size: 13px; color: var(--muted); }
+  button {
+    font: inherit; font-size: 13.5px; padding: 6px 12px; border-radius: 5px;
+    border: 1px solid var(--line); background: #fff; cursor: pointer;
+  }
+  button:hover { background: #eef3f7; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eef2f5; white-space: nowrap; }
+  th { background: #f1f5f8; font-weight: 600; position: sticky; top: 0; }
+  td.wrap { white-space: normal; min-width: 180px; }
+  tr.v-fed    td { background: var(--fed); }    tr.v-fed    td:first-child { box-shadow: inset 3px 0 0 var(--fed-border); }
+  tr.v-nonfed td { background: var(--nonfed); } tr.v-nonfed td:first-child { box-shadow: inset 3px 0 0 var(--nonfed-border); }
+  tr.v-review td { background: var(--review); } tr.v-review td:first-child { box-shadow: inset 3px 0 0 var(--review-border); }
+  tr.v-failed td { background: var(--failed); } tr.v-failed td:first-child { box-shadow: inset 3px 0 0 var(--failed-border); }
+  tr.v-pending td { color: var(--muted); font-style: italic; }
+  td .links a { margin-right: 8px; font-size: 12.5px; }
+  a { color: #205d8c; }
+  details.netlog { margin-top: 16px; font-size: 12.5px; color: var(--muted); }
+  details.netlog pre { max-height: 180px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0 0; }
+  footer { padding: 14px 22px 26px; font-size: 12.5px; color: var(--muted); max-width: 1500px; margin: 0 auto; }
+  .legend { display: flex; gap: 14px; font-size: 12.5px; margin-top: 6px; flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+  .legend .l-fed::before { background: var(--fed-border); }
+  .legend .l-nonfed::before { background: var(--nonfed-border); }
+  .legend .l-review::before { background: var(--review-border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FHWA Road Checker <span style="font-weight:400;font-size:14px;">(provisional title)</span></h1>
+  <div class="sub">Federal-aid road classification — FHWA functional class + 2020 Adjusted Census Urban Boundary. Unofficial tool; not affiliated with FHWA or FEMA.</div>
+</header>
+
+<div class="privacy">
+  <b>Nothing you paste is uploaded or saved.</b> This page has no server and no analytics. Your browser queries the
+  public state-DOT and USDOT map services directly (the same services the RoadReviewer Excel tool queries) and shows
+  every request it makes in the network log at the bottom. Refreshing the page erases everything.
+</div>
+
+<main>
+  <div class="top">
+    <div class="input-col">
+      <div class="controls">
+        <label>State:
+          <select id="stateSel">
+            <option value="AUTO" selected>Auto-detect (MI / IN / WI)</option>
+            <option value="MI">Michigan</option>
+            <option value="IN">Indiana</option>
+            <option value="WI">Wisconsin</option>
+            <option value="MN">Minnesota (ACUB only)</option>
+            <option value="IL">Illinois (ACUB only)</option>
+            <option value="OH">Ohio (ACUB only)</option>
+          </select>
+        </label>
+        <span class="count" id="parseCount"></span>
+      </div>
+      <textarea id="coordsIn" spellcheck="false" placeholder="Paste coordinates — one point per line. Results appear automatically.
+
+Examples:
+42.28536, -85.57025
+Culvert on Q Ave	42.6911	-84.5360
+Site 12, 44.2700, -83.5200"></textarea>
+      <div class="hint">
+        Accepts <code>lat, lon</code> with an optional name before or after — commas, tabs or spaces.
+        Classification runs as you paste; no submit button.
+      </div>
+      <div class="legend">
+        <span class="l-fed">Federal aid (Urban Minor Collector or greater)</span>
+        <span class="l-nonfed">Non-federal aid</span>
+        <span class="l-review">Review / no result</span>
+      </div>
+    </div>
+    <div class="map-col">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="results">
+    <div class="results-bar">
+      <h2>Results</h2>
+      <span class="count" id="statusCount"></span>
+      <span style="flex:1"></span>
+      <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
+      <button id="dlCsv">Download CSV</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+    <div class="tablewrap">
+      <table id="resultsTable">
+        <thead><tr>
+          <th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>FHWA Class</th><th>Urban/Rural</th>
+          <th>Urban Area (ACUB)</th><th>Route</th><th>Street(s)</th><th class="wrap">Federal Aid Status</th><th>Links</th>
+        </tr></thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <details class="netlog">
+    <summary>Network log — every request this page makes (transparency)</summary>
+    <pre id="netLog">(no requests yet)</pre>
+  </details>
+</main>
+
+<footer>
+  This tool classifies the <b>road</b>, never the project — a "Federal aid" tag means the road is on the federal-aid
+  system (Urban Minor Collector or greater per FHWA functional classification and the 2020 Adjusted Census Urban
+  Boundaries); the inspector or applicant decides what that means for any given work order. Road-class lookup is wired
+  for Michigan (MDOT), Indiana (INDOT) and Wisconsin (WisDOT); other states get the urban-boundary check only.
+  Map tiles &copy; Esri World Imagery / OpenStreetMap contributors — viewing the map fetches tiles for the visible area
+  from those providers.
+</footer>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+
+<!-- ============================================================
+     rr-core: pure classification logic, a direct port of
+     src/modClassify.bas + modConstants.bas. No DOM access — this
+     block is also executed headless by build/test-web-core.mjs
+     against the live services, so keep it self-contained.
+     Expects a global async httpGetJson(url) -> parsed JSON.
+     ============================================================ -->
+<script id="rr-core">
+const REST = {
+  MDOT_NFC:      "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+  MDOT_ROUTE:    "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+  ACUB:          "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
+  IN_NFC:        "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+  IN_ROADNAME:   "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+  WI_STATE_TRUNK:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
+  WI_LOCAL_ROADS:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1",
+  TIGER_ROADS:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
+};
+
+const DEFAULT_BUFFER_FEET = 200;
+const ACUB_MIN_BUFFER_FEET = 200;
+
+// Per-row verification links (§4.3 URL templates).
+const LINK_TEMPLATES = {
+  "Google":     "https://www.google.com/maps?q={LAT},{LON}",
+  "StreetView": "https://www.google.com/maps?q&layer=c&cbll={LAT},{LON}",
+  "FEMA":       "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  "FIRMette":   "https://msc.fema.gov/portal/firmette?latitude={LAT}&longitude={LON}",
+};
+
+function functionalSystemLabel(code) {
+  switch (code) {
+    case 0: return "Non-Certified Roadway";
+    case 1: return "Interstate";
+    case 2: return "Other Freeway";
+    case 3: return "Other Principal Arterial";
+    case 4: return "Minor Arterial";
+    case 5: return "Major Collector";
+    case 6: return "Minor Collector";
+    case 7: return "Local";
+    default: return "Unknown (" + code + ")";
+  }
+}
+
+// WisDOT local-roads FNCT_CLS_CTGY_TYCD -> bare FHWA 1-7 (see
+// modConstants.WisconsinLocalCategoryToFhwa for the domain table and the
+// note on why 96 -> Major Collector is safe).
+function wisconsinLocalCategoryToFhwa(cat) {
+  switch (cat) {
+    case 10: case 60: return 3;
+    case 20: case 86: return 4;
+    case 30: case 96: return 5;
+    case 40: return 6;
+    case 45: case 97: return 7;
+    default: return 0;
+  }
+}
+
+function buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt) {
+  let url = baseUrl + "/query?where=" + encodeURIComponent(whereClause) +
+    "&geometry=" + lon + "," + lat +
+    "&geometryType=esriGeometryPoint&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&outFields=" + encodeURIComponent(outFields) +
+    "&returnGeometry=false&f=json";
+  if (distanceFt > 0) url += "&distance=" + distanceFt + "&units=esriSRUnit_Foot";
+  return url;
+}
+
+function featureCount(json) { return (json && json.features) ? json.features.length : 0; }
+
+function attrValues(json, field) {
+  if (!json || !json.features) return [];
+  return json.features.map(f => f.attributes ? f.attributes[field] : undefined)
+                      .filter(v => v !== undefined && v !== null && String(v).trim() !== "");
+}
+function extractIntegers(json, field) {
+  return attrValues(json, field).map(Number).filter(Number.isFinite).map(Math.trunc);
+}
+function firstString(json, field) {
+  const v = attrValues(json, field);
+  return v.length ? String(v[0]) : "";
+}
+
+async function runQuery(baseUrl, lat, lon, outFields, whereClause, distanceFt) {
+  const json = await httpGetJson(buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt));
+  if (json && json.error) throw new Error("service error " + (json.error.code || "") + " " + (json.error.message || ""));
+  return json;
+}
+
+// Exact point intersect first; if no hit, retry with the fallback buffer (§4.2).
+async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fallbackFt) {
+  let json = await runQuery(baseUrl, lat, lon, outFields, whereClause, 0);
+  if (featureCount(json) === 0) {
+    json = await runQuery(baseUrl, lat, lon, outFields, whereClause, fallbackFt);
+  }
+  return json;
+}
+
+async function queryMichiganNfc(lat, lon, bufferFt) {
+  const nfc = await queryWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt);
+  const codes = extractIntegers(nfc, "FunctionalSystem");
+  let roadName = "";
+  try {
+    const route = await queryWithFallback(REST.MDOT_ROUTE, lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt);
+    roadName = (firstString(route, "RouteDesignation") + " " + firstString(route, "RouteNumber")).trim();
+  } catch (e) { /* route name is best-effort, matching modClassify */ }
+  return { codes, roadName };
+}
+
+async function queryIndianaNfc(lat, lon, bufferFt) {
+  const nfc = await queryWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt);
+  const codes = extractIntegers(nfc, "functional_class");
+  let roadName = "";
+  try {
+    const nm = await queryWithFallback(REST.IN_ROADNAME, lat, lon, "st_full", "1=1", bufferFt);
+    roadName = firstString(nm, "st_full");
+  } catch (e) { /* best-effort */ }
+  return { codes, roadName };
+}
+
+async function queryWisconsinNfc(lat, lon, bufferFt) {
+  const trunk = await queryWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt);
+  if (featureCount(trunk) > 0) {
+    const codes = attrValues(trunk, "FED_FC_CD").map(Number).filter(Number.isFinite).map(Math.trunc);
+    const roadName = [firstString(trunk, "HWYTYPE"), firstString(trunk, "HWYNUM"), firstString(trunk, "HWYDIR")]
+      .join(" ").replace(/\s+/g, " ").trim();
+    return { codes, roadName };
+  }
+  const loc = await queryWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt);
+  const codes = extractIntegers(loc, "FNCT_CLS_CTGY_TYCD").map(wisconsinLocalCategoryToFhwa);
+  return { codes, roadName: firstString(loc, "ST_LABL_NM") };
+}
+
+const NFC_WIRED = { MI: queryMichiganNfc, IN: queryIndianaNfc, WI: queryWisconsinNfc };
+
+function classLabels(codes, bufferFt) {
+  if (codes.length === 0) return "No road segment within " + bufferFt + " ft";
+  const out = [];
+  for (const c of codes) {
+    const label = functionalSystemLabel(c);
+    if (!out.includes(label)) out.push(label);
+  }
+  return out.join(" | ");
+}
+
+// Federal Aid Status verdict per CLAUDE.md §4.2's table — a direct port of
+// modClassify.FederalAidVerdict. Classifies the road, not the project.
+function federalAidVerdict(codes, isUrban, bufferFt) {
+  if (codes.length === 0) return "No road segment within " + bufferFt + " ft - review manually";
+  let isFederalAid = false, manual = false, hasRuralMinorCollector = false, worstCode = 99;
+  for (const c of codes) {
+    if (c === 7) { /* Local - never federal aid */ }
+    else if (c === 6) {
+      if (isUrban) { isFederalAid = true; if (6 < worstCode) worstCode = 6; }
+      else hasRuralMinorCollector = true;
+    }
+    else if (c >= 1 && c <= 5) { isFederalAid = true; if (c < worstCode) worstCode = c; }
+    else manual = true;
+  }
+  if (isFederalAid) return "Federal aid - " + (isUrban ? "Urban " : "Rural ") + functionalSystemLabel(worstCode);
+  if (manual) return "Review - non-certified class, check manually";
+  if (hasRuralMinorCollector) return "Non-federal aid - Rural Minor Collector";
+  return "Non-federal aid - " + (isUrban ? "Urban" : "Rural") + " Local";
+}
+
+// Full per-point pipeline, mirroring modClassify.ClassifyOneRow:
+// ACUB (always, with the 200-ft floor buffer) -> state NFC + road name ->
+// TIGER street names (non-fatal) -> class label + verdict.
+async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET) {
+  const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", classLabel: "",
+                roadName: "", streets: "", verdict: "", failed: false };
+  const acubBuffer = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
+
+  let acub;
+  try {
+    acub = await queryWithFallback(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", acubBuffer);
+  } catch (e) {
+    out.verdict = "Failed - ACUB query (" + e.message + ")"; out.failed = true; return out;
+  }
+  const isUrban = featureCount(acub) > 0;
+  out.urbanRural = isUrban ? "Urban" : "Rural";
+  out.acubName = isUrban ? firstString(acub, "NAME") : "";
+
+  const nfcQuery = NFC_WIRED[stateCode];
+  if (!nfcQuery) {
+    out.verdict = "ACUB only - class lookup not wired for this state";
+    return out;
+  }
+
+  let codes, roadName;
+  try {
+    ({ codes, roadName } = await nfcQuery(lat, lon, bufferFt));
+  } catch (e) {
+    out.verdict = "Failed - NFC query (" + e.message + ")"; out.failed = true; return out;
+  }
+  out.roadName = roadName || "";
+
+  try {
+    const tiger = await runQuery(REST.TIGER_ROADS, lat, lon, "NAME", "1=1", bufferFt);
+    out.streets = [...new Set(attrValues(tiger, "NAME").map(String))].join(" | ");
+  } catch (e) { /* non-fatal, matching modClassify */ }
+
+  out.classLabel = classLabels(codes, bufferFt);
+  out.verdict = federalAidVerdict(codes, isUrban, bufferFt);
+  return out;
+}
+
+// Rough CONUS-region state auto-detection for the three wired states.
+// Indiana's box barely overlaps the others; the MI/WI ambiguity around Lake
+// Michigan and the western Upper Peninsula is split on longitude. Wrong
+// guesses fail soft: the wrong state's NFC layer simply returns no segment
+// ("review manually") and the user can pin the state in the dropdown.
+function detectState(lat, lon) {
+  if (lat >= 37.75 && lat <= 41.77 && lon >= -88.15 && lon <= -84.75) return "IN";
+  const inMI = lat >= 41.69 && lat <= 48.35 && lon >= -90.45 && lon <= -82.10;
+  const inWI = lat >= 42.45 && lat <= 47.35 && lon >= -92.95 && lon <= -86.20;
+  if (inMI && inWI) return lon >= (lat >= 45.4 ? -88.7 : -86.7) ? "MI" : "WI";
+  if (inMI) return "MI";
+  if (inWI) return "WI";
+  return null;
+}
+
+// Parse pasted text: one point per line, "lat lon" or "lat, lon" with an
+// optional free-text name before/after. Uses the last adjacent number pair
+// that looks like a CONUS lat/lon (also accepts lon,lat swapped).
+function parseCoordinates(text) {
+  const points = [];
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const nums = [...line.matchAll(/-?\d+(?:\.\d+)?/g)];
+    let pair = null;
+    for (let j = nums.length - 2; j >= 0; j--) {
+      const a = parseFloat(nums[j][0]), b = parseFloat(nums[j + 1][0]);
+      if (a >= 17 && a <= 72 && b >= -180 && b <= -64) { pair = { lat: a, lon: b, i0: nums[j].index, i1: nums[j + 1].index + nums[j + 1][0].length }; break; }
+      if (b >= 17 && b <= 72 && a >= -180 && a <= -64) { pair = { lat: b, lon: a, i0: nums[j].index, i1: nums[j + 1].index + nums[j + 1][0].length }; break; }
+    }
+    if (!pair) { points.push({ line: i + 1, raw: line, invalid: true }); continue; }
+    const name = (line.slice(0, pair.i0) + " " + line.slice(pair.i1))
+      .replace(/[,;\t]+/g, " ").replace(/\s+/g, " ").trim();
+    points.push({ line: i + 1, name: name || "Point " + points.filter(p => !p.invalid).length + 1 + "",
+                  lat: pair.lat, lon: pair.lon });
+  }
+  return points;
+}
+</script>
+
+<script>
+/* ============================ UI wiring ============================ */
+const $ = id => document.getElementById(id);
+const netLogEl = $("netLog");
+let netLines = [];
+
+async function httpGetJson(url) {
+  netLines.push(new Date().toLocaleTimeString() + "  GET " + url);
+  if (netLines.length > 400) netLines = netLines.slice(-400);
+  netLogEl.textContent = netLines.join("\n");
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+/* ---- map ---- */
+const map = L.map("map").setView([44.5, -86.5], 5);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+  maxZoom: 19, attribution: "Imagery &copy; Esri",
+}).addTo(map);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+  maxZoom: 19, attribution: "Labels &copy; Esri", opacity: 0.9,
+}).addTo(map);
+const markerLayer = L.layerGroup().addTo(map);
+
+function verdictBucket(v) {
+  if (!v) return "pending";
+  if (v.startsWith("Federal aid")) return "fed";
+  if (v.startsWith("Non-federal aid")) return "nonfed";
+  if (v.startsWith("Failed")) return "failed";
+  return "review";
+}
+const BUCKET_COLOR = { fed: "#d73027", nonfed: "#1a9850", review: "#b58900", failed: "#777", pending: "#4a7fb5" };
+
+function pointLinks(lat, lon) {
+  return Object.entries(LINK_TEMPLATES).map(([name, tpl]) =>
+    `<a href="${tpl.replaceAll("{LAT}", lat).replaceAll("{LON}", lon)}" target="_blank" rel="noopener">${name}</a>`
+  ).join(" ");
+}
+
+/* ---- state: keyed results cache so re-parses don't re-query ---- */
+const cache = new Map();   // "lat,lon,state" -> result promise
+let currentPoints = [];    // last parse, in display order
+let renderSeq = 0;
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+
+function render() {
+  const seq = ++renderSeq;
+  const body = $("resultsBody");
+  body.innerHTML = "";
+  markerLayer.clearLayers();
+  const bounds = [];
+  let done = 0, total = 0;
+
+  currentPoints.forEach((p, idx) => {
+    const tr = document.createElement("tr");
+    if (p.invalid) {
+      tr.className = "v-failed";
+      tr.innerHTML = `<td>line ${p.line}</td><td colspan="9" class="wrap">Could not read a lat/lon from: <code>${esc(p.raw)}</code></td><td></td>`;
+      body.appendChild(tr);
+      return;
+    }
+    total++;
+    const stateSel = $("stateSel").value;
+    const state = stateSel === "AUTO" ? (detectState(p.lat, p.lon) || "??") : stateSel;
+    const key = p.lat + "," + p.lon + "," + state;
+    tr.className = "v-pending";
+    tr.innerHTML = `<td>${esc(p.name)}</td><td>${p.lat}</td><td>${p.lon}</td><td>${state}</td>` +
+      `<td colspan="6">querying…</td><td class="links">${pointLinks(p.lat, p.lon)}</td>`;
+    body.appendChild(tr);
+
+    const marker = L.circleMarker([p.lat, p.lon], { radius: 8, weight: 2, color: "#fff",
+      fillColor: BUCKET_COLOR.pending, fillOpacity: 0.95 }).addTo(markerLayer);
+    marker.bindPopup(`<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br><i>querying…</i>`);
+    bounds.push([p.lat, p.lon]);
+
+    if (!cache.has(key)) {
+      cache.set(key, state === "??"
+        ? classifyPoint(p.lat, p.lon, "XX")   // outside MI/IN/WI: ACUB-only path
+        : classifyPoint(p.lat, p.lon, state));
+    }
+    cache.get(key).then(res => {
+      if (res.failed) cache.delete(key);   // transient service errors (F12): don't cache, allow retry
+      if (seq !== renderSeq) return;   // stale render
+      p.result = res;
+      const bucket = verdictBucket(res.verdict);
+      tr.className = "v-" + bucket;
+      const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
+      tr.innerHTML =
+        `<td>${esc(p.name)}</td><td>${p.lat}</td><td>${p.lon}</td><td>${state}</td>` +
+        `<td>${esc(res.classLabel)}</td><td>${esc(res.urbanRural)}</td><td>${esc(res.acubName)}</td>` +
+        `<td>${esc(res.roadName)}</td><td class="wrap">${esc(res.streets)}</td>` +
+        `<td class="wrap"><b>${esc(res.verdict)}</b>${retry}</td><td class="links">${pointLinks(p.lat, p.lon)}</td>`;
+      marker.setStyle({ fillColor: BUCKET_COLOR[bucket] });
+      marker.setPopupContent(
+        `<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br>` +
+        `${esc(res.classLabel)}${res.roadName ? " — " + esc(res.roadName) : ""}<br>` +
+        `${esc(res.urbanRural)}${res.acubName ? " (" + esc(res.acubName) + ")" : ""}<br>` +
+        `<b>${esc(res.verdict)}</b><br>${pointLinks(p.lat, p.lon)}`);
+      done++;
+      $("statusCount").textContent = done < total ? `classifying ${done} of ${total}…` : `${total} point(s) classified`;
+    }).catch(() => { /* classifyPoint never rejects; belt and braces */ });
+  });
+
+  $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
+  if (bounds.length === 1) map.setView(bounds[0], 15);
+  else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
+}
+
+/* ---- input handling: parse + classify automatically, debounced ---- */
+let debounceTimer = null;
+function onInput() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    currentPoints = parseCoordinates($("coordsIn").value);
+    const ok = currentPoints.filter(p => !p.invalid).length;
+    const bad = currentPoints.length - ok;
+    $("parseCount").textContent = currentPoints.length
+      ? `${ok} point(s) parsed${bad ? ", " + bad + " line(s) unreadable" : ""}` : "";
+    render();
+  }, 500);
+}
+$("coordsIn").addEventListener("input", onInput);
+$("resultsBody").addEventListener("click", e => {
+  if (e.target.classList.contains("retry")) { e.preventDefault(); render(); }
+});
+$("stateSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
+$("clearBtn").addEventListener("click", () => { $("coordsIn").value = ""; onInput(); });
+
+/* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
+const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
+                        "Urban Area (ACUB)", "Route", "Street(s)", "Federal Aid Status"];
+function exportRows() {
+  return currentPoints.filter(p => !p.invalid && p.result).map(p => [
+    p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
+    p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict,
+  ]);
+}
+$("dlCsv").addEventListener("click", () => {
+  const q = v => '"' + String(v ?? "").replaceAll('"', '""') + '"';
+  const csv = [EXPORT_HEADERS, ...exportRows()].map(r => r.map(q).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "road-checker-results.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$("copyTsv").addEventListener("click", async () => {
+  const tsv = [EXPORT_HEADERS, ...exportRows()].map(r => r.join("\t")).join("\n");
+  await navigator.clipboard.writeText(tsv);
+  $("copyTsv").textContent = "Copied ✓";
+  setTimeout(() => { $("copyTsv").textContent = "Copy for Excel"; }, 1500);
+});
+</script>
+</body>
+</html>
