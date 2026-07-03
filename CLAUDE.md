@@ -890,6 +890,7 @@ These came up reading the prototypes; capturing them so they aren't lost.
 
 ```
 /                                  this README — CLAUDE.md
+.github/workflows/pages.yml       deploys web/ to GitHub Pages on push to main (§7b)
 GPS Checker - TN updated 3.5.2026.xlsm   prototype 1 (reference, do not modify)
 Site Inspector Tool 1.xlsm              prototype 2 (reference, do not modify)
 RoadReviewer.xlsm                       V1 deliverable — committed for easy access; rebuild
@@ -1148,6 +1149,12 @@ summarized here so it isn't relitigated:
   in a real browser by a human; state auto-detect uses rough bounding
   boxes (wrong guesses fail soft to "review manually" + dropdown
   override).
+- **Hosting.** `.github/workflows/pages.yml` deploys `web/` (no build
+  step — the folder is uploaded as-is) to GitHub Pages on every push to
+  `main` that touches `web/**`. This only takes effect once the repo's
+  Settings > Pages > Build and deployment > Source is set to
+  "GitHub Actions" — a one-time manual toggle; no available tool can
+  flip a repo setting like that from this session.
 
 ---
 
