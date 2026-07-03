@@ -124,6 +124,7 @@ Site 12, 44.2700, -83.5200"></textarea>
       <span style="flex:1"></span>
       <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
       <button id="dlCsv">Download CSV</button>
+      <button id="pdfBtn" title="One page per site: a zoomed figure of each authoritative source layer (state road-class layer + the 2020 ACUB urban boundary), drawn with that source's own published symbology, its legend, and a citation">Download PDF Report</button>
       <button id="clearBtn">Clear</button>
     </div>
     <div class="tablewrap">
@@ -153,6 +154,7 @@ Site 12, 44.2700, -83.5200"></textarea>
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/jspdf/jspdf.umd.min.js"></script>
 
 <!-- ============================================================
      rr-core: pure classification logic, a direct port of
@@ -557,6 +559,382 @@ $("copyTsv").addEventListener("click", async () => {
   $("copyTsv").textContent = "Copied ✓";
   setTimeout(() => { $("copyTsv").textContent = "Copy for Excel"; }, 1500);
 });
+</script>
+
+<!-- ============================================================
+     rr-report: PDF report generation. Separate from rr-core's
+     classifyPoint (which never fetches geometry, to keep live
+     classification fast) — this re-queries the same winning
+     layer(s) per point with returnGeometry=true only when the
+     user asks for a report, then draws each source's OWN published
+     drawingInfo.renderer symbology onto a plain <canvas> (no remote
+     raster tiles composited in, so there's no canvas-taint risk).
+     Only MI's MDOT service exposes MapServer/export + /legend (a
+     classic ArcGIS Server); IN, WI and the nationwide ACUB layer are
+     AGOL-hosted "Query"-only feature services with no export/legend
+     operation at all (confirmed live 2026-07-03) - so this renderer
+     approach is used uniformly across all four sources rather than
+     mixing a raster path for MI with a vector path for the rest.
+     ============================================================ -->
+<script>
+const CLASS_LAYER_RADIUS_M = 250;  // ~800 ft frame around the point for the road/class-layer figure
+const ACUB_LAYER_RADIUS_M = 900;   // ~0.55 mi frame for the urban-boundary figure (city-scale context)
+const REPORT_BUFFER_FEET = DEFAULT_BUFFER_FEET;  // report has no Setup-sheet override; matches classifyPoint's default
+
+const layerMetaCache = new Map();
+async function fetchLayerMeta(url) {
+  if (!layerMetaCache.has(url)) layerMetaCache.set(url, httpGetJson(url + "?f=json"));
+  return layerMetaCache.get(url);
+}
+
+function buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt, generalize) {
+  let url = baseUrl + "/query?where=" + encodeURIComponent(whereClause) +
+    "&geometry=" + lon + "," + lat +
+    "&geometryType=esriGeometryPoint&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&outFields=" + encodeURIComponent(outFields) +
+    "&outSR=4326&returnGeometry=true&f=json";
+  if (distanceFt > 0) url += "&distance=" + distanceFt + "&units=esriSRUnit_Foot";
+  if (generalize) url += "&maxAllowableOffset=0.0001";  // ~11m; only for polygon layers with many vertices
+  return url;
+}
+async function queryGeomWithFallback(baseUrl, lat, lon, outFields, whereClause, fallbackFt, generalize) {
+  let json = await httpGetJson(buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, 0, generalize));
+  if (featureCount(json) === 0) {
+    json = await httpGetJson(buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, fallbackFt, generalize));
+  }
+  return json;
+}
+
+// Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but with geometry + the
+// layer's own drawingInfo so the figure can be drawn in that source's real
+// published symbology instead of an invented color scheme.
+async function pickClassLayer(state, lat, lon, bufferFt) {
+  if (state === "MI") {
+    const [json, meta] = await Promise.all([
+      queryGeomWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, false),
+      fetchLayerMeta(REST.MDOT_NFC),
+    ]);
+    return { url: REST.MDOT_NFC, layerName: meta.name || "MDOT Functional System (NFC)",
+      rendererField: "FunctionalSystem", drawingInfo: meta.drawingInfo, features: json.features || [] };
+  }
+  if (state === "IN") {
+    const [json, meta] = await Promise.all([
+      queryGeomWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt, false),
+      fetchLayerMeta(REST.IN_NFC),
+    ]);
+    return { url: REST.IN_NFC, layerName: meta.name || "Indiana LRSE Functional Class",
+      rendererField: "functional_class", drawingInfo: meta.drawingInfo, features: json.features || [] };
+  }
+  if (state === "WI") {
+    const [trunkJson, trunkMeta] = await Promise.all([
+      queryGeomWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, false),
+      fetchLayerMeta(REST.WI_STATE_TRUNK),
+    ]);
+    if ((trunkJson.features || []).length > 0) {
+      // Renderer keys off FC_CD (WisDOT's own code), NOT the FED_FC_CD field
+      // classification uses - the two are different fields on the same layer.
+      return { url: REST.WI_STATE_TRUNK, layerName: trunkMeta.name || "WisDOT State Trunk Network",
+        rendererField: "FC_CD", drawingInfo: trunkMeta.drawingInfo, features: trunkJson.features };
+    }
+    const [localJson, localMeta] = await Promise.all([
+      queryGeomWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, false),
+      fetchLayerMeta(REST.WI_LOCAL_ROADS),
+    ]);
+    return { url: REST.WI_LOCAL_ROADS, layerName: localMeta.name || "WisDOT Local Road Network",
+      rendererField: "FNCT_CLS_CTGY_TYCD", drawingInfo: localMeta.drawingInfo, features: localJson.features || [] };
+  }
+  return null;
+}
+
+async function pickAcubLayer(lat, lon, bufferFt) {
+  const acubBuffer = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
+  const [json, meta] = await Promise.all([
+    queryGeomWithFallback(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", acubBuffer, true),
+    fetchLayerMeta(REST.ACUB),
+  ]);
+  return { url: REST.ACUB, layerName: meta.name || "NTAD Adjusted Urban Areas",
+    drawingInfo: meta.drawingInfo, features: json.features || [], bufferUsed: acubBuffer };
+}
+
+/* ---- symbology + drawing ---- */
+function rgba(colorArr, alphaOverride) {
+  const [r, g, b, a] = colorArr;
+  return `rgba(${r},${g},${b},${(alphaOverride ?? a) / 255})`;
+}
+function symbolForFeature(drawingInfo, rendererField, attrs) {
+  const r = drawingInfo && drawingInfo.renderer;
+  if (!r) return { color: [90, 90, 90, 255], width: 2, label: "Feature" };
+  if (r.type === "uniqueValue") {
+    const val = String(attrs[rendererField]);
+    for (const group of (r.uniqueValueGroups || [])) {
+      for (const cls of (group.classes || [])) {
+        if ((cls.values || []).some(v => String(v[0]) === val)) {
+          return { color: cls.symbol.color, width: cls.symbol.width || 2, label: cls.label };
+        }
+      }
+    }
+    return { color: (r.defaultSymbol && r.defaultSymbol.color) || [140, 140, 140, 255],
+      width: (r.defaultSymbol && r.defaultSymbol.width) || 1, label: r.defaultLabel || "Other" };
+  }
+  const sym = r.symbol || {};
+  return { color: sym.color || [90, 90, 90, 255], width: sym.width || 2, label: "Road segment" };
+}
+
+function computeBBox(lat, lon, radiusMeters, aspect) {
+  const dLat = radiusMeters / 111320;
+  const dLon = radiusMeters / (111320 * (Math.cos(lat * Math.PI / 180) || 0.01));
+  let halfLon = dLon, halfLat = dLat;
+  if ((dLon * 2) / (dLat * 2) < aspect) halfLon = (dLat * 2 * aspect) / 2;
+  else halfLat = ((dLon * 2) / aspect) / 2;
+  return { minLon: lon - halfLon, maxLon: lon + halfLon, minLat: lat - halfLat, maxLat: lat + halfLat };
+}
+function projector(bbox, w, h) {
+  return (lon, lat) => [
+    ((lon - bbox.minLon) / (bbox.maxLon - bbox.minLon)) * w,
+    ((bbox.maxLat - lat) / (bbox.maxLat - bbox.minLat)) * h,
+  ];
+}
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "", yy = y;
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) { ctx.fillText(line, x, yy); line = w; yy += lineHeight; }
+    else line = test;
+  }
+  if (line) ctx.fillText(line, x, yy);
+  return yy;
+}
+function niceScaleFeet(maxFeet) {
+  const steps = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000];
+  let best = steps[0];
+  for (const s of steps) if (s <= maxFeet) best = s;
+  return best;
+}
+function drawScaleBar(ctx, x, y, bbox, mapWpx) {
+  const metersPerDegLon = 111320 * Math.cos(((bbox.minLat + bbox.maxLat) / 2) * Math.PI / 180);
+  const totalFeet = (bbox.maxLon - bbox.minLon) * metersPerDegLon * 3.28084;
+  const feetPerPx = totalFeet / mapWpx;
+  const feet = niceScaleFeet(90 * feetPerPx);
+  const px = feet / feetPerPx;
+  ctx.strokeStyle = "#1c2733"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + px, y);
+  ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.moveTo(x + px, y - 4); ctx.lineTo(x + px, y + 4);
+  ctx.stroke();
+  ctx.fillStyle = "#1c2733"; ctx.font = "10px system-ui, sans-serif";
+  ctx.fillText(feet >= 5280 ? (feet / 5280).toFixed(1) + " mi" : feet + " ft", x, y - 8);
+}
+
+// Draws one figure (either the state's polyline class layer, or the ACUB
+// polygon layer) using ONLY that source's own drawingInfo.renderer colors -
+// no basemap tiles are composited, so there's nothing to taint the canvas.
+function renderFigureCanvas({ title, features, geometryType, rendererField, drawingInfo,
+    point, verdictColor, radiusMeters, citationLines, emptyNote }) {
+  const W = 620, H = 480, titleH = 26, footH = 3 * 12 + 10, legendW = 150, margin = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#eef2f5"; ctx.fillRect(0, 0, W, H);
+  const mapX = margin, mapY = titleH, mapW = W - legendW - margin * 2, mapH = H - titleH - footH - margin;
+
+  ctx.fillStyle = "#17324d"; ctx.fillRect(0, 0, W, titleH);
+  ctx.fillStyle = "#fff"; ctx.font = "bold 13px system-ui, sans-serif"; ctx.textBaseline = "middle";
+  ctx.fillText(title, 10, titleH / 2);
+  ctx.textBaseline = "alphabetic";
+
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(mapX, mapY, mapW, mapH);
+  ctx.strokeStyle = "#9aa7b2"; ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+  const bbox = computeBBox(point.lat, point.lon, radiusMeters, mapW / mapH);
+  const proj = projector(bbox, mapW, mapH);
+  const toCanvas = (lon, lat) => { const [x, y] = proj(lon, lat); return [mapX + x, mapY + y]; };
+
+  ctx.save(); ctx.beginPath(); ctx.rect(mapX, mapY, mapW, mapH); ctx.clip();
+  const legendItems = new Map();
+
+  if (geometryType === "polyline") {
+    for (const f of features) {
+      const sym = symbolForFeature(drawingInfo, rendererField, f.attributes || {});
+      const css = rgba(sym.color);
+      legendItems.set(sym.label, css);
+      ctx.strokeStyle = css; ctx.lineWidth = Math.max(sym.width, 2) + 1.5;
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const path of ((f.geometry && f.geometry.paths) || [])) {
+        ctx.beginPath();
+        path.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+        ctx.stroke();
+      }
+    }
+  } else if (geometryType === "polygon") {
+    const r = drawingInfo && drawingInfo.renderer;
+    const sym = r && r.symbol;
+    const fillCss = sym ? rgba(sym.color, Math.max(sym.color[3], 140)) : "rgba(252,201,237,0.6)";
+    const strokeCss = sym && sym.outline ? rgba(sym.outline.color) : "rgba(110,110,110,1)";
+    if (features.length) legendItems.set("Adjusted Urban Area (ACUB)", fillCss);
+    for (const f of features) {
+      for (const ring of ((f.geometry && f.geometry.rings) || [])) {
+        ctx.beginPath();
+        ring.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+        ctx.closePath();
+        ctx.fillStyle = fillCss; ctx.fill();
+        ctx.strokeStyle = strokeCss; ctx.lineWidth = (sym && sym.outline && sym.outline.width) || 1; ctx.stroke();
+      }
+    }
+  }
+
+  if (!features.length && emptyNote) {
+    ctx.fillStyle = "#77848f"; ctx.font = "italic 12px system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(emptyNote, mapX + mapW / 2, mapY + mapH / 2);
+    ctx.textAlign = "left";
+  }
+
+  const [sx, sy] = toCanvas(point.lon, point.lat);
+  ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+  ctx.fillStyle = verdictColor; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+  legendItems.set("Site being reviewed", verdictColor);
+
+  ctx.restore();
+  drawScaleBar(ctx, mapX + 10, mapY + mapH - 14, bbox, mapW);
+
+  ctx.fillStyle = "#17324d"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("N", mapX + mapW - 14, mapY + 16); ctx.textAlign = "left";
+  ctx.beginPath(); ctx.moveTo(mapX + mapW - 14, mapY + 30); ctx.lineTo(mapX + mapW - 14, mapY + 20);
+  ctx.strokeStyle = "#17324d"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mapX + mapW - 14, mapY + 20); ctx.lineTo(mapX + mapW - 18, mapY + 26); ctx.lineTo(mapX + mapW - 10, mapY + 26); ctx.closePath();
+  ctx.fillStyle = "#17324d"; ctx.fill();
+
+  const legX = mapX + mapW + 10, legY = mapY;
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(legX, legY, legendW - margin, mapH);
+  ctx.strokeStyle = "#9aa7b2"; ctx.strokeRect(legX, legY, legendW - margin, mapH);
+  ctx.fillStyle = "#1c2733"; ctx.font = "bold 11px system-ui, sans-serif";
+  ctx.fillText("Legend", legX + 8, legY + 14);
+  ctx.font = "10px system-ui, sans-serif";
+  let ly = legY + 32;
+  for (const [label, css] of legendItems) {
+    if (ly > legY + mapH - 10) break;   // more classes than fit: truncate rather than overflow the panel
+    ctx.fillStyle = css; ctx.fillRect(legX + 8, ly - 7, 12, 12);
+    ctx.strokeStyle = "#7c8b98"; ctx.strokeRect(legX + 8, ly - 7, 12, 12);
+    ctx.fillStyle = "#1c2733";
+    ly = wrapText(ctx, label, legX + 26, ly + 2, legendW - 40, 11) + 20;
+  }
+
+  ctx.fillStyle = "#f2f5f7"; ctx.fillRect(0, H - footH, W, footH);
+  ctx.strokeStyle = "#c7d0d8"; ctx.beginPath(); ctx.moveTo(0, H - footH); ctx.lineTo(W, H - footH); ctx.stroke();
+  ctx.fillStyle = "#4a5865"; ctx.font = "9px system-ui, sans-serif";
+  citationLines.forEach((line, i) => ctx.fillText(line, 8, H - footH + 13 + i * 12));
+
+  return canvas;
+}
+
+async function buildPointReport(pt, bufferFt) {
+  const stateSel = $("stateSel").value;
+  const state = stateSel === "AUTO" ? (detectState(pt.lat, pt.lon) || null) : stateSel;
+  const verdict = pt.result ? pt.result.verdict : "";
+  const verdictColor = BUCKET_COLOR[verdictBucket(verdict)];
+  const nowStamp = new Date().toLocaleString();
+
+  let classFigure = null, classNote = "";
+  if (state && NFC_WIRED[state]) {
+    try {
+      const layer = await pickClassLayer(state, pt.lat, pt.lon, bufferFt);
+      classFigure = renderFigureCanvas({
+        title: `${state} road functional class — ${layer.layerName}`,
+        features: layer.features, geometryType: "polyline", rendererField: layer.rendererField,
+        drawingInfo: layer.drawingInfo, point: pt, verdictColor, radiusMeters: CLASS_LAYER_RADIUS_M,
+        citationLines: [`Source: ${layer.layerName} (Esri REST feature service)`, layer.url,
+          `Retrieved ${nowStamp} · query buffer ${bufferFt} ft`],
+        emptyNote: `No road segment returned within ${bufferFt} ft`,
+      }).toDataURL("image/png");
+    } catch (e) { classNote = "Road-class layer image unavailable: " + e.message; }
+  } else {
+    classNote = state ? `Road-class (NFC) lookup is not wired for ${state} in this tool.`
+                       : "State could not be determined for this point - pin it with the State dropdown to include this figure.";
+  }
+
+  let acubFigure = null, acubNote = "";
+  try {
+    const acub = await pickAcubLayer(pt.lat, pt.lon, bufferFt);
+    acubFigure = renderFigureCanvas({
+      title: "Adjusted Census Urban Boundary (2020)",
+      features: acub.features, geometryType: "polygon", rendererField: null,
+      drawingInfo: acub.drawingInfo, point: pt, verdictColor, radiusMeters: ACUB_LAYER_RADIUS_M,
+      citationLines: ["Source: USDOT NTAD 2020 Adjusted Urban Area Boundaries (nationwide, AGOL-hosted)", acub.url,
+        `Retrieved ${nowStamp} · query buffer ${acub.bufferUsed} ft`],
+      emptyNote: "Point is outside every Adjusted Urban Area boundary (Rural)",
+    }).toDataURL("image/png");
+  } catch (e) { acubNote = "Urban-boundary layer image unavailable: " + e.message; }
+
+  return { pt, state, verdict, classFigure, classNote, acubFigure, acubNote };
+}
+
+async function generatePdfReport() {
+  const points = currentPoints.filter(p => !p.invalid && p.result);
+  if (!points.length) { alert("Paste and classify at least one point before generating a report."); return; }
+
+  const btn = $("pdfBtn");
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+    doc.text("FHWA Road Checker — Federal-Aid Classification Report", 40, 50);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    doc.text("Provisional tool. Unofficial - not affiliated with FHWA or FEMA. Classifies the road, not the project.", 40, 68);
+    doc.text(`Generated ${new Date().toLocaleString()} · ${points.length} site(s)`, 40, 82);
+
+    let y = 112;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    ["Site", "Lat", "Lon", "State", "Federal Aid Status"].forEach((h, i) => doc.text(h, 40 + i * 100, y));
+    y += 6; doc.setLineWidth(0.5); doc.line(40, y, pageW - 40, y); y += 14;
+    doc.setFont("helvetica", "normal");
+    for (const p of points) {
+      if (y > pageH - 60) { doc.addPage(); y = 50; }
+      const cols = [p.name, String(p.lat), String(p.lon), (p.result.state || ""), p.result.verdict];
+      cols.forEach((c, i) => doc.text(String(c ?? "").slice(0, i === 4 ? 55 : 16), 40 + i * 100, y));
+      y += 16;
+    }
+
+    let done = 0;
+    for (const pt of points) {
+      btn.textContent = `Generating ${++done} of ${points.length}…`;
+      const rep = await buildPointReport(pt, REPORT_BUFFER_FEET);
+
+      doc.addPage();
+      let yy = 44;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+      doc.text(pt.name, 40, yy); yy += 18;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+      doc.text(`${pt.lat}, ${pt.lon}  ·  State: ${rep.state || "unknown"}`, 40, yy); yy += 14;
+      doc.setFont("helvetica", "bold");
+      doc.text("Federal Aid Status: " + rep.verdict, 40, yy, { maxWidth: pageW - 80 }); yy += 20;
+      doc.setFont("helvetica", "normal");
+
+      const imgW = 250, imgH = imgW * 480 / 620, gap = 20;
+      if (rep.classFigure) doc.addImage(rep.classFigure, "PNG", 40, yy, imgW, imgH);
+      else { doc.setFontSize(9); doc.text(rep.classNote || "No road-class figure.", 40, yy + 20, { maxWidth: imgW }); }
+      if (rep.acubFigure) doc.addImage(rep.acubFigure, "PNG", 40 + imgW + gap, yy, imgW, imgH);
+      else { doc.setFontSize(9); doc.text(rep.acubNote || "No urban-boundary figure.", 40 + imgW + gap, yy + 20, { maxWidth: imgW }); }
+
+      doc.setFontSize(9); doc.setTextColor(90, 100, 110);
+      doc.text("This tool classifies the road, not the project. Data pulled live from the public services cited above at report-generation time.",
+        40, pageH - 30, { maxWidth: pageW - 80 });
+      doc.setTextColor(0, 0, 0);
+    }
+
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    doc.save(`federal-aid-road-report-${stamp}.pdf`);
+  } finally {
+    btn.disabled = false; btn.textContent = origLabel;
+  }
+}
+
+$("pdfBtn").addEventListener("click", generatePdfReport);
 </script>
 </body>
 </html>

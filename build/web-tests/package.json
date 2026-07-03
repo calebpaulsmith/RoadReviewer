@@ -1,0 +1,9 @@
+{
+  "name": "roadreviewer-web-tests",
+  "private": true,
+  "type": "module",
+  "description": "Playwright-driven verifier for web/index.html's PDF report feature. Run: npm install && node verify-pdf-report.mjs",
+  "dependencies": {
+    "playwright-core": "1.61.1"
+  }
+}
