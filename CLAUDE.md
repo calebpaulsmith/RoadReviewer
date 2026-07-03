@@ -928,10 +928,20 @@ build/                                  Local assembly + verification scripts (n
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
                                           <script> block headless (Node + curl) against the live
                                           services, asserting the §4.2/§4.2a/§4.2b test coords
+  web-tests/                            Playwright-driven verifier for the web prototype's PDF
+                                          report feature (needs a real browser + canvas, so it's
+                                          separate from verify-web-core.mjs's curl-only approach)
+    verify-pdf-report.mjs               classifies a point, clicks "Download PDF Report", checks
+                                          the resulting PDF's structure (page count, embedded images)
+    fixtures/                           real captured MDOT + ACUB responses used to stub the
+                                          network (see the script's header comment for why)
 web/                                    FHWA Road Checker (provisional) — static web prototype (§7b)
   index.html                            single-file page: paste coords → auto-classify → map pins
+                                          → optional "Download PDF Report" (zoomed figure of each
+                                          authoritative source layer + legend + citation, per site)
   vendor/leaflet/                       Leaflet 1.9.4 vendored locally (no CDN calls)
-  README.md                             privacy model, hosting, verification
+  vendor/jspdf/                         jsPDF 2.5.2 UMD build vendored locally (no CDN calls)
+  README.md                             privacy model, hosting, PDF report design, verification
 docs/
   probe-mdot-layers.md                  how to re-run the §5.1 schema probe locally
   probe.py                              stdlib probe script for the four FeatureServers
@@ -1142,6 +1152,38 @@ summarized here so it isn't relitigated:
   table rows + colored markers, stubbed services) also passed. MDOT
   throws occasional transient 503s; failed rows aren't cached and get a
   per-row retry link (web analog of F12).
+- **PDF report.** A "Download PDF Report" button (jsPDF, vendored like
+  Leaflet) produces a cover page + one page per classified site. Each
+  site page has two figures: the state's road functional-class layer and
+  the ACUB layer. Rather than screenshotting a live map, each figure is
+  drawn on a plain `<canvas>` from a fresh geometry-including query
+  against the same REST endpoint, styled with **that layer's own
+  published `drawingInfo.renderer`** (the state's/USDOT's actual
+  class-to-color mapping, read from the layer's REST metadata) - so the
+  symbology is authoritative rather than invented. This choice was forced
+  by a live probe (2026-07-03): only MDOT's service is a classic ArcGIS
+  Server exposing `/MapServer/export` + `/legend`; INDOT, WisDOT, and the
+  nationwide ACUB layer are AGOL-hosted feature services with
+  `"capabilities": "Query"` only - no export/legend operation exists for
+  them at all, confirmed by both a direct `/MapServer/export` 400/404 and
+  the FeatureServer root's `capabilities` field. Drawing every source's
+  own renderer client-side sidesteps that inconsistency uniformly, and
+  also avoids the canvas-taint risk of compositing remote basemap tiles
+  (the figures use no raster tiles at all - just vector paths/rings drawn
+  from queried geometry, a marker, a scale bar, a north arrow, and a
+  legend/citation baked into the same canvas). One field-name trap found
+  during this work: Wisconsin's state-trunk layer keys its renderer off
+  `FC_CD` (WisDOT's own code), not the `FED_FC_CD` field the classifier
+  itself uses - the report's query fetches both fields, using `FC_CD`
+  only for color-matching. Verified end-to-end with a real jsPDF download
+  in a real (headless) browser via `build/web-tests/verify-pdf-report.mjs`,
+  stubbed with response fixtures captured live from MDOT/NTAD moments
+  earlier (see that file for why: this sandbox's Chromium couldn't
+  complete TLS through the outbound proxy that curl/Node's own fetch use
+  fine, so the query logic was confirmed correct via curl first and the
+  browser-side drawing/PDF-assembly code was then verified against those
+  real captured responses) - a plain user's browser with normal internet
+  access isn't expected to hit that proxy limitation.
 - **Open items:** the "FHWA Road Checker" name risks implying agency
   affiliation (page carries an "unofficial, not affiliated" disclaimer;
   consider "Federal-Aid Road Checker"); basemap tiles necessarily reveal
