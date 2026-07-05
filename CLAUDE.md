@@ -1296,6 +1296,14 @@ summarized here so it isn't relitigated:
   Settings > Pages > Build and deployment > Source is set to
   "GitHub Actions" — a one-time manual toggle; no available tool can
   flip a repo setting like that from this session.
+  **Re-run gotcha:** every clean (attempt-1) run deploys fine, but
+  *re-running* a run fails with "Multiple artifacts named github-pages …
+  Artifact count is 2" — attempt 2's `upload-pages-artifact` adds a second
+  artifact next to attempt 1's, and `deploy-pages` then sees two. The
+  workflow is split into `build` + `deploy` jobs so "Re-run failed jobs"
+  (deploy only) is safe; to recover a wedged deploy, trigger a **fresh**
+  run (push, or Actions > Run workflow / `workflow_dispatch`) rather than
+  "Re-run all jobs".
 
 ---
 
