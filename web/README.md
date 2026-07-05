@@ -10,6 +10,44 @@ retired-segment filters, same 150/200-ft fallback buffers, same
 Report" button turns the classified points into a citeable PDF — see
 below.
 
+## Site-by-site review
+
+Pasted site names are surfaced as labels on the map pins (permanent up to
+25 sites, hover past that). Clicking a table row or a pin zooms straight
+to that site; **Prev / Next** above the map step through the sites one by
+one (wrapping at the ends). While a site is selected and "Source layers"
+is checked, the page fetches the authoritative geometry around it — the
+state's road-class layer(s) and the 2020 ACUB urban-boundary polygon,
+via the same frame-envelope queries the PDF figures use — and draws it
+directly on the interactive map in each source's own published renderer
+colors. An on-map legend names the exact layers drawn, lists only the
+classes present, links each layer to a live ArcGIS view centered on the
+site, and links to the citations page below. Per-site layer fetches are
+cached, so stepping back and forth doesn't re-query.
+
+## Data sources page
+
+`sources.html` (linked from the header, the review legend, and every
+result row's "Source" link) documents every layer the tool queries, by
+state: organization, service URL, exact layer names, the fields read,
+and the schema quirks that shaped the implementation (retired-segment
+filters, Indiana's `record_status` domain and single-symbol renderer,
+Wisconsin's embedded urban/rural category codes, the ACUB buffer floor,
+and so on). Row/legend links anchor to the right state's section.
+
+## FIRMette batch download (ZIP)
+
+"Download FIRMettes (ZIP)" generates a FEMA FIRMette (flood-map extract
+PDF) for every pasted site by driving FEMA's own Print FIRMette
+geoprocessing service from the browser (submitJob → poll → download —
+the same flow the Excel tool and FEMA's Map Service Center portal use;
+CORS on every step confirmed live 2026-07-03), then bundles the PDFs
+into one ZIP assembled in the browser by a small dependency-free
+STORE-only writer (PDFs are already internally compressed). Batches are
+capped at 20 sites per run because FEMA renders each PDF fresh (~1 MB,
+seconds to a couple of minutes each); failures are reported per site and
+don't sink the rest of the batch.
+
 ## PDF report
 
 Click **Download PDF Report** to generate a PDF with a cover page (a
@@ -113,6 +151,14 @@ of the actual button click, since it needs a real browser + canvas):
 cd build/web-tests && npm install && node verify-pdf-report.mjs
 ```
 
-See that script's header comment for why it stubs the network with real
+And the review UX + FIRMette ZIP (map labels, click-to-zoom, Prev/Next,
+on-map source layers + legend, sources.html, and a ZIP download validated
+end-to-end with Python's zipfile including CRCs):
+
+```
+cd build/web-tests && npm install && node verify-review-ui.mjs
+```
+
+See each script's header comment for why they stub the network with real
 captured fixtures rather than hitting the live services directly — the
-query shapes it stubs were independently confirmed live via curl first.
+query shapes they stub were independently confirmed live via curl first.

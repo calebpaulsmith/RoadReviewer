@@ -928,17 +928,23 @@ build/                                  Local assembly + verification scripts (n
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
                                           <script> block headless (Node + curl) against the live
                                           services, asserting the §4.2/§4.2a/§4.2b test coords
-  web-tests/                            Playwright-driven verifier for the web prototype's PDF
-                                          report feature (needs a real browser + canvas, so it's
+  web-tests/                            Playwright-driven verifiers for the web prototype's
+                                          browser-only features (real browser + canvas, so they're
                                           separate from verify-web-core.mjs's curl-only approach)
     verify-pdf-report.mjs               classifies a point, clicks "Download PDF Report", checks
                                           the resulting PDF's structure (page count, embedded images)
+    verify-review-ui.mjs                map name labels, click-to-zoom, Prev/Next stepping, on-map
+                                          source layers + legend, sources.html, FIRMette ZIP batch
+                                          (ZIP validated with Python zipfile incl. CRCs)
     fixtures/                           real captured MDOT + ACUB responses used to stub the
-                                          network (see the script's header comment for why)
+                                          network (see each script's header comment for why)
 web/                                    FHWA Road Checker (provisional) — static web prototype (§7b)
   index.html                            single-file page: paste coords → auto-classify → map pins
-                                          → optional "Download PDF Report" (zoomed figure of each
-                                          authoritative source layer + legend + citation, per site)
+                                          → site-by-site review (zoom, Prev/Next, on-map source
+                                          layers + legend) → optional "Download PDF Report" and
+                                          "Download FIRMettes (ZIP)"
+  sources.html                          per-state data-source citations: org, service URL, exact
+                                          layer names, fields read, schema quirks
   vendor/leaflet/                       Leaflet 1.9.4 vendored locally (no CDN calls)
   vendor/jspdf/                         jsPDF 2.5.2 UMD build vendored locally (no CDN calls)
   README.md                             privacy model, hosting, PDF report design, verification
@@ -1216,6 +1222,37 @@ summarized here so it isn't relitigated:
   drawing/PDF-assembly code was then verified against those real
   captured responses) - a plain user's browser with normal internet
   access isn't expected to hit that proxy limitation.
+- **Site-by-site review.** Pasted names appear as labels on the map pins
+  (permanent ≤25 sites, hover beyond); clicking a row/pin zooms to that
+  site (z17); Prev/Next buttons step through sites with wrap-around.
+  While a site is selected, a "Source layers" toggle (default on) draws
+  the authoritative geometry around it straight onto the Leaflet map —
+  the same frame-envelope fetchers and published-renderer symbology the
+  PDF figures use (`fetchClassLayers`/`fetchAcubLayer`, 400 m half-width
+  frame, results cached per site) — plus an on-map legend naming the
+  exact layers, listing only the classes present, and linking each layer
+  to a live ArcGIS view and to sources.html. The map is created with
+  `zoomAnimation: false`: Leaflet's `_tryAnimatedZoom` returns true
+  without moving when a zoom animation is already in flight, so clicking
+  Next during the ~250 ms animation would randomly not zoom (and stuck
+  `_animatingZoom` breaks headless verification outright — root-caused
+  in-session with a Leaflet-internals trace).
+- **sources.html.** Per-state citations page: organization, service URL,
+  exact layer names, fields read, and every schema quirk documented in
+  §4.2/§4.2a/§4.2b (retire-date/record_status filters, WI category
+  codes, INDOT's single-symbol renderer + FHWA-palette substitution,
+  ACUB buffer floor, MDOT trunkline-only names). Linked from the page
+  header, each result row's "Source" link (anchored to the row's state),
+  and the review legend.
+- **FIRMette batch → ZIP.** "Download FIRMettes (ZIP)" drives FEMA's
+  Print FIRMette GP service per site from the browser (submitJob → poll
+  2 s/max 90 → OutputFile → PDF; every step's CORS confirmed live
+  2026-07-03, including the output PDF), 2 jobs concurrent, capped at
+  20 sites per run (FEMA renders each ~1 MB PDF fresh). The ZIP is
+  assembled in-page by a dependency-free STORE-only writer (PDFs are
+  already compressed); per-site failures are reported and don't sink
+  the batch. `build/web-tests/verify-review-ui.mjs` covers all of the
+  above — the ZIP is validated with Python's zipfile including CRCs.
 - **Open items:** the "FHWA Road Checker" name risks implying agency
   affiliation (page carries an "unofficial, not affiliated" disclaimer;
   consider "Federal-Aid Road Checker"); basemap tiles necessarily reveal

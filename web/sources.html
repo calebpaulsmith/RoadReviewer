@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Sources — FHWA Road Checker</title>
+<style>
+  :root { --ink: #1c2733; --muted: #5b6b7b; --line: #d9e1e8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, Segoe UI, Roboto, sans-serif; color: var(--ink); background: #f7f9fb; }
+  header { background: #17324d; color: #fff; padding: 14px 22px; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .sub { color: #b8c9da; font-size: 13px; margin-top: 3px; }
+  header a { color: #9fc3e0; }
+  main { padding: 18px 22px 40px; max-width: 980px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  h3 { font-size: 14px; margin: 14px 0 4px; }
+  .org { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  code, .url { font: 12.5px ui-monospace, Consolas, monospace; background: #f1f5f8; padding: 1px 5px; border-radius: 3px; }
+  .url { display: inline-block; word-break: break-all; margin: 2px 0; }
+  table { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+  th, td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; }
+  th { background: #f1f5f8; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  .quirk { background: #fef7e0; border-left: 3px solid #b58900; padding: 8px 12px; margin: 8px 0; font-size: 13.5px; border-radius: 0 4px 4px 0; }
+  a { color: #205d8c; }
+  .toc { font-size: 14px; }
+  .toc a { margin-right: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Data Sources &amp; Citations</h1>
+  <div class="sub">Every layer the <a href="index.html">FHWA Road Checker</a> queries, by state — organization, service URL, exact layer names, fields read, and schema quirks. Unofficial tool; not affiliated with FHWA or FEMA.</div>
+</header>
+<main>
+
+<p class="toc">Jump to:
+  <a href="#mi">Michigan</a> <a href="#in">Indiana</a> <a href="#wi">Wisconsin</a>
+  <a href="#acub">Urban Boundaries (all states)</a> <a href="#tiger">Street Names (all states)</a>
+  <a href="#firmette">FIRMettes</a> <a href="#basemap">Basemap</a> <a href="#unwired">Other states</a>
+</p>
+
+<section id="mi">
+  <h2>Michigan — road functional class &amp; route designation</h2>
+  <div class="org">Organization: <b>Michigan Department of Transportation (MDOT)</b> — public ArcGIS Server, <code>mdotgis.state.mi.us</code></div>
+
+  <h3>Layer 353 — "Functional System" (the class code)</h3>
+  <div class="url"><a href="https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353" target="_blank" rel="noopener">https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353</a></div>
+  <p>Polyline layer keyed on Michigan's LRS (<code>PR</code> + mileposts). Fields read: <code>FunctionalSystem</code> (smallint), <code>PR</code>.
+  The <code>FunctionalSystem</code> coded-value domain (<code>LrseFunctionalSystem</code>):</p>
+  <table><tr><th>code</th><th>meaning</th></tr>
+    <tr><td>0</td><td>Non-Certified Roadway</td></tr><tr><td>1</td><td>Interstate</td></tr>
+    <tr><td>2</td><td>Other Freeway</td></tr><tr><td>3</td><td>Other Principal Arterial</td></tr>
+    <tr><td>4</td><td>Minor Arterial</td></tr><tr><td>5</td><td>Major Collector</td></tr>
+    <tr><td>6</td><td>Minor Collector</td></tr><tr><td>7</td><td>Local</td></tr></table>
+  <div class="quirk"><b>Quirk — retired segments.</b> The layer is MDOT's editable production LRS; several overlapping segments at one point can be historical. Every query filters <code>RHRetireDate IS NULL</code>, or you read retired classifications.</div>
+  <div class="quirk"><b>Quirk — no urban/rural in the code.</b> Unlike e.g. Tennessee's layer, the class code is bare FHWA 1–7. Urban vs Rural comes exclusively from the nationwide ACUB check below.</div>
+  <div class="quirk"><b>Quirk — legend.</b> The map figure/legend colors are MDOT's own published <code>drawingInfo.renderer</code> for this layer (e.g. Minor Collector = yellow, Local = dark grey), read live from the layer's REST metadata — not colors invented by this tool.</div>
+
+  <h3>Layer 543 — "Route System" (trunkline route designation)</h3>
+  <div class="url"><a href="https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543" target="_blank" rel="noopener">https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543</a></div>
+  <p>Fields read: <code>RouteDesignation</code>, <code>RouteNumber</code> (same <code>RHRetireDate IS NULL</code> filter).</p>
+  <div class="quirk"><b>Quirk — trunkline-only names.</b> Only designated Interstate / US / M routes are populated (e.g. "I-94 BL"). Local streets return nothing here — that's expected, and the Census TIGER layer below fills the street-name gap.</div>
+</section>
+
+<section id="in">
+  <h2>Indiana — road functional class &amp; road name</h2>
+  <div class="org">Organization: <b>Indiana Department of Transportation (INDOT)</b> via the IndianaMap GIS platform, <code>gisdata.in.gov</code></div>
+
+  <h3>Layer 22 — "LRSE_Functional_Class" (the class code)</h3>
+  <div class="url"><a href="https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22" target="_blank" rel="noopener">https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22</a></div>
+  <p>Fields read: <code>functional_class</code> (smallint, domain <code>dFunctionalClass</code> — same FHWA 1–7 numbering as Michigan, no urban/rural embedded).</p>
+  <div class="quirk"><b>Quirk — record status.</b> Indiana's analog to Michigan's retire-date filter is a status domain (<code>dRecordCode</code>: 0 Work In Progress … 5 Active … 7 Retired). Every query filters <code>record_status=5</code> (Active).</div>
+  <div class="quirk"><b>Quirk — no name field at all.</b> The functional-class layer carries no road name — not even a trunkline-only one — and is not LRS-keyed to any layer that does. Names come from a fully separate point query (below), so the Route column is blank more often for Indiana.</div>
+  <div class="quirk"><b>Quirk — legend.</b> INDOT publishes this layer with a single-symbol renderer (every segment the same green, confirmed live 2026-07-05), which can't distinguish classes by color. In map figures and legends this tool therefore substitutes the standard FHWA class palette (byte-identical to the colors MDOT publishes for the same classes) — the substitution is disclosed on the figure itself. The class <i>values</i> are always INDOT's own.</div>
+
+  <h3>Layer 15 — "Road_Centerlines_of_Indiana_2021" (road name)</h3>
+  <div class="url"><a href="https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15" target="_blank" rel="noopener">https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15</a></div>
+  <p>Field read: <code>st_full</code> (e.g. "MERIDIAN ST"). The layer's own <code>roadclass</code> field returned null at every sample point and is not used.</p>
+</section>
+
+<section id="wi">
+  <h2>Wisconsin — road functional class &amp; road name (two layers, in sequence)</h2>
+  <div class="org">Organization: <b>Wisconsin Department of Transportation (WisDOT)</b> — ArcGIS Online hosted services (<code>services5.arcgis.com</code>, account wisnipsvki_WisDOT), published for damage-assessment use</div>
+
+  <h3>Layer 3 — "Functional Class - State Trunk Network" (tried first)</h3>
+  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3</a></div>
+  <p>Covers interstates and state highways. Fields read: <code>FED_FC_CD</code> (string "1"–"7", bare FHWA code), <code>HWYTYPE</code>/<code>HWYNUM</code>/<code>HWYDIR</code> (route name, e.g. "USH 18 W"). Point-in-time snapshot — no retired-segment filter needed. If any segment answers here, the local-roads layer is not queried.</p>
+  <div class="quirk"><b>Quirk — two class fields.</b> This layer carries both <code>FED_FC_CD</code> (the federal FHWA code — what the classifier uses) and <code>FC_CD</code> (WisDOT's own internal code — what the layer's published renderer/legend keys off). The map figures fetch both: <code>FED_FC_CD</code> for the verdict, <code>FC_CD</code> only for matching WisDOT's own colors.</div>
+  <div class="quirk"><b>Quirk — <code>URB_TYPE</code> unused.</b> The layer has its own Urban/Rural field, but this tool deliberately ignores it: the nationwide ACUB polygon check is the single urban/rural source of truth for every state, so all states are judged by the same boundary dataset.</div>
+
+  <h3>Layer 1 — "WI_Local_Roads_Flood_Damage_Assessment_Snapshot" (fallback)</h3>
+  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1</a></div>
+  <p>Covers county/municipal/town roads. Fields read: <code>FNCT_CLS_CTGY_TYCD</code> (WisDOT category code), <code>ST_LABL_NM</code> (street name — good local-street coverage).</p>
+  <div class="quirk"><b>Quirk — urban/rural embedded in the code.</b> Unlike every other wired layer, this one encodes urban/rural into the class value itself (10 Rural Principal Arterial, 60 Urban Principal Arterial, 20/86 Minor Arterial, 30/96 Collector, 40 Rural Minor Collector, 45/97 Local). The tool strips that back to a bare FHWA 1–7 code before the shared federal-aid rule runs.</div>
+  <div class="quirk"><b>Quirk — code 96 ("Urban Collector Other") doesn't split major vs minor collector.</b> It is mapped to Major Collector (5). This can never change a verdict: the major/minor split only matters for <i>rural</i> collectors, and every <i>urban</i> collector is federal-aid regardless.</div>
+  <div class="quirk"><b>Quirk — no formal legend domain.</b> The category-code meanings aren't published as a coded-value domain; they were read from the layer's renderer <code>uniqueValueInfos</code> (its map symbology), which is also what the map figures use for colors.</div>
+</section>
+
+<section id="acub">
+  <h2>All states — Urban vs Rural (ACUB)</h2>
+  <div class="org">Organization: <b>USDOT Bureau of Transportation Statistics</b> — National Transportation Atlas Database (NTAD), "2020 Adjusted Urban Area Boundaries", ArcGIS Online hosted (re-hosted via UDOT's UPLAN open-data portal)</div>
+  <h3>Layer 0 — "Adjusted Urban Areas"</h3>
+  <div class="url"><a href="https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0" target="_blank" rel="noopener">https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0</a></div>
+  <p>Nationwide polygon layer of FHWA-adjusted 2020 Census urban boundaries. Fields read: <code>NAME</code> (e.g. "Kalamazoo, MI"), <code>UACE</code> (5-digit Census urban-area code), <code>state_1</code>. A point inside any polygon ⇒ Urban; otherwise Rural. This single layer answers urban/rural for <b>every</b> state, wired or not.</p>
+  <div class="quirk"><b>Quirk — boundary buffer floor.</b> The point-in-polygon test retries with a buffer of at least 200 ft when the exact point misses, so a site a few feet on the wrong side of a road that itself touches the urban boundary still resolves Urban (a real field-observed failure mode).</div>
+  <div class="quirk"><b>Quirk — generalized geometry in figures.</b> Boundary geometry drawn on the map/PDF is fetched with ~11 m simplification (<code>maxAllowableOffset</code>) to keep the payload small; the urban/rural <i>determination</i> itself always uses the full-precision service-side intersection.</div>
+</section>
+
+<section id="tiger">
+  <h2>All states — street names</h2>
+  <div class="org">Organization: <b>U.S. Census Bureau</b> — TIGERweb</div>
+  <h3>Layer 8 — "Local Roads" (Transportation MapServer)</h3>
+  <div class="url"><a href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8" target="_blank" rel="noopener">https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8</a></div>
+  <p>Field read: <code>NAME</code>, pipe-joined when several streets fall in the search buffer (intersections). Backfills the street name wherever the state layer only knows designated routes (Michigan, and often Indiana). Failures here are non-fatal — classification still lands without a street name.</p>
+</section>
+
+<section id="firmette">
+  <h2>FIRMettes (flood map extracts)</h2>
+  <div class="org">Organization: <b>FEMA</b> — Map Service Center, Print FIRMette geoprocessing service</div>
+  <div class="url"><a href="https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette" target="_blank" rel="noopener">https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette</a></div>
+  <p>Used by the "Download FIRMettes (ZIP)" button: for each site the browser submits a print job (<code>submitJob?input_lat=…&amp;input_lon=…&amp;Print_Type=FIRMETTE&amp;graphic=PDF</code>), polls the job status, then downloads the produced PDF — the same flow FEMA's own Map Service Center portal uses. Each PDF is generated fresh by FEMA (~1 MB, typically seconds to a couple of minutes per site), which is why the batch is capped.</p>
+</section>
+
+<section id="basemap">
+  <h2>Basemap (visual reference only)</h2>
+  <div class="org">Organization: <b>Esri</b> — World Street Map (default), World Imagery + Boundaries &amp; Places (switcher option)</div>
+  <p>The interactive map's background tiles come from Esri and play no role in any classification. The PDF report figures also composite Esri World Street Map tiles under the authoritative data layers (fetched with <code>crossOrigin="anonymous"</code> against Esri's CORS-enabled tile service, so a non-CORS response fails outright instead of silently tainting the canvas; the fetch is disclosed in the network log and credited on the figure). Viewing the map — or generating a report — necessarily reveals the viewed area to the tile provider; this is the one disclosure the client-side design can't remove (disclosed in the main page footer). The <b>data layers</b> in every figure remain pure vector drawings queried from the authoritative services above.</p>
+</section>
+
+<section id="unwired">
+  <h2>MN / IL / OH</h2>
+  <p>No road-functional-class layer is wired for Minnesota, Illinois, or Ohio yet — sites there get the ACUB urban/rural check only, and the verdict column says so rather than guessing. The nationwide ACUB and TIGER layers above already cover them; each state's DOT publishes its NFC layer differently and needs the same per-state schema research MI/IN/WI received.</p>
+</section>
+
+<p style="color:#5b6b7b;font-size:12.5px">All layer names, field names, domains, and quirks on this page were confirmed against each service's live REST metadata (<code>?f=json</code>) — sources last verified 2026-07-01 through 2026-07-03. This tool classifies the road, never the project.</p>
+
+</main>
+</body>
+</html>
