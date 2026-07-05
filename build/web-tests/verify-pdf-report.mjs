@@ -9,12 +9,11 @@
 //
 // The query URLs and response shapes used by rr-report were independently
 // confirmed live via curl against the real MDOT and NTAD ACUB services (see
-// fixtures/*.json, captured from those live responses - MI query used
-// FunctionalSystem/PR outFields; ACUB used NAME/UACE/state_1 with
-// maxAllowableOffset=0.0001 generalization. rr-report now queries by frame
-// ENVELOPE rather than point+buffer, but the response shape - features with
-// attributes + paths/rings geometry in WGS84 - is identical, so the same
-// captured fixtures stub both shapes). Chromium
+// fixtures/*.json). mi-geom.json / acub-geom.json were captured live
+// 2026-07-05 with rr-report's actual frame-ENVELOPE query shape (the 0.75 mi
+// Kalamazoo frame: 88 road segments across 6 classes + the generalized
+// Kalamazoo ACUB polygon), so the rendered figure in this test shows the
+// realistic full street grid, not a stub. Chromium
 // itself is stubbed with those real fixtures rather than hitting the network
 // directly, since some sandboxes' outbound HTTPS proxy is only integrated
 // with curl/Node's fetch, not with a standalone launched Chromium - if that's
