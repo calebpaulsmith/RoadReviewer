@@ -1,15 +1,20 @@
 // Verifies the "Download PDF Report" feature (web/index.html's rr-report
 // script block): classify a point, click the button, and check the
-// downloaded PDF for a cover page, per-site pages, and embedded figure
-// images. Requires `npm install` in this directory first (playwright-core).
+// downloaded PDF for a cover page, a per-site page with ONE combined
+// page-filling figure (ACUB polygon + class polylines on one map), and the
+// live source-map link annotations. Requires `npm install` in this
+// directory first (playwright-core).
 //
 //   cd build/web-tests && npm install && node verify-pdf-report.mjs
 //
 // The query URLs and response shapes used by rr-report were independently
 // confirmed live via curl against the real MDOT and NTAD ACUB services (see
 // fixtures/*.json, captured from those live responses - MI query used
-// FunctionalSystem/PR outFields with a 200ft fallback buffer; ACUB used
-// NAME/UACE/state_1 with maxAllowableOffset=0.0001 generalization). Chromium
+// FunctionalSystem/PR outFields; ACUB used NAME/UACE/state_1 with
+// maxAllowableOffset=0.0001 generalization. rr-report now queries by frame
+// ENVELOPE rather than point+buffer, but the response shape - features with
+// attributes + paths/rings geometry in WGS84 - is identical, so the same
+// captured fixtures stub both shapes). Chromium
 // itself is stubbed with those real fixtures rather than hitting the network
 // directly, since some sandboxes' outbound HTTPS proxy is only integrated
 // with curl/Node's fetch, not with a standalone launched Chromium - if that's
@@ -24,6 +29,7 @@
 // figure-sample.png next to this script for a visual spot-check.
 import { chromium } from "playwright-core";
 import { readFileSync, copyFileSync, writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -82,7 +88,22 @@ const [download] = await Promise.all([
 ]);
 const dlPath = await download.path();
 const bytes = readFileSync(dlPath);
-const text = bytes.toString("latin1");
+// The report is generated with compress:true, so page-content streams are
+// Flate-encoded — inflate every stream and append the decoded text so the
+// string checks below can still grep for it. Link annotations and object
+// dictionaries stay uncompressed and are covered by the raw latin1 text.
+let text = bytes.toString("latin1");
+{
+  const raw = bytes.toString("latin1");
+  const re = /stream\r?\n/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const start = m.index + m[0].length;
+    const end = raw.indexOf("endstream", start);
+    if (end < 0) continue;
+    try { text += "\n" + inflateSync(bytes.subarray(start, end)).toString("latin1"); } catch { /* image data etc. */ }
+  }
+}
 
 const checks = [
   ["classification produced the expected federal-aid row", verdictRowOk],
@@ -92,7 +113,11 @@ const checks = [
   ["site name in cover table", text.includes("Kalamazoo culvert")],
   ["verdict in cover table", text.includes("Federal aid - Urban Minor Collector")],
   ["2 pages (cover + 1 site)", (text.match(/\/Type\s*\/Page[^s]/g) || []).length === 2],
-  ["4 image XObjects embedded (2 figures x RGB+alpha)", (text.match(/\/Subtype\s*\/Image/g) || []).length === 4],
+  ["2 image XObjects embedded (1 combined figure x RGB+alpha)", (text.match(/\/Subtype\s*\/Image/g) || []).length === 2],
+  ["MI live-webmap link annotation present", text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
+  ["ACUB live-layer link annotation present", text.includes("mapviewer/index.html?url=https%3A%2F%2Fservices.arcgis.com")],
+  ["Google Maps link annotation present", text.includes("google.com/maps?q=42.28536")],
+  ["zoom select defaults to Standard (600 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "600"],
   ["disclaimer present", text.includes("classifies the road, not the project")],
   ["button label restored after run", (await page.locator("#pdfBtn").textContent()) === "Download PDF Report"],
 ];
@@ -104,17 +129,25 @@ console.log(fail ? "VERIFY FAILED" : "VERIFY PASSED", "| pdf bytes:", bytes.leng
 
 if (process.env.SAVE_SAMPLES) {
   copyFileSync(dlPath, join(here, "sample-report.pdf"));
-  const figurePng = await page.evaluate(({ miMetaStr, miGeomStr }) => {
-    const meta = JSON.parse(miMetaStr), geom = JSON.parse(miGeomStr);
-    return renderFigureCanvas({
-      title: "MI road functional class — Functional System",
-      features: geom.features, geometryType: "polyline", rendererField: "FunctionalSystem",
-      drawingInfo: meta.drawingInfo, point: { lat: 42.28536, lon: -85.57025 },
-      verdictColor: "#d73027", radiusMeters: 250,
-      citationLines: ["Source: Functional System (Esri REST feature service)", "https://mdotgis.state.mi.us/.../FeatureServer/353", "Retrieved (test) · query buffer 200 ft"],
-      emptyNote: "No road segment returned within 200 ft",
+  const figurePng = await page.evaluate(({ miMetaStr, miGeomStr, acubMetaStr, acubGeomStr }) => {
+    const miM = JSON.parse(miMetaStr), miG = JSON.parse(miGeomStr);
+    const acM = JSON.parse(acubMetaStr), acG = JSON.parse(acubGeomStr);
+    const point = { lat: 42.28536, lon: -85.57025 };
+    return renderCombinedCanvas({
+      title: "MI road functional class + 2020 Adjusted Urban Boundary",
+      layers: [
+        { geometryType: "polygon", drawingInfo: acM.drawingInfo, features: acG.features,
+          legendHeader: "Urban boundary (USDOT NTAD 2020)" },
+        { geometryType: "polyline", rendererField: "FunctionalSystem", drawingInfo: miM.drawingInfo,
+          features: miG.features, legendHeader: "Road functional class (MDOT)" },
+      ],
+      point, verdictColor: "#d73027", bbox: reportFrameBBox(point.lat, point.lon, 600),
+      citationLines: ["Road class: Functional System — https://mdotgis.state.mi.us/.../FeatureServer/353",
+        "Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — https://services.arcgis.com/...",
+        "Retrieved (test) · frame ≈ 0.75 mi wide · classification buffer 200 ft"],
+      notes: [],
     }).toDataURL("image/png");
-  }, { miMetaStr: miMeta, miGeomStr: miGeom });
+  }, { miMetaStr: miMeta, miGeomStr: miGeom, acubMetaStr: acubMeta, acubGeomStr: acubGeom });
   writeFileSync(join(here, "figure-sample.png"), Buffer.from(figurePng.split(",")[1], "base64"));
   console.log("Saved sample-report.pdf and figure-sample.png next to this script.");
 }

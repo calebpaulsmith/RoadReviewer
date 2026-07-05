@@ -1154,35 +1154,57 @@ summarized here so it isn't relitigated:
   per-row retry link (web analog of F12).
 - **PDF report.** A "Download PDF Report" button (jsPDF, vendored like
   Leaflet) produces a cover page + one page per classified site. Each
-  site page has two figures: the state's road functional-class layer and
-  the ACUB layer. Rather than screenshotting a live map, each figure is
-  drawn on a plain `<canvas>` from a fresh geometry-including query
-  against the same REST endpoint, styled with **that layer's own
-  published `drawingInfo.renderer`** (the state's/USDOT's actual
-  class-to-color mapping, read from the layer's REST metadata) - so the
-  symbology is authoritative rather than invented. This choice was forced
-  by a live probe (2026-07-03): only MDOT's service is a classic ArcGIS
-  Server exposing `/MapServer/export` + `/legend`; INDOT, WisDOT, and the
-  nationwide ACUB layer are AGOL-hosted feature services with
-  `"capabilities": "Query"` only - no export/legend operation exists for
-  them at all, confirmed by both a direct `/MapServer/export` 400/404 and
-  the FeatureServer root's `capabilities` field. Drawing every source's
-  own renderer client-side sidesteps that inconsistency uniformly, and
-  also avoids the canvas-taint risk of compositing remote basemap tiles
-  (the figures use no raster tiles at all - just vector paths/rings drawn
-  from queried geometry, a marker, a scale bar, a north arrow, and a
-  legend/citation baked into the same canvas). One field-name trap found
+  site page has **one combined, page-filling map**: the ACUB polygon
+  underneath and the state's functional-class polylines on top (WI draws
+  both the state-trunk and local-roads layers), queried by frame
+  **envelope** (`esriGeometryEnvelope`, live-verified against all four
+  services 2026-07-05: 51-823 features per 0.75 mi urban frame, no
+  record-limit hits) so the figure shows the surrounding network for
+  context, not just the verdict segment. Frame width comes from a
+  "PDF map width" select next to the button (300/600/1200/2400 m
+  half-width; default 600 m ≈ 0.75 mi across - deliberately further out
+  than the original 250 m figure; retune by editing the option values).
+  Below the figure each page carries clickable live source links (jsPDF
+  `textWithLink`): MI uses the same curated FEMA NFC/ACUB webmap deep
+  link as the Excel NFC Map column, IN/WI/ACUB side-load their
+  FeatureServer into the FEMA Map Viewer via `url=` +
+  `find=/marker=/level=` (the `URL_NFC_MAPVIEW*` patterns from
+  `modConstants.bas`), plus a Google Maps link. Rather than
+  screenshotting a live map, the figure is drawn on a plain `<canvas>`
+  styled with **each layer's own published `drawingInfo.renderer`** (the
+  state's/USDOT's actual class-to-color mapping, read from the layer's
+  REST metadata) - so the symbology is authoritative rather than
+  invented. This choice was forced by a live probe (2026-07-03): only
+  MDOT's service is a classic ArcGIS Server exposing `/MapServer/export`
+  + `/legend`; INDOT, WisDOT, and the nationwide ACUB layer are
+  AGOL-hosted feature services with `"capabilities": "Query"` only - no
+  export/legend operation exists for them at all, confirmed by both a
+  direct `/MapServer/export` 400/404 and the FeatureServer root's
+  `capabilities` field. Drawing every source's own renderer client-side
+  sidesteps that inconsistency uniformly, and also avoids the
+  canvas-taint risk of compositing remote basemap tiles (the figures use
+  no raster tiles at all - just vector paths/rings drawn from queried
+  geometry, a marker, a scale bar, a north arrow, and a sectioned
+  legend/citations baked into the same canvas). Renderer traps found
   during this work: Wisconsin's state-trunk layer keys its renderer off
   `FC_CD` (WisDOT's own code), not the `FED_FC_CD` field the classifier
   itself uses - the report's query fetches both fields, using `FC_CD`
-  only for color-matching. Verified end-to-end with a real jsPDF download
-  in a real (headless) browser via `build/web-tests/verify-pdf-report.mjs`,
-  stubbed with response fixtures captured live from MDOT/NTAD moments
-  earlier (see that file for why: this sandbox's Chromium couldn't
-  complete TLS through the outbound proxy that curl/Node's own fetch use
-  fine, so the query logic was confirmed correct via curl first and the
-  browser-side drawing/PDF-assembly code was then verified against those
-  real captured responses) - a plain user's browser with normal internet
+  only for color-matching; INDOT's layer publishes a single-symbol
+  renderer (every class one color, confirmed live 2026-07-05), so
+  Indiana substitutes the standard FHWA palette (byte-identical to
+  MDOT's published colors) via `fhwaFallbackDrawingInfo`, disclosed in
+  the citation footer; and the jsPDF doc must be created with
+  `compress: true` or each figure embeds as ~5 MB of raw RGBA instead of
+  ~90 KB total. Verified end-to-end with a real jsPDF download
+  in a real (headless) browser via `build/web-tests/verify-pdf-report.mjs`
+  (which now inflates the compressed PDF streams before grepping for
+  text, and also asserts the live-source link annotations), stubbed with
+  response fixtures captured live from MDOT/NTAD (see that file for why:
+  this sandbox's Chromium couldn't complete TLS through the outbound
+  proxy that curl/Node's own fetch use fine, so the envelope query
+  shapes were confirmed correct via curl first and the browser-side
+  drawing/PDF-assembly code was then verified against those real
+  captured responses) - a plain user's browser with normal internet
   access isn't expected to hit that proxy limitation.
 - **Open items:** the "FHWA Road Checker" name risks implying agency
   affiliation (page carries an "unofficial, not affiliated" disclaimer;
