@@ -14,32 +14,57 @@ below.
 
 Click **Download PDF Report** to generate a PDF with a cover page (a
 summary table of every classified site) followed by one page per site.
-Each site page shows two figures:
+Each site page has **one combined, page-filling map**: the 2020 Adjusted
+Census Urban Boundary (ACUB) polygon drawn underneath, and the state's
+road functional-class polylines (MDOT/INDOT/WisDOT; for Wisconsin, both
+the state-trunk and local-roads layers) drawn on top — so a single figure
+answers both halves of the federal-aid question at once.
 
-1. **The state's road functional-class layer** (MDOT/INDOT/WisDOT —
-   whichever one produced the verdict), and
-2. **The 2020 Adjusted Census Urban Boundary (ACUB) layer**.
+The map's coverage is set by the **PDF map width** dropdown next to the
+button (Close ~0.4 mi / Standard ~0.75 mi / Wide ~1.5 mi / Very wide
+~3 mi across; Standard is the default). The figure is drawn from fresh
+geometry queries covering that whole frame — not just the segment that
+produced the verdict — so the site appears in the context of the
+surrounding road network. Below the figure, each page carries **clickable
+source links** that open each source layer in a live ArcGIS map viewer
+centered and markered on that exact site (the same deep-link patterns the
+Excel tool's NFC Map column uses), plus a Google Maps link.
 
-Each figure is drawn from a fresh, geometry-including query against that
-same live service, using **that service's own published `drawingInfo`
-renderer** — the literal colors/classes the state or USDOT chose, read
-straight from the layer's REST metadata — so the figure's symbology is
-authoritative, not an invented color scheme. Every figure includes a
-legend (only the classes actually present near the point), a scale bar,
-a north arrow, a marker for the site, and a citation (source layer name,
-REST URL, and retrieval timestamp) baked directly into the image.
+Under the data layers sits an **Esri World Street Map basemap** (roads +
+street names for orientation), composited from tiles fetched for the
+frame at report time. The tiles are loaded with
+`crossOrigin="anonymous"` against Esri's CORS-enabled
+(`Access-Control-Allow-Origin: *`) tile service, so the canvas stays
+exportable — a non-CORS load fails outright rather than tainting. If the
+tiles can't load, the figure falls back to a plain background and says
+so on the map.
 
-This deliberately does **not** screenshot a live map. Only MDOT's
-service is a classic ArcGIS Server with a `/MapServer/export` + `/legend`
-operation; INDOT, WisDOT, and the nationwide ACUB layer are AGOL-hosted
-"Query"-only feature services with no export/legend endpoint at all
-(confirmed live 2026-07-03). Querying geometry directly and drawing it
-with the layer's own renderer works uniformly across all four sources,
-and avoids the canvas-taint risk of compositing remote basemap tiles.
+The data layers themselves are drawn using **each service's own
+published `drawingInfo` renderer** — the literal colors/classes the
+state or USDOT chose, read straight from the layer's REST metadata — so
+the symbology is authoritative, not an invented color scheme. One
+exception, disclosed in the figure's citation footer: INDOT publishes a
+single-symbol renderer (every class the same color), so Indiana's
+classes are colored with the standard FHWA palette instead
+(byte-identical to the colors MDOT publishes). Every figure includes a
+sectioned legend (only the classes actually present in the frame), a
+scale bar, a north arrow, a marker for the site, and citations (source
+layer names, REST URLs, basemap credit, retrieval timestamp, frame
+width) baked directly into the image.
+
+The data layers are deliberately **not** screenshots of a live map.
+Only MDOT's service is a classic ArcGIS Server with a
+`/MapServer/export` + `/legend` operation; INDOT, WisDOT, and the
+nationwide ACUB layer are AGOL-hosted "Query"-only feature services with
+no export/legend endpoint at all (confirmed live 2026-07-03). Querying
+geometry directly and drawing it with the layer's own renderer works
+uniformly across all four sources.
 
 The report only fetches geometry when you click the button (classification
-itself never requests geometry, to keep live typing fast) — expect one
-extra round trip in the browser's network log per figure per site.
+itself never requests geometry, to keep live typing fast) — expect a few
+extra round trips in the browser's network log per site. At very wide
+frames a service can hit its per-query record limit; the figure then notes
+that some segments were not drawn.
 
 ## Privacy model (the point of the design)
 
@@ -54,9 +79,11 @@ extra round trip in the browser's network log per figure per site.
   (`vendor/leaflet/`) so there are no CDN calls; exports (CSV /
   copy-for-Excel) are generated in the browser.
 - Residual disclosure: basemap tiles are fetched from Esri for whatever
-  area the map shows, and the GIS servers see the queried coordinates in
-  their own logs (true of the Excel tool too). Both facts are disclosed
-  in the page footer.
+  area the interactive map shows (streets basemap by default, satellite
+  imagery via the layer switcher) and for each PDF report figure's
+  frame, and the GIS servers see the queried coordinates in their own
+  logs (true of the Excel tool too). Both facts are disclosed in the
+  page footer, and the PDF tile fetches appear in the network log.
 
 ## Run it
 

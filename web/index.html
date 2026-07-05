@@ -124,7 +124,15 @@ Site 12, 44.2700, -83.5200"></textarea>
       <span style="flex:1"></span>
       <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
       <button id="dlCsv">Download CSV</button>
-      <button id="pdfBtn" title="One page per site: a zoomed figure of each authoritative source layer (state road-class layer + the 2020 ACUB urban boundary), drawn with that source's own published symbology, its legend, and a citation">Download PDF Report</button>
+      <label class="count" title="How wide an area the report map for each site covers">PDF map width:
+        <select id="pdfZoom">
+          <option value="300">Close (~0.4 mi)</option>
+          <option value="600" selected>Standard (~0.75 mi)</option>
+          <option value="1200">Wide (~1.5 mi)</option>
+          <option value="2400">Very wide (~3 mi)</option>
+        </select>
+      </label>
+      <button id="pdfBtn" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
       <button id="clearBtn">Clear</button>
     </div>
     <div class="tablewrap">
@@ -149,8 +157,8 @@ Site 12, 44.2700, -83.5200"></textarea>
   system (Urban Minor Collector or greater per FHWA functional classification and the 2020 Adjusted Census Urban
   Boundaries); the inspector or applicant decides what that means for any given work order. Road-class lookup is wired
   for Michigan (MDOT), Indiana (INDOT) and Wisconsin (WisDOT); other states get the urban-boundary check only.
-  Map tiles &copy; Esri World Imagery / OpenStreetMap contributors — viewing the map fetches tiles for the visible area
-  from those providers.
+  Map tiles &copy; Esri (World Street Map / World Imagery) — viewing the map, or generating a PDF report, fetches tiles
+  for the relevant area from Esri.
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
@@ -411,23 +419,32 @@ const $ = id => document.getElementById(id);
 const netLogEl = $("netLog");
 let netLines = [];
 
-async function httpGetJson(url) {
-  netLines.push(new Date().toLocaleTimeString() + "  GET " + url);
+function logNet(line) {
+  netLines.push(new Date().toLocaleTimeString() + "  " + line);
   if (netLines.length > 400) netLines = netLines.slice(-400);
   netLogEl.textContent = netLines.join("\n");
+}
+async function httpGetJson(url) {
+  logNet("GET " + url);
   const r = await fetch(url);
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }
 
-/* ---- map ---- */
+/* ---- map: streets basemap (road names) by default, imagery as an option ---- */
 const map = L.map("map").setView([44.5, -86.5], 5);
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-  maxZoom: 19, attribution: "Imagery &copy; Esri",
-}).addTo(map);
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
-  maxZoom: 19, attribution: "Labels &copy; Esri", opacity: 0.9,
-}).addTo(map);
+const STREETS_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+const streetsBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
+const imageryBase = L.layerGroup([
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19, attribution: "Imagery &copy; Esri",
+  }),
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19, opacity: 0.9,
+  }),
+]);
+streetsBase.addTo(map);
+L.control.layers({ "Streets (road names)": streetsBase, "Satellite imagery": imageryBase }, null).addTo(map);
 const markerLayer = L.layerGroup().addTo(map);
 
 function verdictBucket(v) {
@@ -564,11 +581,19 @@ $("copyTsv").addEventListener("click", async () => {
 <!-- ============================================================
      rr-report: PDF report generation. Separate from rr-core's
      classifyPoint (which never fetches geometry, to keep live
-     classification fast) — this re-queries the same winning
-     layer(s) per point with returnGeometry=true only when the
-     user asks for a report, then draws each source's OWN published
-     drawingInfo.renderer symbology onto a plain <canvas> (no remote
-     raster tiles composited in, so there's no canvas-taint risk).
+     classification fast) — this queries the same authoritative
+     layers again, with returnGeometry=true and an ENVELOPE filter
+     covering the whole visible frame (not just the classification
+     buffer), only when the user asks for a report. Each site page
+     gets ONE combined page-filling map: Esri World Street Map tiles
+     (roads + names for orientation) at the bottom, the ACUB
+     urban-boundary polygon tinted over them, and the state's
+     functional-class polylines on top, drawn onto a <canvas> using
+     each source's OWN published drawingInfo.renderer symbology.
+     The tiles are fetched with crossOrigin="anonymous" against
+     Esri's Access-Control-Allow-Origin:* tile service, so they
+     composite without tainting the canvas; if they fail to load the
+     figure falls back to a plain background and says so.
      Only MI's MDOT service exposes MapServer/export + /legend (a
      classic ArcGIS Server); IN, WI and the nationwide ACUB layer are
      AGOL-hosted "Query"-only feature services with no export/legend
@@ -577,9 +602,82 @@ $("copyTsv").addEventListener("click", async () => {
      mixing a raster path for MI with a vector path for the rest.
      ============================================================ -->
 <script>
-const CLASS_LAYER_RADIUS_M = 250;  // ~800 ft frame around the point for the road/class-layer figure
-const ACUB_LAYER_RADIUS_M = 900;   // ~0.55 mi frame for the urban-boundary figure (city-scale context)
-const REPORT_BUFFER_FEET = DEFAULT_BUFFER_FEET;  // report has no Setup-sheet override; matches classifyPoint's default
+const REPORT_BUFFER_FEET = DEFAULT_BUFFER_FEET;  // classification buffer cited in the figure footer
+
+// Figure layout in logical units. The canvas renders at 2x pixels for print
+// sharpness and lands ~532 pt wide on the letter page, so one logical unit
+// ~= one PDF point. The frame's half-width in meters comes from the
+// "PDF map width" select (#pdfZoom) — adjust those option values to retune
+// the default zoom.
+const FIG = { W: 540, H: 578, titleH: 26, margin: 8, legendW: 150, footLines: 5, footLineH: 11, footPad: 8 };
+function figLayout() {
+  const footH = FIG.footLines * FIG.footLineH + FIG.footPad;
+  const mapW = FIG.W - FIG.legendW - FIG.margin * 2;
+  const mapH = FIG.H - FIG.titleH - footH - FIG.margin;
+  return { footH, mapW, mapH };
+}
+function reportRadiusMeters() {
+  const v = parseInt($("pdfZoom").value, 10);
+  return Number.isFinite(v) ? v : 600;
+}
+// The figure is drawn in normalized Web Mercator (x,y in 0..1, y down) so
+// the street-basemap tiles composite pixel-perfect under the vector layers.
+// Mercator is conformal, so ground aspect matches pixel aspect locally.
+function mercX(lon) { return (lon + 180) / 360; }
+function mercY(lat) {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2;
+}
+function invMercLon(x) { return x * 360 - 180; }
+function invMercLat(y) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI; }
+
+// Frame around the point: half-width = radiusMeters on the ground, height
+// follows the map panel's pixel aspect. Carries both mercator bounds (for
+// drawing/tiles) and geographic bounds (for envelope queries + scale bar).
+function reportFrame(lat, lon, radiusMeters) {
+  const { mapW, mapH } = figLayout();
+  const metersPerMercUnit = 40075016.686 * Math.cos(lat * Math.PI / 180);
+  const halfX = radiusMeters / metersPerMercUnit, halfY = halfX * (mapH / mapW);
+  const cx = mercX(lon), cy = mercY(lat);
+  const f = { x0: cx - halfX, x1: cx + halfX, y0: cy - halfY, y1: cy + halfY };
+  f.minLon = invMercLon(f.x0); f.maxLon = invMercLon(f.x1);
+  f.maxLat = invMercLat(f.y0); f.minLat = invMercLat(f.y1);
+  return f;
+}
+
+// ---- street basemap tiles (drawn UNDER the authoritative vector layers) ----
+// Esri World Street Map serves tiles with Access-Control-Allow-Origin:* and
+// the images are loaded with crossOrigin="anonymous", so compositing them
+// does NOT taint the canvas (a failed/non-CORS load errors out instead of
+// tainting). If tiles can't load, the figure falls back to the plain
+// background and says so.
+const BASEMAP_TILE_URL = (z, y, x) =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
+function loadTileImage(url, timeoutMs) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    img.crossOrigin = "anonymous";
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = url;
+  });
+}
+async function fetchBasemapTiles(frame, mapDevicePx) {
+  // Pick the zoom whose tile resolution roughly matches the canvas raster.
+  const fracW = frame.x1 - frame.x0;
+  const z = Math.max(3, Math.min(19, Math.round(Math.log2(mapDevicePx / (256 * fracW)))));
+  const n = 2 ** z;
+  const coords = [];
+  for (let ty = Math.floor(frame.y0 * n); ty <= Math.floor(frame.y1 * n); ty++)
+    for (let tx = Math.floor(frame.x0 * n); tx <= Math.floor(frame.x1 * n); tx++)
+      if (ty >= 0 && ty < n && tx >= 0 && tx < n) coords.push({ tx, ty });
+  if (!coords.length || coords.length > 80) return null;
+  logNet(`GET ${coords.length} basemap tiles (Esri World Street Map, z${z}) for the PDF figure`);
+  const imgs = await Promise.all(coords.map(c => loadTileImage(BASEMAP_TILE_URL(z, c.ty, c.tx), 8000)));
+  const tiles = coords.map((c, i) => ({ ...c, img: imgs[i] })).filter(t => t.img);
+  return tiles.length ? { n, tiles } : null;
+}
 
 const layerMetaCache = new Map();
 async function fetchLayerMeta(url) {
@@ -587,74 +685,106 @@ async function fetchLayerMeta(url) {
   return layerMetaCache.get(url);
 }
 
-function buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt, generalize) {
+// Frame query: everything intersecting the figure's bounding box, WITH
+// geometry — so the map shows the surrounding network for context, not just
+// the one segment that produced the verdict.
+function buildFrameQueryUrl(baseUrl, bbox, outFields, whereClause, generalize) {
   let url = baseUrl + "/query?where=" + encodeURIComponent(whereClause) +
-    "&geometry=" + lon + "," + lat +
-    "&geometryType=esriGeometryPoint&inSR=4326" +
+    "&geometry=" + [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat].map(v => v.toFixed(6)).join(",") +
+    "&geometryType=esriGeometryEnvelope&inSR=4326" +
     "&spatialRel=esriSpatialRelIntersects" +
     "&outFields=" + encodeURIComponent(outFields) +
     "&outSR=4326&returnGeometry=true&f=json";
-  if (distanceFt > 0) url += "&distance=" + distanceFt + "&units=esriSRUnit_Foot";
-  if (generalize) url += "&maxAllowableOffset=0.0001";  // ~11m; only for polygon layers with many vertices
+  if (generalize) url += "&maxAllowableOffset=0.0001";  // ~11m; for the huge ACUB polygons
   return url;
 }
-async function queryGeomWithFallback(baseUrl, lat, lon, outFields, whereClause, fallbackFt, generalize) {
-  let json = await httpGetJson(buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, 0, generalize));
-  if (featureCount(json) === 0) {
-    json = await httpGetJson(buildGeomQueryUrl(baseUrl, lat, lon, outFields, whereClause, fallbackFt, generalize));
-  }
+async function queryFrame(baseUrl, bbox, outFields, whereClause, generalize) {
+  const json = await httpGetJson(buildFrameQueryUrl(baseUrl, bbox, outFields, whereClause, generalize));
+  if (json && json.error) throw new Error("service error " + (json.error.code || "") + " " + (json.error.message || ""));
   return json;
 }
 
-// Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but with geometry + the
-// layer's own drawingInfo so the figure can be drawn in that source's real
+// Live-map deep links: each opens the actual source layer centered + markered
+// on the site. Same URL patterns the Excel tool's NFC Map column uses
+// (modConstants URL_NFC_MAPVIEW / URL_NFC_MAPVIEW_IN / URL_NFC_MAPVIEW_WI):
+// MI has a curated FEMA-hosted NFC+ACUB webmap; every other layer is
+// side-loaded into the FEMA Map Viewer via its url= parameter.
+function liveLayerLink(layerUrl, lat, lon) {
+  return "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=" + encodeURIComponent(layerUrl) +
+    "&find=" + lon + "%2C" + lat + "&marker=" + lon + "," + lat + ",4326&level=16";
+}
+function miWebmapLink(lat, lon) {
+  return "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681" +
+    "&center=" + lon + "," + lat + "&level=16&marker=" + lon + "," + lat;
+}
+
+// Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but frame-wide and with
+// the layer's own drawingInfo so the figure is drawn in that source's real
 // published symbology instead of an invented color scheme.
-async function pickClassLayer(state, lat, lon, bufferFt) {
+async function fetchClassLayers(state, bbox, lat, lon) {
   if (state === "MI") {
     const [json, meta] = await Promise.all([
-      queryGeomWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, false),
+      queryFrame(REST.MDOT_NFC, bbox, "FunctionalSystem,PR", "RHRetireDate IS NULL", false),
       fetchLayerMeta(REST.MDOT_NFC),
     ]);
-    return { url: REST.MDOT_NFC, layerName: meta.name || "MDOT Functional System (NFC)",
-      rendererField: "FunctionalSystem", drawingInfo: meta.drawingInfo, features: json.features || [] };
+    return [{ url: REST.MDOT_NFC, layerName: meta.name || "MDOT Functional System (NFC)",
+      legendHeader: "Road functional class (MDOT)", geometryType: "polyline",
+      rendererField: "FunctionalSystem", drawingInfo: meta.drawingInfo,
+      features: json.features || [], truncated: !!json.exceededTransferLimit,
+      liveLink: { label: "Road class + urban boundary — MDOT NFC/ACUB webmap at this site", url: miWebmapLink(lat, lon) } }];
   }
   if (state === "IN") {
     const [json, meta] = await Promise.all([
-      queryGeomWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt, false),
+      queryFrame(REST.IN_NFC, bbox, "functional_class", "record_status=5", false),
       fetchLayerMeta(REST.IN_NFC),
     ]);
-    return { url: REST.IN_NFC, layerName: meta.name || "Indiana LRSE Functional Class",
-      rendererField: "functional_class", drawingInfo: meta.drawingInfo, features: json.features || [] };
+    // INDOT publishes a single-symbol renderer (every class the same color) —
+    // substitute the standard FHWA palette so classes are distinguishable.
+    const published = meta.drawingInfo && meta.drawingInfo.renderer && meta.drawingInfo.renderer.type === "uniqueValue";
+    return [{ url: REST.IN_NFC, layerName: meta.name || "Indiana LRSE Functional Class",
+      legendHeader: "Road functional class (INDOT)", geometryType: "polyline",
+      rendererField: "functional_class",
+      drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo("functional_class"),
+      synthSymbology: !published,
+      features: json.features || [], truncated: !!json.exceededTransferLimit,
+      liveLink: { label: "Road class — INDOT functional-class layer at this site", url: liveLayerLink(REST.IN_NFC, lat, lon) } }];
   }
   if (state === "WI") {
-    const [trunkJson, trunkMeta] = await Promise.all([
-      queryGeomWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, false),
+    // Both WI layers, frame-wide: local roads drawn first (underneath), the
+    // state trunk network on top — together they cover the whole network the
+    // way the classifier's trunk-then-local fallback sees it.
+    const [localJson, localMeta, trunkJson, trunkMeta] = await Promise.all([
+      queryFrame(REST.WI_LOCAL_ROADS, bbox, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", false),
+      fetchLayerMeta(REST.WI_LOCAL_ROADS),
+      queryFrame(REST.WI_STATE_TRUNK, bbox, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", false),
       fetchLayerMeta(REST.WI_STATE_TRUNK),
     ]);
-    if ((trunkJson.features || []).length > 0) {
+    return [
+      { url: REST.WI_LOCAL_ROADS, layerName: localMeta.name || "WisDOT Local Road Network",
+        legendHeader: "Local road network (WisDOT)", geometryType: "polyline",
+        rendererField: "FNCT_CLS_CTGY_TYCD", drawingInfo: localMeta.drawingInfo,
+        features: localJson.features || [], truncated: !!localJson.exceededTransferLimit,
+        liveLink: { label: "Road class — WisDOT local-roads layer at this site", url: liveLayerLink(REST.WI_LOCAL_ROADS, lat, lon) } },
       // Renderer keys off FC_CD (WisDOT's own code), NOT the FED_FC_CD field
       // classification uses - the two are different fields on the same layer.
-      return { url: REST.WI_STATE_TRUNK, layerName: trunkMeta.name || "WisDOT State Trunk Network",
-        rendererField: "FC_CD", drawingInfo: trunkMeta.drawingInfo, features: trunkJson.features };
-    }
-    const [localJson, localMeta] = await Promise.all([
-      queryGeomWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, false),
-      fetchLayerMeta(REST.WI_LOCAL_ROADS),
-    ]);
-    return { url: REST.WI_LOCAL_ROADS, layerName: localMeta.name || "WisDOT Local Road Network",
-      rendererField: "FNCT_CLS_CTGY_TYCD", drawingInfo: localMeta.drawingInfo, features: localJson.features || [] };
+      { url: REST.WI_STATE_TRUNK, layerName: trunkMeta.name || "WisDOT State Trunk Network",
+        legendHeader: "State trunk network (WisDOT)", geometryType: "polyline",
+        rendererField: "FC_CD", drawingInfo: trunkMeta.drawingInfo,
+        features: trunkJson.features || [], truncated: !!trunkJson.exceededTransferLimit,
+        liveLink: { label: "Road class — WisDOT state-trunk layer at this site", url: liveLayerLink(REST.WI_STATE_TRUNK, lat, lon) } },
+    ];
   }
-  return null;
+  return [];
 }
 
-async function pickAcubLayer(lat, lon, bufferFt) {
-  const acubBuffer = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
+async function fetchAcubLayer(bbox) {
   const [json, meta] = await Promise.all([
-    queryGeomWithFallback(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", acubBuffer, true),
+    queryFrame(REST.ACUB, bbox, "NAME,UACE,state_1", "1=1", true),
     fetchLayerMeta(REST.ACUB),
   ]);
   return { url: REST.ACUB, layerName: meta.name || "NTAD Adjusted Urban Areas",
-    drawingInfo: meta.drawingInfo, features: json.features || [], bufferUsed: acubBuffer };
+    legendHeader: "Urban boundary (USDOT NTAD 2020)", geometryType: "polygon",
+    drawingInfo: meta.drawingInfo, features: json.features || [] };
 }
 
 /* ---- symbology + drawing ---- */
@@ -662,17 +792,26 @@ function rgba(colorArr, alphaOverride) {
   const [r, g, b, a] = colorArr;
   return `rgba(${r},${g},${b},${(alphaOverride ?? a) / 255})`;
 }
+// Flattens a uniqueValue renderer's classes regardless of which shape the
+// service publishes: modern uniqueValueGroups (MDOT) or the older flat
+// uniqueValueInfos list (AGOL-hosted layers like WisDOT's).
+function rendererClasses(r) {
+  const out = [];
+  for (const g of (r.uniqueValueGroups || []))
+    for (const c of (g.classes || []))
+      out.push({ values: (c.values || []).map(v => String(v[0])), label: c.label, symbol: c.symbol });
+  if (!out.length)
+    for (const i of (r.uniqueValueInfos || []))
+      out.push({ values: [String(i.value)], label: i.label, symbol: i.symbol });
+  return out;
+}
 function symbolForFeature(drawingInfo, rendererField, attrs) {
   const r = drawingInfo && drawingInfo.renderer;
   if (!r) return { color: [90, 90, 90, 255], width: 2, label: "Feature" };
   if (r.type === "uniqueValue") {
     const val = String(attrs[rendererField]);
-    for (const group of (r.uniqueValueGroups || [])) {
-      for (const cls of (group.classes || [])) {
-        if ((cls.values || []).some(v => String(v[0]) === val)) {
-          return { color: cls.symbol.color, width: cls.symbol.width || 2, label: cls.label };
-        }
-      }
+    for (const cls of rendererClasses(r)) {
+      if (cls.values.includes(val)) return { color: cls.symbol.color, width: cls.symbol.width || 2, label: cls.label };
     }
     return { color: (r.defaultSymbol && r.defaultSymbol.color) || [140, 140, 140, 255],
       width: (r.defaultSymbol && r.defaultSymbol.width) || 1, label: r.defaultLabel || "Other" };
@@ -680,19 +819,46 @@ function symbolForFeature(drawingInfo, rendererField, attrs) {
   const sym = r.symbol || {};
   return { color: sym.color || [90, 90, 90, 255], width: sym.width || 2, label: "Road segment" };
 }
-
-function computeBBox(lat, lon, radiusMeters, aspect) {
-  const dLat = radiusMeters / 111320;
-  const dLon = radiusMeters / (111320 * (Math.cos(lat * Math.PI / 180) || 0.01));
-  let halfLon = dLon, halfLat = dLat;
-  if ((dLon * 2) / (dLat * 2) < aspect) halfLon = (dLat * 2 * aspect) / 2;
-  else halfLat = ((dLon * 2) / aspect) / 2;
-  return { minLon: lon - halfLon, maxLon: lon + halfLon, minLat: lat - halfLat, maxLat: lat + halfLat };
+// Standard FHWA class colors (byte-identical to the values MDOT publishes in
+// its own uniqueValue renderer). Used ONLY when a state's bare-FHWA-code layer
+// publishes a single-symbol renderer that can't distinguish classes (Indiana
+// does, confirmed live 2026-07-05) — the substitution is disclosed in the
+// figure's citation footer.
+function fhwaFallbackDrawingInfo(field) {
+  const mk = (value, label, color, width) => ({ value, label, symbol: { color, width } });
+  return { renderer: { type: "uniqueValue", field1: field,
+    uniqueValueInfos: [
+      mk("1", "Interstate", [0, 112, 255, 255], 3),
+      mk("2", "Other Freeway or Expressway", [169, 0, 230, 255], 3),
+      mk("3", "Other Principal Arterial", [230, 0, 0, 255], 3),
+      mk("4", "Minor Arterial", [56, 168, 0, 255], 2.5),
+      mk("5", "Major Collector", [255, 170, 0, 255], 2.5),
+      mk("6", "Minor Collector", [255, 255, 0, 255], 2.5),
+      mk("7", "Local", [52, 52, 52, 255], 1.5),
+    ],
+    defaultSymbol: { color: [140, 140, 140, 255], width: 1 }, defaultLabel: "Other / non-certified" } };
 }
-function projector(bbox, w, h) {
+// Legend entries for the classes actually present in the frame, ordered the
+// way the source's own renderer lists them.
+function orderedLineLegend(drawingInfo, rendererField, features) {
+  const present = new Map();
+  for (const f of features) {
+    const sym = symbolForFeature(drawingInfo, rendererField, f.attributes || {});
+    if (!present.has(sym.label)) present.set(sym.label, rgba(sym.color));
+  }
+  const r = drawingInfo && drawingInfo.renderer;
+  const order = [];
+  if (r && r.type === "uniqueValue") {
+    for (const cls of rendererClasses(r)) if (present.has(cls.label) && !order.includes(cls.label)) order.push(cls.label);
+  }
+  for (const label of present.keys()) if (!order.includes(label)) order.push(label);
+  return order.map(l => [l, present.get(l)]);
+}
+
+function projector(frame, w, h) {
   return (lon, lat) => [
-    ((lon - bbox.minLon) / (bbox.maxLon - bbox.minLon)) * w,
-    ((bbox.maxLat - lat) / (bbox.maxLat - bbox.minLat)) * h,
+    ((mercX(lon) - frame.x0) / (frame.x1 - frame.x0)) * w,
+    ((mercY(lat) - frame.y0) / (frame.y1 - frame.y0)) * h,
   ];
 }
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -705,6 +871,15 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
   }
   if (line) ctx.fillText(line, x, yy);
   return yy;
+}
+// Middle-ellipsis a line to fit maxWidth, keeping the tail visible (the tail
+// of a REST URL carries the identifying FeatureServer/layer-id part).
+function fitLine(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const tail = text.slice(-26);
+  let head = text.slice(0, -26);
+  while (head.length && ctx.measureText(head + "…" + tail).width > maxWidth) head = head.slice(0, -1);
+  return head + "…" + tail;
 }
 function niceScaleFeet(maxFeet) {
   const steps = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000];
@@ -726,18 +901,20 @@ function drawScaleBar(ctx, x, y, bbox, mapWpx) {
   ctx.fillText(feet >= 5280 ? (feet / 5280).toFixed(1) + " mi" : feet + " ft", x, y - 8);
 }
 
-// Draws one figure (either the state's polyline class layer, or the ACUB
-// polygon layer) using ONLY that source's own drawingInfo.renderer colors -
-// no basemap tiles are composited, so there's nothing to taint the canvas.
-function renderFigureCanvas({ title, features, geometryType, rendererField, drawingInfo,
-    point, verdictColor, radiusMeters, citationLines, emptyNote }) {
-  const W = 620, H = 480, titleH = 26, footH = 3 * 12 + 10, legendW = 150, margin = 8;
+// Draws the combined per-site figure — every layer in draw order (ACUB
+// polygon first, class polylines on top) using ONLY each source's own
+// drawingInfo.renderer colors - no basemap tiles are composited, so there's
+// nothing to taint the canvas.
+function renderCombinedCanvas({ title, layers, point, verdictColor, frame, basemap, citationLines, notes }) {
+  const { footH, mapW, mapH } = figLayout();
+  const W = FIG.W, H = FIG.H, titleH = FIG.titleH, legendW = FIG.legendW, margin = FIG.margin;
   const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
+  canvas.width = W * 2; canvas.height = H * 2;   // 2x raster for print sharpness
   const ctx = canvas.getContext("2d");
+  ctx.scale(2, 2);
 
   ctx.fillStyle = "#eef2f5"; ctx.fillRect(0, 0, W, H);
-  const mapX = margin, mapY = titleH, mapW = W - legendW - margin * 2, mapH = H - titleH - footH - margin;
+  const mapX = margin, mapY = titleH;
 
   ctx.fillStyle = "#17324d"; ctx.fillRect(0, 0, W, titleH);
   ctx.fillStyle = "#fff"; ctx.font = "bold 13px system-ui, sans-serif"; ctx.textBaseline = "middle";
@@ -747,57 +924,80 @@ function renderFigureCanvas({ title, features, geometryType, rendererField, draw
   ctx.fillStyle = "#ffffff"; ctx.fillRect(mapX, mapY, mapW, mapH);
   ctx.strokeStyle = "#9aa7b2"; ctx.strokeRect(mapX, mapY, mapW, mapH);
 
-  const bbox = computeBBox(point.lat, point.lon, radiusMeters, mapW / mapH);
-  const proj = projector(bbox, mapW, mapH);
+  const proj = projector(frame, mapW, mapH);
   const toCanvas = (lon, lat) => { const [x, y] = proj(lon, lat); return [mapX + x, mapY + y]; };
 
   ctx.save(); ctx.beginPath(); ctx.rect(mapX, mapY, mapW, mapH); ctx.clip();
-  const legendItems = new Map();
+  const legendSections = [];
 
-  if (geometryType === "polyline") {
-    for (const f of features) {
-      const sym = symbolForFeature(drawingInfo, rendererField, f.attributes || {});
-      const css = rgba(sym.color);
-      legendItems.set(sym.label, css);
-      ctx.strokeStyle = css; ctx.lineWidth = Math.max(sym.width, 2) + 1.5;
-      ctx.lineCap = "round"; ctx.lineJoin = "round";
-      for (const path of ((f.geometry && f.geometry.paths) || [])) {
-        ctx.beginPath();
-        path.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-        ctx.stroke();
-      }
-    }
-  } else if (geometryType === "polygon") {
-    const r = drawingInfo && drawingInfo.renderer;
-    const sym = r && r.symbol;
-    const fillCss = sym ? rgba(sym.color, Math.max(sym.color[3], 140)) : "rgba(252,201,237,0.6)";
-    const strokeCss = sym && sym.outline ? rgba(sym.outline.color) : "rgba(110,110,110,1)";
-    if (features.length) legendItems.set("Adjusted Urban Area (ACUB)", fillCss);
-    for (const f of features) {
-      for (const ring of ((f.geometry && f.geometry.rings) || [])) {
-        ctx.beginPath();
-        ring.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-        ctx.closePath();
-        ctx.fillStyle = fillCss; ctx.fill();
-        ctx.strokeStyle = strokeCss; ctx.lineWidth = (sym && sym.outline && sym.outline.width) || 1; ctx.stroke();
-      }
+  // Street basemap first, underneath everything. Tiles and frame share the
+  // same normalized-mercator space, so placement is a linear mapping.
+  if (basemap) {
+    const px = u => ((u - frame.x0) / (frame.x1 - frame.x0)) * mapW;
+    const py = v => ((v - frame.y0) / (frame.y1 - frame.y0)) * mapH;
+    for (const t of basemap.tiles) {
+      const x = mapX + px(t.tx / basemap.n), y = mapY + py(t.ty / basemap.n);
+      const w = px((t.tx + 1) / basemap.n) - px(t.tx / basemap.n);
+      const h = py((t.ty + 1) / basemap.n) - py(t.ty / basemap.n);
+      ctx.drawImage(t.img, x, y, w + 0.5, h + 0.5);
     }
   }
 
-  if (!features.length && emptyNote) {
-    ctx.fillStyle = "#77848f"; ctx.font = "italic 12px system-ui, sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(emptyNote, mapX + mapW / 2, mapY + mapH / 2);
-    ctx.textAlign = "left";
+  for (const layer of layers) {
+    if (layer.geometryType === "polygon") {
+      const r = layer.drawingInfo && layer.drawingInfo.renderer;
+      const sym = r && r.symbol;
+      // Cap the fill alpha so the basemap and the class polylines drawn on
+      // top stay readable through/over the tint.
+      const fillCss = sym ? rgba(sym.color, Math.min(Math.max(sym.color[3], 80), 110)) : "rgba(252,201,237,0.4)";
+      const strokeCss = sym && sym.outline ? rgba(sym.outline.color) : "rgba(110,110,110,1)";
+      for (const f of layer.features) {
+        for (const ring of ((f.geometry && f.geometry.rings) || [])) {
+          ctx.beginPath();
+          ring.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+          ctx.closePath();
+          ctx.fillStyle = fillCss; ctx.fill();
+          ctx.strokeStyle = strokeCss; ctx.lineWidth = ((sym && sym.outline && sym.outline.width) || 1) + 1; ctx.stroke();
+        }
+      }
+      legendSections.push({ header: layer.legendHeader, items: layer.features.length
+        ? [{ label: "Adjusted Urban Area (ACUB)", css: fillCss, kind: "poly" }]
+        : [{ label: "No urban area in this frame", kind: "note" }] });
+    } else {
+      for (const f of layer.features) {
+        const sym = symbolForFeature(layer.drawingInfo, layer.rendererField, f.attributes || {});
+        // Kept slim so the basemap's street-name labels stay legible beside the overlay.
+        ctx.strokeStyle = rgba(sym.color); ctx.lineWidth = Math.max(sym.width, 1.5) + 0.5;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        for (const path of ((f.geometry && f.geometry.paths) || [])) {
+          ctx.beginPath();
+          path.forEach(([lon, lat], i) => { const [x, y] = toCanvas(lon, lat); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+          ctx.stroke();
+        }
+      }
+      const items = orderedLineLegend(layer.drawingInfo, layer.rendererField, layer.features)
+        .map(([label, css]) => ({ label, css, kind: "line" }));
+      legendSections.push({ header: layer.legendHeader, items: items.length ? items
+        : [{ label: "No segments in this frame", kind: "note" }] });
+    }
   }
 
   const [sx, sy] = toCanvas(point.lon, point.lat);
   ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
   ctx.fillStyle = verdictColor; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
-  legendItems.set("Site being reviewed", verdictColor);
+  legendSections.push({ header: "", items: [{ label: "Site being reviewed", css: verdictColor, kind: "point" }] });
+
+  // Caveats (layer unavailable, record limit, ...) with a white halo so they
+  // stay readable over whatever is drawn underneath.
+  ctx.font = "italic 10px system-ui, sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  (notes || []).forEach((n, i) => {
+    const nx = mapX + 8, ny = mapY + 16 + i * 14;
+    ctx.strokeText(n, nx, ny); ctx.fillStyle = "#5b4500"; ctx.fillText(n, nx, ny);
+  });
 
   ctx.restore();
-  drawScaleBar(ctx, mapX + 10, mapY + mapH - 14, bbox, mapW);
+  drawScaleBar(ctx, mapX + 10, mapY + mapH - 14, frame, mapW);
 
   ctx.fillStyle = "#17324d"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.textAlign = "center";
   ctx.fillText("N", mapX + mapW - 14, mapY + 16); ctx.textAlign = "left";
@@ -806,68 +1006,108 @@ function renderFigureCanvas({ title, features, geometryType, rendererField, draw
   ctx.beginPath(); ctx.moveTo(mapX + mapW - 14, mapY + 20); ctx.lineTo(mapX + mapW - 18, mapY + 26); ctx.lineTo(mapX + mapW - 10, mapY + 26); ctx.closePath();
   ctx.fillStyle = "#17324d"; ctx.fill();
 
-  const legX = mapX + mapW + 10, legY = mapY;
+  const legX = mapX + mapW + 10, legY = mapY, maxLy = legY + mapH - 10;
   ctx.fillStyle = "#ffffff"; ctx.fillRect(legX, legY, legendW - margin, mapH);
   ctx.strokeStyle = "#9aa7b2"; ctx.strokeRect(legX, legY, legendW - margin, mapH);
   ctx.fillStyle = "#1c2733"; ctx.font = "bold 11px system-ui, sans-serif";
   ctx.fillText("Legend", legX + 8, legY + 14);
-  ctx.font = "10px system-ui, sans-serif";
   let ly = legY + 32;
-  for (const [label, css] of legendItems) {
-    if (ly > legY + mapH - 10) break;   // more classes than fit: truncate rather than overflow the panel
-    ctx.fillStyle = css; ctx.fillRect(legX + 8, ly - 7, 12, 12);
-    ctx.strokeStyle = "#7c8b98"; ctx.strokeRect(legX + 8, ly - 7, 12, 12);
-    ctx.fillStyle = "#1c2733";
-    ly = wrapText(ctx, label, legX + 26, ly + 2, legendW - 40, 11) + 20;
+  for (const section of legendSections) {
+    if (ly > maxLy) break;   // more classes than fit: truncate rather than overflow the panel
+    if (section.header) {
+      ctx.fillStyle = "#4a5865"; ctx.font = "bold 9.5px system-ui, sans-serif";
+      ly = wrapText(ctx, section.header, legX + 8, ly, legendW - 24, 10) + 13;
+    }
+    for (const item of section.items) {
+      if (ly > maxLy) break;
+      if (item.kind === "note") {
+        ctx.fillStyle = "#77848f"; ctx.font = "italic 9.5px system-ui, sans-serif";
+        ly = wrapText(ctx, item.label, legX + 8, ly, legendW - 24, 10) + 14;
+        continue;
+      }
+      if (item.kind === "poly") {
+        ctx.fillStyle = item.css; ctx.fillRect(legX + 8, ly - 7, 12, 12);
+        ctx.strokeStyle = "#7c8b98"; ctx.strokeRect(legX + 8, ly - 7, 12, 12);
+      } else if (item.kind === "point") {
+        ctx.beginPath(); ctx.arc(legX + 14, ly - 1, 5, 0, Math.PI * 2);
+        ctx.fillStyle = item.css; ctx.fill(); ctx.strokeStyle = "#7c8b98"; ctx.lineWidth = 1; ctx.stroke();
+      } else {
+        ctx.strokeStyle = item.css; ctx.lineWidth = 4; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(legX + 8, ly - 1); ctx.lineTo(legX + 20, ly - 1); ctx.stroke();
+      }
+      ctx.fillStyle = "#1c2733"; ctx.font = "10px system-ui, sans-serif";
+      ly = wrapText(ctx, item.label, legX + 26, ly + 2, legendW - 40, 11) + 16;
+    }
+    ly += 4;
   }
 
   ctx.fillStyle = "#f2f5f7"; ctx.fillRect(0, H - footH, W, footH);
   ctx.strokeStyle = "#c7d0d8"; ctx.beginPath(); ctx.moveTo(0, H - footH); ctx.lineTo(W, H - footH); ctx.stroke();
   ctx.fillStyle = "#4a5865"; ctx.font = "9px system-ui, sans-serif";
-  citationLines.forEach((line, i) => ctx.fillText(line, 8, H - footH + 13 + i * 12));
+  citationLines.forEach((line, i) => ctx.fillText(fitLine(ctx, line, W - 16), 8, H - footH + 13 + i * FIG.footLineH));
 
   return canvas;
 }
 
-async function buildPointReport(pt, bufferFt) {
+async function buildPointReport(pt, radiusMeters) {
   const stateSel = $("stateSel").value;
   const state = stateSel === "AUTO" ? (detectState(pt.lat, pt.lon) || null) : stateSel;
   const verdict = pt.result ? pt.result.verdict : "";
   const verdictColor = BUCKET_COLOR[verdictBucket(verdict)];
   const nowStamp = new Date().toLocaleString();
+  const frame = reportFrame(pt.lat, pt.lon, radiusMeters);
+  const notes = [], citationLines = [], links = [];
 
-  let classFigure = null, classNote = "";
+  // Basemap fetch runs concurrently with the data-layer queries below.
+  const basemapPromise = fetchBasemapTiles(frame, figLayout().mapW * 2).catch(() => null);
+
+  let classLayers = [];
   if (state && NFC_WIRED[state]) {
-    try {
-      const layer = await pickClassLayer(state, pt.lat, pt.lon, bufferFt);
-      classFigure = renderFigureCanvas({
-        title: `${state} road functional class — ${layer.layerName}`,
-        features: layer.features, geometryType: "polyline", rendererField: layer.rendererField,
-        drawingInfo: layer.drawingInfo, point: pt, verdictColor, radiusMeters: CLASS_LAYER_RADIUS_M,
-        citationLines: [`Source: ${layer.layerName} (Esri REST feature service)`, layer.url,
-          `Retrieved ${nowStamp} · query buffer ${bufferFt} ft`],
-        emptyNote: `No road segment returned within ${bufferFt} ft`,
-      }).toDataURL("image/png");
-    } catch (e) { classNote = "Road-class layer image unavailable: " + e.message; }
+    try { classLayers = await fetchClassLayers(state, frame, pt.lat, pt.lon); }
+    catch (e) { notes.push("Road-class layer unavailable: " + e.message); }
   } else {
-    classNote = state ? `Road-class (NFC) lookup is not wired for ${state} in this tool.`
-                       : "State could not be determined for this point - pin it with the State dropdown to include this figure.";
+    notes.push(state ? "Road-class (NFC) lookup is not wired for " + state + " - urban boundary only."
+                     : "State could not be determined - pin it with the State dropdown for the road-class layer.");
   }
 
-  let acubFigure = null, acubNote = "";
-  try {
-    const acub = await pickAcubLayer(pt.lat, pt.lon, bufferFt);
-    acubFigure = renderFigureCanvas({
-      title: "Adjusted Census Urban Boundary (2020)",
-      features: acub.features, geometryType: "polygon", rendererField: null,
-      drawingInfo: acub.drawingInfo, point: pt, verdictColor, radiusMeters: ACUB_LAYER_RADIUS_M,
-      citationLines: ["Source: USDOT NTAD 2020 Adjusted Urban Area Boundaries (nationwide, AGOL-hosted)", acub.url,
-        `Retrieved ${nowStamp} · query buffer ${acub.bufferUsed} ft`],
-      emptyNote: "Point is outside every Adjusted Urban Area boundary (Rural)",
-    }).toDataURL("image/png");
-  } catch (e) { acubNote = "Urban-boundary layer image unavailable: " + e.message; }
+  let acubLayer = null;
+  try { acubLayer = await fetchAcubLayer(frame); }
+  catch (e) { notes.push("Urban-boundary layer unavailable: " + e.message); }
 
-  return { pt, state, verdict, classFigure, classNote, acubFigure, acubNote };
+  const basemap = await basemapPromise;
+  if (!basemap) notes.push("Street basemap tiles unavailable - data layers shown on a plain background.");
+
+  if (classLayers.length && classLayers.every(l => l.features.length === 0))
+    notes.push("No classified road segments in this frame.");
+  if (classLayers.some(l => l.truncated))
+    notes.push("Frame too wide for the service's record limit - some segments not drawn.");
+
+  for (const l of classLayers) {
+    citationLines.push("Road class: " + l.layerName + " — " + l.url);
+    links.push(l.liveLink);
+  }
+  if (classLayers.some(l => l.synthSymbology))
+    citationLines.push("Class colors assigned by this tool (standard FHWA palette) — the source layer publishes a single-symbol renderer.");
+  if (acubLayer) {
+    citationLines.push("Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — " + acubLayer.url);
+    links.push({ label: "Urban boundary — NTAD 2020 Adjusted Urban Areas layer at this site", url: liveLayerLink(REST.ACUB, pt.lat, pt.lon) });
+  }
+  if (basemap) citationLines.push("Basemap: © Esri World Street Map tiles, fetched for this frame at report time");
+  citationLines.push("Retrieved " + nowStamp + " · frame ≈ " + ((2 * radiusMeters) / 1609.344).toFixed(2) +
+    " mi wide · classification buffer " + REPORT_BUFFER_FEET + " ft");
+  links.push({ label: "Google Maps at this site", url: "https://www.google.com/maps?q=" + pt.lat + "," + pt.lon });
+
+  // ACUB drawn first so the class polylines sit on top of the polygon fill.
+  const layers = [];
+  if (acubLayer) layers.push(acubLayer);
+  layers.push(...classLayers);
+
+  const title = classLayers.length
+    ? state + " road functional class + 2020 Adjusted Urban Boundary"
+    : "2020 Adjusted Census Urban Boundary";
+  const figure = renderCombinedCanvas({ title, layers, point: pt, verdictColor, frame, basemap, citationLines, notes })
+    .toDataURL("image/png");
+  return { pt, state, verdict, figure, links };
 }
 
 async function generatePdfReport() {
@@ -879,7 +1119,9 @@ async function generatePdfReport() {
   btn.disabled = true;
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    // compress:true matters: without it jsPDF embeds the decoded figure
+    // raster uncompressed (~5 MB per site page instead of ~150 KB).
+    const doc = new jsPDF({ unit: "pt", format: "letter", compress: true });
     const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(18);
@@ -900,29 +1142,36 @@ async function generatePdfReport() {
       y += 16;
     }
 
+    const radiusMeters = reportRadiusMeters();
     let done = 0;
     for (const pt of points) {
       btn.textContent = `Generating ${++done} of ${points.length}…`;
-      const rep = await buildPointReport(pt, REPORT_BUFFER_FEET);
+      const rep = await buildPointReport(pt, radiusMeters);
 
       doc.addPage();
       let yy = 44;
       doc.setFont("helvetica", "bold"); doc.setFontSize(14);
-      doc.text(pt.name, 40, yy); yy += 18;
+      doc.text(pt.name, 40, yy); yy += 16;
       doc.setFont("helvetica", "normal"); doc.setFontSize(10);
       doc.text(`${pt.lat}, ${pt.lon}  ·  State: ${rep.state || "unknown"}`, 40, yy); yy += 14;
       doc.setFont("helvetica", "bold");
-      doc.text("Federal Aid Status: " + rep.verdict, 40, yy, { maxWidth: pageW - 80 }); yy += 20;
+      doc.text("Federal Aid Status: " + rep.verdict, 40, yy, { maxWidth: pageW - 80 });
       doc.setFont("helvetica", "normal");
 
-      const imgW = 250, imgH = imgW * 480 / 620, gap = 20;
-      if (rep.classFigure) doc.addImage(rep.classFigure, "PNG", 40, yy, imgW, imgH);
-      else { doc.setFontSize(9); doc.text(rep.classNote || "No road-class figure.", 40, yy + 20, { maxWidth: imgW }); }
-      if (rep.acubFigure) doc.addImage(rep.acubFigure, "PNG", 40 + imgW + gap, yy, imgW, imgH);
-      else { doc.setFontSize(9); doc.text(rep.acubNote || "No urban-boundary figure.", 40 + imgW + gap, yy + 20, { maxWidth: imgW }); }
+      const imgW = pageW - 80, imgH = imgW * FIG.H / FIG.W, imgY = yy + 10;
+      doc.addImage(rep.figure, "PNG", 40, imgY, imgW, imgH);
 
+      let ly = imgY + imgH + 14;
       doc.setFontSize(9); doc.setTextColor(90, 100, 110);
-      doc.text("This tool classifies the road, not the project. Data pulled live from the public services cited above at report-generation time.",
+      doc.text("Source data — each link opens the live source map centered on this site:", 40, ly); ly += 12;
+      doc.setTextColor(32, 93, 140);
+      for (const link of rep.links) {
+        doc.textWithLink("• " + link.label, 46, ly, { url: link.url });
+        ly += 12;
+      }
+
+      doc.setTextColor(90, 100, 110);
+      doc.text("This tool classifies the road, not the project. Data pulled live from the public services cited on the figure at report-generation time.",
         40, pageH - 30, { maxWidth: pageW - 80 });
       doc.setTextColor(0, 0, 0);
     }
