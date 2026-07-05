@@ -1283,7 +1283,11 @@ async function selectSite(i) {
   reviewIdx = ((i % pts.length) + pts.length) % pts.length;   // wrap both directions
   const p = pts[reviewIdx];
   document.querySelectorAll("#resultsBody tr.selected").forEach(tr => tr.classList.remove("selected"));
-  if (p._tr) { p._tr.classList.add("selected"); p._tr.scrollIntoView({ block: "nearest" }); }
+  // Highlight the row but don't scroll the page to it — Prev/Next/pin-click
+  // are map-focused actions, and jumping the viewport down to the results
+  // table on every step fights that (the row is still visible via the
+  // "N / total — name" indicator above the map and the highlight itself).
+  if (p._tr) p._tr.classList.add("selected");
   map.setView([p.lat, p.lon], 17);
   if (p._marker) p._marker.openPopup();
   $("reviewInfo").textContent = `${reviewIdx + 1} / ${pts.length} — ${p.name}`;
