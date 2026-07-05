@@ -104,10 +104,16 @@ checks.push(["legend lists class labels from the source renderer", legendText.in
 checks.push(["legend cites ACUB result", legendText.includes("Adjusted Urban Area: Kalamazoo, MI")]);
 checks.push(["legend links to citations page", await page.locator('#siteLegend a[href^="sources.html#"]').count() === 1]);
 // MI class + ACUB legend rows both link to MDOT's official Experience app
-// (widget_167 deep link), not the generic arcgis viewer.
-checks.push(["legend class link → MDOT official app", await page.locator('#siteLegend a[href*="experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"][href*="widget_167=center:"]').count() >= 1]);
-checks.push(["legend ACUB link → same MDOT official app (covers boundary)", await page.locator('#siteLegend a[href*="7edd160c205d46b481fcd605bb4c58ce"]').count() >= 2]);
-checks.push(["MI legend uses 'official state map' wording", (await page.locator("#siteLegend").textContent()).includes("official state map")]);
+// MI legend shows the official MDOT app as the primary reference (canonical
+// root URL, NO fragile hash deep-link) plus first-tier "pinned view" links
+// into the FEMA Map Viewer that actually land on the site.
+checks.push(["legend official reference → MDOT app canonical root (no hash)", await page.evaluate(() => {
+  const a = [...document.querySelectorAll('#siteLegend a')].find(x => x.href.includes("7edd160c205d46b481fcd605bb4c58ce"));
+  return !!a && !a.href.includes("widget_167") && !a.href.includes("#");
+})]);
+checks.push(["legend labels it as the official reference", (await page.locator("#siteLegend").textContent()).includes("Official reference")]);
+checks.push(["legend first-tier pinned links → FEMA Map Viewer", await page.locator('#siteLegend a[href*="fema.maps.arcgis.com"]').count() >= 2]);
+checks.push(["legend pinned links labeled 'pinned view'", (await page.locator("#siteLegend").textContent()).includes("pinned view")]);
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");

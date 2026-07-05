@@ -748,76 +748,49 @@ async function queryFrame(baseUrl, bbox, outFields, whereClause, generalize) {
   return json;
 }
 
-// ---- Live-map deep links ----
-// Preference order: each state's OWN public-facing functional-class app,
-// deep-linked to the site; only where no such public app exists do we fall
-// back to the generic ArcGIS Map Viewer with the source FeatureServer
-// side-loaded. (Researched + widget IDs recovered from each app's config
-// JSON, 2026-07-06 — see sources.html / CLAUDE.md §7b for the full findings.)
+// ---- Live-map links ----
+// Two kinds of link per site, both shown where available:
 //
-// STATE_APP[state]:
-//   appLink(lat,lon) -> deep link into the state's official public app,
-//                       centered + pinned on the site.
-//   coversAcub       -> true when that same app also shows the adjusted
-//                       urban-area boundary (so one link answers both the
-//                       class and the urban/rural question).
-// States absent here (WI, and the unwired MN/IL/OH) have no statewide public
-// functional-class app, so they use the Map Viewer side-load below.
+//  1. FIRST-TIER pin links (reliable pin + zoom): the FEMA-hosted ArcGIS Map
+//     Viewer, centered + markered on the exact site. These are the links
+//     that actually put the user on their point. MI opens a curated FEMA
+//     NFC/ACUB webmap; other states / the ACUB layer side-load the
+//     FeatureServer via url=. (These are the long-proven links; the earlier
+//     attempt to replace them with Experience Builder hash deep-links
+//     mis-navigated — EXB routing choked on the widget-hash + stale page
+//     path — so they are restored as the primary clickable link.)
 //
-// ArcGIS Experience Builder deep-link syntax (per Esri's URL-parameters doc):
-// one hash key = the map widget's internal ID, then comma-separated params,
-// the widget ID written ONCE: #<widgetId>=center:x,y,wkid,level:n,marker:x,y
-// (coordinates are lon,lat; marker sub-parts use semicolons). center/level/
-// marker work by default — the "Manage URL status" author setting only
-// governs whether user pans/zooms get written back into the URL, not whether
-// these incoming params are honored.
+//  2. PRIMARY REFERENCE: each state's OWN official public map app, linked at
+//     its canonical root URL (the `url` field from the app's AGOL item — NO
+//     hash deep-link, which is what broke). It opens the authoritative
+//     state app (functional class + adjusted urban boundary on by default)
+//     at its default extent; the pin link above carries the exact location.
+//     States with no public app (WI, unwired MN/IL/OH) have no reference here.
+function miWebmapLink(lat, lon) {
+  return "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681" +
+    "&center=" + lon + "," + lat + "&level=16&marker=" + lon + "," + lat;
+}
+function liveLayerLink(layerUrl, lat, lon) {
+  return "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=" + encodeURIComponent(layerUrl) +
+    "&find=" + lon + "%2C" + lat + "&marker=" + lon + "," + lat + ",4326&level=16";
+}
+
+// Official public app per state — the authoritative reference. Canonical root
+// URL only (verified via each item's AGOL metadata `url` field): the MI item's
+// real URL has no "/page/..." segment, and Experience Builder ignores/breaks
+// on a stray "#widget=center:" hash, so we deliberately DON'T deep-link — the
+// reliable pin links above handle location. coversAcub: the app also shows the
+// adjusted urban boundary, so it references both the class and urban/rural
+// questions at once.
 const STATE_APP = {
-  // MDOT "NFC, NHS & ACUB" Experience — functional class + NHS + adjusted
-  // urban boundary all on by default. Map widget id widget_167 (verified).
-  MI: {
-    label: "MDOT's official NFC / NHS / Adjusted Urban Boundary map",
-    coversAcub: true,
-    appLink: (lat, lon) =>
-      "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce/page/NFC%2C-NHS-%26-ACUB" +
-      "#widget_167=center:" + lon + "," + lat + ",4326,level:16,marker:" + lon + "," + lat + ";4326",
-  },
-  // INDOT "Functional Classification & Urban Area Boundary" Experience —
-  // class + urban-area boundary on by default. Map widget id widget_6
-  // (verified from the app config; an earlier guess of map_1 was wrong).
-  IN: {
-    label: "INDOT's official Functional Class & Urban Area map",
-    coversAcub: true,
-    appLink: (lat, lon) =>
-      "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot" +
-      "#widget_6=center:" + lon + "," + lat + ",4326,level:16,marker:" + lon + "," + lat + ";4326",
-  },
+  MI: { label: "MDOT's official NFC / NHS / Adjusted Urban Boundary map", coversAcub: true,
+        url: "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce" },
+  IN: { label: "INDOT's official Functional Class & Urban Area map", coversAcub: true,
+        url: "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot" },
 };
-
-// Generic ArcGIS Map Viewer with a FeatureServer side-loaded, centered +
-// pinned. Used only where no official state app exists. center=+level= is the
-// documented/reliable positioning pair (find= is a geocode string, not a
-// coordinate), so this is more robust than the old FEMA-viewer find= link.
-function mapViewerSideload(layerUrl, lat, lon) {
-  return "https://www.arcgis.com/apps/mapviewer/index.html?url=" + encodeURIComponent(layerUrl) +
-    "&center=" + lon + "," + lat + "&level=16&marker=" + lon + "," + lat + ",4326";
-}
-
-// The single best "live map" link for a road-class layer: the state's own
-// public app when one exists, else the Map Viewer side-load of that layer.
-function classLayerLiveLink(state, layerUrl, layerLabel, lat, lon) {
+function officialAppLink(state) {
   const app = STATE_APP[state];
-  if (app) return { label: app.label + " at this site", url: app.appLink(lat, lon), official: true };
-  return { label: layerLabel + " at this site", url: mapViewerSideload(layerUrl, lat, lon), official: false };
-}
-
-// Live link for the urban-boundary (ACUB) result. When the state's own app
-// already shows the boundary (MI, IN), reuse it so one destination answers
-// both questions; otherwise side-load the nationwide NTAD layer.
-function acubLiveLink(state, lat, lon) {
-  const app = STATE_APP[state];
-  if (app && app.coversAcub) return { label: app.label + " at this site", url: app.appLink(lat, lon), official: true };
-  return { label: "Urban boundary — NTAD 2020 Adjusted Urban Areas layer at this site",
-    url: mapViewerSideload(REST.ACUB, lat, lon), official: false };
+  return app ? { label: app.label + " (authoritative reference)", url: app.url, official: true } : null;
 }
 
 // Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but frame-wide and with
@@ -833,7 +806,7 @@ async function fetchClassLayers(state, bbox, lat, lon) {
       legendHeader: "Road functional class (MDOT)", geometryType: "polyline",
       rendererField: "FunctionalSystem", drawingInfo: meta.drawingInfo,
       features: json.features || [], truncated: !!json.exceededTransferLimit,
-      liveLink: classLayerLiveLink("MI", REST.MDOT_NFC, "MDOT functional class", lat, lon) }];
+      liveLink: { label: "Road class + urban boundary — MDOT NFC/ACUB webmap, pinned", url: miWebmapLink(lat, lon), official: false } }];
   }
   if (state === "IN") {
     const [json, meta] = await Promise.all([
@@ -849,7 +822,7 @@ async function fetchClassLayers(state, bbox, lat, lon) {
       drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo("functional_class"),
       synthSymbology: !published,
       features: json.features || [], truncated: !!json.exceededTransferLimit,
-      liveLink: classLayerLiveLink("IN", REST.IN_NFC, "INDOT functional class", lat, lon) }];
+      liveLink: { label: "Road class — INDOT functional-class layer, pinned", url: liveLayerLink(REST.IN_NFC, lat, lon), official: false } }];
   }
   if (state === "WI") {
     // Both WI layers, frame-wide: local roads drawn first (underneath), the
@@ -866,14 +839,14 @@ async function fetchClassLayers(state, bbox, lat, lon) {
         legendHeader: "Local road network (WisDOT)", geometryType: "polyline",
         rendererField: "FNCT_CLS_CTGY_TYCD", drawingInfo: localMeta.drawingInfo,
         features: localJson.features || [], truncated: !!localJson.exceededTransferLimit,
-        liveLink: classLayerLiveLink("WI", REST.WI_LOCAL_ROADS, "WisDOT local-roads layer", lat, lon) },
+        liveLink: { label: "Road class — WisDOT local-roads layer, pinned", url: liveLayerLink(REST.WI_LOCAL_ROADS, lat, lon), official: false } },
       // Renderer keys off FC_CD (WisDOT's own code), NOT the FED_FC_CD field
       // classification uses - the two are different fields on the same layer.
       { url: REST.WI_STATE_TRUNK, layerName: trunkMeta.name || "WisDOT State Trunk Network",
         legendHeader: "State trunk network (WisDOT)", geometryType: "polyline",
         rendererField: "FC_CD", drawingInfo: trunkMeta.drawingInfo,
         features: trunkJson.features || [], truncated: !!trunkJson.exceededTransferLimit,
-        liveLink: classLayerLiveLink("WI", REST.WI_STATE_TRUNK, "WisDOT state-trunk layer", lat, lon) },
+        liveLink: { label: "Road class — WisDOT state-trunk layer, pinned", url: liveLayerLink(REST.WI_STATE_TRUNK, lat, lon), official: false } },
     ];
   }
   return [];
@@ -1184,6 +1157,10 @@ async function buildPointReport(pt, radiusMeters) {
   if (classLayers.some(l => l.truncated))
     notes.push("Frame too wide for the service's record limit - some segments not drawn.");
 
+  // Primary reference first: the state's official public map (authoritative).
+  const officialLink = officialAppLink(state);
+  if (officialLink) links.push(officialLink);
+  // Then the first-tier pinned links that actually land on the exact site.
   for (const l of classLayers) {
     citationLines.push("Road class: " + l.layerName + " — " + l.url);
     links.push(l.liveLink);
@@ -1192,15 +1169,14 @@ async function buildPointReport(pt, radiusMeters) {
     citationLines.push("Class colors assigned by this tool (standard FHWA palette) — the source layer publishes a single-symbol renderer.");
   if (acubLayer) {
     citationLines.push("Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — " + acubLayer.url);
-    links.push(acubLiveLink(state, pt.lat, pt.lon));
+    links.push({ label: "Urban boundary — NTAD 2020 Adjusted Urban Areas layer, pinned",
+      url: liveLayerLink(REST.ACUB, pt.lat, pt.lon), official: false });
   }
   if (basemap) citationLines.push("Basemap: © Esri World Street Map tiles, fetched for this frame at report time");
   citationLines.push("Retrieved " + nowStamp + " · frame ≈ " + ((2 * radiusMeters) / 1609.344).toFixed(2) +
     " mi wide · classification buffer " + REPORT_BUFFER_FEET + " ft");
   links.push({ label: "Google Maps at this site", url: "https://www.google.com/maps?q=" + pt.lat + "," + pt.lon });
 
-  // For MI/IN the class-layer link and the ACUB link are the same official
-  // state app (it shows both) — collapse the duplicate so the PDF lists one.
   const seenUrls = new Set();
   const dedupLinks = links.filter(l => l && !seenUrls.has(l.url) && seenUrls.add(l.url));
   links.length = 0; links.push(...dedupLinks);
@@ -1271,10 +1247,12 @@ async function generatePdfReport() {
 
       let ly = imgY + imgH + 14;
       doc.setFontSize(9); doc.setTextColor(90, 100, 110);
-      doc.text("Source data — each link opens the live source map centered on this site:", 40, ly); ly += 12;
-      doc.setTextColor(32, 93, 140);
+      doc.text("Source data — the official state map is the primary reference; the pinned links open on this exact site:", 40, ly); ly += 12;
       for (const link of rep.links) {
-        doc.textWithLink("• " + link.label, 46, ly, { url: link.url });
+        doc.setTextColor(32, 93, 140);
+        if (link.official) doc.setFont("helvetica", "bold");
+        doc.textWithLink((link.official ? "★ " : "• ") + link.label, 46, ly, { url: link.url });
+        if (link.official) doc.setFont("helvetica", "normal");
         ly += 12;
       }
 
@@ -1386,7 +1364,14 @@ async function showSiteLayers(p) {
   if (seq !== layerReqSeq) return;   // user moved on while we fetched
 
   const entries = [];
-  const live = l => l.liveLink ? ` — <a href="${l.liveLink.url}" target="_blank" rel="noopener" title="${esc(l.liveLink.label)}">${l.liveLink.official ? "official state map" : "live map"}</a>` : "";
+  const live = l => l.liveLink ? ` — <a href="${l.liveLink.url}" target="_blank" rel="noopener" title="${esc(l.liveLink.label)}">pinned view</a>` : "";
+
+  // Primary reference (authoritative): the state's own official public map,
+  // shown first. Its canonical root URL — no fragile deep-link (that broke).
+  const officialLink = officialAppLink(data.state);
+  if (officialLink) {
+    entries.push(`<div class="hdr">Official reference — <a href="${officialLink.url}" target="_blank" rel="noopener" title="${esc(officialLink.label)}">${esc(STATE_APP[data.state].label)}</a></div>`);
+  }
 
   // ACUB polygons first so road lines draw on top of the fill.
   const psym = data.acub.drawingInfo && data.acub.drawingInfo.renderer && data.acub.drawingInfo.renderer.symbol;
@@ -1421,8 +1406,7 @@ async function showSiteLayers(p) {
   }
 
   const acubName = data.acub.features.length ? firstString({ features: data.acub.features }, "NAME") : "";
-  const acubLink = acubLiveLink(data.state, p.lat, p.lon);
-  entries.push(`<div class="hdr">${esc(data.acub.legendHeader)} — <a href="${acubLink.url}" target="_blank" rel="noopener" title="${esc(acubLink.label)}">${acubLink.official ? "official state map" : "live map"}</a></div>`);
+  entries.push(`<div class="hdr">${esc(data.acub.legendHeader)} — <a href="${liveLayerLink(REST.ACUB, p.lat, p.lon)}" target="_blank" rel="noopener" title="Urban boundary — NTAD 2020 Adjusted Urban Areas, pinned">pinned view</a></div>`);
   entries.push(data.acub.features.length
     ? `<div><span class="swp" style="background:${pcss};opacity:.55"></span>Adjusted Urban Area: ${esc(acubName)}</div>`
     : `<div><span class="swp" style="background:#fff"></span>No Adjusted Urban Area near this site (Rural)</div>`);

@@ -64,16 +64,19 @@ button (Close ~0.4 mi / Standard ~0.75 mi / Wide ~1.5 mi / Very wide
 geometry queries covering that whole frame — not just the segment that
 produced the verdict — so the site appears in the context of the
 surrounding road network. Below the figure, each page carries **clickable
-source links** that open the site in each state's own public-facing map,
-centered and pinned: Michigan links to MDOT's "NFC, NHS & ACUB" ArcGIS
-Experience app and Indiana to INDOT's "Functional Classification & Urban
-Area Boundary" viewer (both show functional class *and* the urban
-boundary by default, so one link answers both). Wisconsin has no
-statewide public functional-class app, so it falls back to the generic
-ArcGIS Map Viewer with the WisDOT layer side-loaded and the point pinned.
-Plus a Google Maps link. (Layer on/off can't be driven through a URL in
-Experience Builder, but the wanted layers are the app defaults — see
-`sources.html` for the per-state specifics.)
+source links** in two tiers. The **primary reference** (first, bold) is
+the state's own official public map — Michigan's MDOT "NFC, NHS & ACUB"
+ArcGIS Experience app, Indiana's INDOT "Functional Classification & Urban
+Area Boundary" viewer — both showing functional class *and* the urban
+boundary by default. It opens the app at its default extent (its
+coordinate deep-link proved unreliable and was dropped). The **pinned
+links** that follow open the FEMA-hosted ArcGIS Map Viewer centered and
+markered on the exact site (MI's curated NFC/ACUB webmap; the FeatureServer
+side-loaded for other states / the ACUB layer) — these are what put you on
+your point. Wisconsin and the unwired states have no official public app,
+so they get only the pinned link. Plus a Google Maps link. (Layer on/off
+can't be driven through a URL in Experience Builder, but the wanted layers
+are the app defaults — see `sources.html` for the per-state specifics.)
 
 Under the data layers sits an **Esri World Street Map basemap** (roads +
 street names for orientation), composited from tiles fetched for the
