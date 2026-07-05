@@ -64,9 +64,16 @@ button (Close ~0.4 mi / Standard ~0.75 mi / Wide ~1.5 mi / Very wide
 geometry queries covering that whole frame — not just the segment that
 produced the verdict — so the site appears in the context of the
 surrounding road network. Below the figure, each page carries **clickable
-source links** that open each source layer in a live ArcGIS map viewer
-centered and markered on that exact site (the same deep-link patterns the
-Excel tool's NFC Map column uses), plus a Google Maps link.
+source links** that open the site in each state's own public-facing map,
+centered and pinned: Michigan links to MDOT's "NFC, NHS & ACUB" ArcGIS
+Experience app and Indiana to INDOT's "Functional Classification & Urban
+Area Boundary" viewer (both show functional class *and* the urban
+boundary by default, so one link answers both). Wisconsin has no
+statewide public functional-class app, so it falls back to the generic
+ArcGIS Map Viewer with the WisDOT layer side-loaded and the point pinned.
+Plus a Google Maps link. (Layer on/off can't be driven through a URL in
+Experience Builder, but the wanted layers are the app defaults — see
+`sources.html` for the per-state specifics.)
 
 Under the data layers sits an **Esri World Street Map basemap** (roads +
 street names for orientation), composited from tiles fetched for the

@@ -137,8 +137,12 @@ const checks = [
   ["verdict in cover table", text.includes("Federal aid - Urban Minor Collector")],
   ["2 pages (cover + 1 site)", (text.match(/\/Type\s*\/Page[^s]/g) || []).length === 2],
   ["2 image XObjects embedded (1 combined figure x RGB+alpha)", (text.match(/\/Subtype\s*\/Image/g) || []).length === 2],
-  ["MI live-webmap link annotation present", text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
-  ["ACUB live-layer link annotation present", text.includes("mapviewer/index.html?url=https%3A%2F%2Fservices.arcgis.com")],
+  // MI links now point to MDOT's official Experience app (widget_167 deep
+  // link), and — because that app also shows the urban boundary — the class
+  // and ACUB links collapse to that one official destination.
+  ["MI official-app link annotation present", text.includes("experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce") && text.includes("widget_167=center:")],
+  ["MI class+ACUB links deduped to the one official app", (text.match(/7edd160c205d46b481fcd605bb4c58ce/g) || []).length === 1],
+  ["no stale FEMA-viewer webmap link", !text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
   ["Google Maps link annotation present", text.includes("google.com/maps?q=42.28536")],
   ["zoom select defaults to Standard (600 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "600"],
   ["disclaimer present", text.includes("classifies the road, not the project")],

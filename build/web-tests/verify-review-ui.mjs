@@ -103,7 +103,11 @@ checks.push(["legend section header names the class layer", legendText.includes(
 checks.push(["legend lists class labels from the source renderer", legendText.includes("Minor Collector") && legendText.includes("Local")]);
 checks.push(["legend cites ACUB result", legendText.includes("Adjusted Urban Area: Kalamazoo, MI")]);
 checks.push(["legend links to citations page", await page.locator('#siteLegend a[href^="sources.html#"]').count() === 1]);
-checks.push(["legend links to live source maps", await page.locator('#siteLegend a[href*="fema.maps.arcgis.com"]').count() >= 2]);
+// MI class + ACUB legend rows both link to MDOT's official Experience app
+// (widget_167 deep link), not the generic arcgis viewer.
+checks.push(["legend class link → MDOT official app", await page.locator('#siteLegend a[href*="experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"][href*="widget_167=center:"]').count() >= 1]);
+checks.push(["legend ACUB link → same MDOT official app (covers boundary)", await page.locator('#siteLegend a[href*="7edd160c205d46b481fcd605bb4c58ce"]').count() >= 2]);
+checks.push(["MI legend uses 'official state map' wording", (await page.locator("#siteLegend").textContent()).includes("official state map")]);
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");
