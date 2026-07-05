@@ -1154,13 +1154,18 @@ summarized here so it isn't relitigated:
   per-row retry link (web analog of F12).
 - **PDF report.** A "Download PDF Report" button (jsPDF, vendored like
   Leaflet) produces a cover page + one page per classified site. Each
-  site page has **one combined, page-filling map**: the ACUB polygon
-  underneath and the state's functional-class polylines on top (WI draws
-  both the state-trunk and local-roads layers), queried by frame
-  **envelope** (`esriGeometryEnvelope`, live-verified against all four
-  services 2026-07-05: 51-823 features per 0.75 mi urban frame, no
-  record-limit hits) so the figure shows the surrounding network for
-  context, not just the verdict segment. Frame width comes from a
+  site page has **one combined, page-filling map**: an Esri World
+  Street Map tile basemap (roads + street names for orientation) at the
+  bottom, the ACUB polygon tinted over it, and the state's
+  functional-class polylines on top (WI draws both the state-trunk and
+  local-roads layers), queried by frame **envelope**
+  (`esriGeometryEnvelope`, live-verified against all four services
+  2026-07-05: 51-823 features per 0.75 mi urban frame, no record-limit
+  hits) so the figure shows the surrounding network for context, not
+  just the verdict segment. The figure is projected in Web Mercator so
+  the tiles composite pixel-perfect; the interactive Leaflet map
+  likewise defaults to the same streets basemap, with a layer-switcher
+  back to satellite imagery. Frame width comes from a
   "PDF map width" select next to the button (300/600/1200/2400 m
   half-width; default 600 m ≈ 0.75 mi across - deliberately further out
   than the original 250 m figure; retune by editing the option values).
@@ -1181,11 +1186,16 @@ summarized here so it isn't relitigated:
   export/legend operation exists for them at all, confirmed by both a
   direct `/MapServer/export` 400/404 and the FeatureServer root's
   `capabilities` field. Drawing every source's own renderer client-side
-  sidesteps that inconsistency uniformly, and also avoids the
-  canvas-taint risk of compositing remote basemap tiles (the figures use
-  no raster tiles at all - just vector paths/rings drawn from queried
-  geometry, a marker, a scale bar, a north arrow, and a sectioned
-  legend/citations baked into the same canvas). Renderer traps found
+  sidesteps that inconsistency uniformly. The street-tile basemap
+  underneath doesn't reintroduce canvas taint: tiles load with
+  `crossOrigin="anonymous"` against Esri's CORS-enabled
+  (`Access-Control-Allow-Origin: *`, confirmed live 2026-07-05) tile
+  service, which errors on a non-CORS response instead of tainting, and
+  the figure falls back to a plain background with an on-map note if
+  tiles don't load. Vector paths/rings from queried geometry, a marker,
+  a scale bar, a north arrow, and a sectioned legend/citations
+  (including the basemap credit) are drawn onto the same canvas.
+  Renderer traps found
   during this work: Wisconsin's state-trunk layer keys its renderer off
   `FC_CD` (WisDOT's own code), not the `FED_FC_CD` field the classifier
   itself uses - the report's query fetches both fields, using `FC_CD`

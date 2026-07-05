@@ -132,7 +132,7 @@ Site 12, 44.2700, -83.5200"></textarea>
           <option value="2400">Very wide (~3 mi)</option>
         </select>
       </label>
-      <button id="pdfBtn" title="One page per site: a large map combining the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
+      <button id="pdfBtn" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
       <button id="clearBtn">Clear</button>
     </div>
     <div class="tablewrap">
@@ -157,8 +157,8 @@ Site 12, 44.2700, -83.5200"></textarea>
   system (Urban Minor Collector or greater per FHWA functional classification and the 2020 Adjusted Census Urban
   Boundaries); the inspector or applicant decides what that means for any given work order. Road-class lookup is wired
   for Michigan (MDOT), Indiana (INDOT) and Wisconsin (WisDOT); other states get the urban-boundary check only.
-  Map tiles &copy; Esri World Imagery / OpenStreetMap contributors — viewing the map fetches tiles for the visible area
-  from those providers.
+  Map tiles &copy; Esri (World Street Map / World Imagery) — viewing the map, or generating a PDF report, fetches tiles
+  for the relevant area from Esri.
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
@@ -419,23 +419,32 @@ const $ = id => document.getElementById(id);
 const netLogEl = $("netLog");
 let netLines = [];
 
-async function httpGetJson(url) {
-  netLines.push(new Date().toLocaleTimeString() + "  GET " + url);
+function logNet(line) {
+  netLines.push(new Date().toLocaleTimeString() + "  " + line);
   if (netLines.length > 400) netLines = netLines.slice(-400);
   netLogEl.textContent = netLines.join("\n");
+}
+async function httpGetJson(url) {
+  logNet("GET " + url);
   const r = await fetch(url);
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }
 
-/* ---- map ---- */
+/* ---- map: streets basemap (road names) by default, imagery as an option ---- */
 const map = L.map("map").setView([44.5, -86.5], 5);
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-  maxZoom: 19, attribution: "Imagery &copy; Esri",
-}).addTo(map);
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
-  maxZoom: 19, attribution: "Labels &copy; Esri", opacity: 0.9,
-}).addTo(map);
+const STREETS_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+const streetsBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
+const imageryBase = L.layerGroup([
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19, attribution: "Imagery &copy; Esri",
+  }),
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19, opacity: 0.9,
+  }),
+]);
+streetsBase.addTo(map);
+L.control.layers({ "Streets (road names)": streetsBase, "Satellite imagery": imageryBase }, null).addTo(map);
 const markerLayer = L.layerGroup().addTo(map);
 
 function verdictBucket(v) {
@@ -576,11 +585,15 @@ $("copyTsv").addEventListener("click", async () => {
      layers again, with returnGeometry=true and an ENVELOPE filter
      covering the whole visible frame (not just the classification
      buffer), only when the user asks for a report. Each site page
-     gets ONE combined page-filling map: the ACUB urban-boundary
-     polygon underneath, the state's functional-class polylines on
-     top, both drawn onto a plain <canvas> using each source's OWN
-     published drawingInfo.renderer symbology (no remote raster
-     tiles composited in, so there's no canvas-taint risk).
+     gets ONE combined page-filling map: Esri World Street Map tiles
+     (roads + names for orientation) at the bottom, the ACUB
+     urban-boundary polygon tinted over them, and the state's
+     functional-class polylines on top, drawn onto a <canvas> using
+     each source's OWN published drawingInfo.renderer symbology.
+     The tiles are fetched with crossOrigin="anonymous" against
+     Esri's Access-Control-Allow-Origin:* tile service, so they
+     composite without tainting the canvas; if they fail to load the
+     figure falls back to a plain background and says so.
      Only MI's MDOT service exposes MapServer/export + /legend (a
      classic ArcGIS Server); IN, WI and the nationwide ACUB layer are
      AGOL-hosted "Query"-only feature services with no export/legend
@@ -596,7 +609,7 @@ const REPORT_BUFFER_FEET = DEFAULT_BUFFER_FEET;  // classification buffer cited 
 // ~= one PDF point. The frame's half-width in meters comes from the
 // "PDF map width" select (#pdfZoom) — adjust those option values to retune
 // the default zoom.
-const FIG = { W: 540, H: 578, titleH: 26, margin: 8, legendW: 150, footLines: 4, footLineH: 11, footPad: 8 };
+const FIG = { W: 540, H: 578, titleH: 26, margin: 8, legendW: 150, footLines: 5, footLineH: 11, footPad: 8 };
 function figLayout() {
   const footH = FIG.footLines * FIG.footLineH + FIG.footPad;
   const mapW = FIG.W - FIG.legendW - FIG.margin * 2;
@@ -607,9 +620,63 @@ function reportRadiusMeters() {
   const v = parseInt($("pdfZoom").value, 10);
   return Number.isFinite(v) ? v : 600;
 }
-function reportFrameBBox(lat, lon, radiusMeters) {
+// The figure is drawn in normalized Web Mercator (x,y in 0..1, y down) so
+// the street-basemap tiles composite pixel-perfect under the vector layers.
+// Mercator is conformal, so ground aspect matches pixel aspect locally.
+function mercX(lon) { return (lon + 180) / 360; }
+function mercY(lat) {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2;
+}
+function invMercLon(x) { return x * 360 - 180; }
+function invMercLat(y) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI; }
+
+// Frame around the point: half-width = radiusMeters on the ground, height
+// follows the map panel's pixel aspect. Carries both mercator bounds (for
+// drawing/tiles) and geographic bounds (for envelope queries + scale bar).
+function reportFrame(lat, lon, radiusMeters) {
   const { mapW, mapH } = figLayout();
-  return computeBBox(lat, lon, radiusMeters, mapW / mapH);
+  const metersPerMercUnit = 40075016.686 * Math.cos(lat * Math.PI / 180);
+  const halfX = radiusMeters / metersPerMercUnit, halfY = halfX * (mapH / mapW);
+  const cx = mercX(lon), cy = mercY(lat);
+  const f = { x0: cx - halfX, x1: cx + halfX, y0: cy - halfY, y1: cy + halfY };
+  f.minLon = invMercLon(f.x0); f.maxLon = invMercLon(f.x1);
+  f.maxLat = invMercLat(f.y0); f.minLat = invMercLat(f.y1);
+  return f;
+}
+
+// ---- street basemap tiles (drawn UNDER the authoritative vector layers) ----
+// Esri World Street Map serves tiles with Access-Control-Allow-Origin:* and
+// the images are loaded with crossOrigin="anonymous", so compositing them
+// does NOT taint the canvas (a failed/non-CORS load errors out instead of
+// tainting). If tiles can't load, the figure falls back to the plain
+// background and says so.
+const BASEMAP_TILE_URL = (z, y, x) =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
+function loadTileImage(url, timeoutMs) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    img.crossOrigin = "anonymous";
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = url;
+  });
+}
+async function fetchBasemapTiles(frame, mapDevicePx) {
+  // Pick the zoom whose tile resolution roughly matches the canvas raster.
+  const fracW = frame.x1 - frame.x0;
+  const z = Math.max(3, Math.min(19, Math.round(Math.log2(mapDevicePx / (256 * fracW)))));
+  const n = 2 ** z;
+  const coords = [];
+  for (let ty = Math.floor(frame.y0 * n); ty <= Math.floor(frame.y1 * n); ty++)
+    for (let tx = Math.floor(frame.x0 * n); tx <= Math.floor(frame.x1 * n); tx++)
+      if (ty >= 0 && ty < n && tx >= 0 && tx < n) coords.push({ tx, ty });
+  if (!coords.length || coords.length > 80) return null;
+  logNet(`GET ${coords.length} basemap tiles (Esri World Street Map, z${z}) for the PDF figure`);
+  const imgs = await Promise.all(coords.map(c => loadTileImage(BASEMAP_TILE_URL(z, c.ty, c.tx), 8000)));
+  const tiles = coords.map((c, i) => ({ ...c, img: imgs[i] })).filter(t => t.img);
+  return tiles.length ? { n, tiles } : null;
 }
 
 const layerMetaCache = new Map();
@@ -788,18 +855,10 @@ function orderedLineLegend(drawingInfo, rendererField, features) {
   return order.map(l => [l, present.get(l)]);
 }
 
-function computeBBox(lat, lon, radiusMeters, aspect) {
-  const dLat = radiusMeters / 111320;
-  const dLon = radiusMeters / (111320 * (Math.cos(lat * Math.PI / 180) || 0.01));
-  let halfLon = dLon, halfLat = dLat;
-  if ((dLon * 2) / (dLat * 2) < aspect) halfLon = (dLat * 2 * aspect) / 2;
-  else halfLat = ((dLon * 2) / aspect) / 2;
-  return { minLon: lon - halfLon, maxLon: lon + halfLon, minLat: lat - halfLat, maxLat: lat + halfLat };
-}
-function projector(bbox, w, h) {
+function projector(frame, w, h) {
   return (lon, lat) => [
-    ((lon - bbox.minLon) / (bbox.maxLon - bbox.minLon)) * w,
-    ((bbox.maxLat - lat) / (bbox.maxLat - bbox.minLat)) * h,
+    ((mercX(lon) - frame.x0) / (frame.x1 - frame.x0)) * w,
+    ((mercY(lat) - frame.y0) / (frame.y1 - frame.y0)) * h,
   ];
 }
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -846,7 +905,7 @@ function drawScaleBar(ctx, x, y, bbox, mapWpx) {
 // polygon first, class polylines on top) using ONLY each source's own
 // drawingInfo.renderer colors - no basemap tiles are composited, so there's
 // nothing to taint the canvas.
-function renderCombinedCanvas({ title, layers, point, verdictColor, bbox, citationLines, notes }) {
+function renderCombinedCanvas({ title, layers, point, verdictColor, frame, basemap, citationLines, notes }) {
   const { footH, mapW, mapH } = figLayout();
   const W = FIG.W, H = FIG.H, titleH = FIG.titleH, legendW = FIG.legendW, margin = FIG.margin;
   const canvas = document.createElement("canvas");
@@ -865,18 +924,32 @@ function renderCombinedCanvas({ title, layers, point, verdictColor, bbox, citati
   ctx.fillStyle = "#ffffff"; ctx.fillRect(mapX, mapY, mapW, mapH);
   ctx.strokeStyle = "#9aa7b2"; ctx.strokeRect(mapX, mapY, mapW, mapH);
 
-  const proj = projector(bbox, mapW, mapH);
+  const proj = projector(frame, mapW, mapH);
   const toCanvas = (lon, lat) => { const [x, y] = proj(lon, lat); return [mapX + x, mapY + y]; };
 
   ctx.save(); ctx.beginPath(); ctx.rect(mapX, mapY, mapW, mapH); ctx.clip();
   const legendSections = [];
 
+  // Street basemap first, underneath everything. Tiles and frame share the
+  // same normalized-mercator space, so placement is a linear mapping.
+  if (basemap) {
+    const px = u => ((u - frame.x0) / (frame.x1 - frame.x0)) * mapW;
+    const py = v => ((v - frame.y0) / (frame.y1 - frame.y0)) * mapH;
+    for (const t of basemap.tiles) {
+      const x = mapX + px(t.tx / basemap.n), y = mapY + py(t.ty / basemap.n);
+      const w = px((t.tx + 1) / basemap.n) - px(t.tx / basemap.n);
+      const h = py((t.ty + 1) / basemap.n) - py(t.ty / basemap.n);
+      ctx.drawImage(t.img, x, y, w + 0.5, h + 0.5);
+    }
+  }
+
   for (const layer of layers) {
     if (layer.geometryType === "polygon") {
       const r = layer.drawingInfo && layer.drawingInfo.renderer;
       const sym = r && r.symbol;
-      // Cap the fill alpha so the class polylines drawn on top stay readable.
-      const fillCss = sym ? rgba(sym.color, Math.min(Math.max(sym.color[3], 110), 150)) : "rgba(252,201,237,0.5)";
+      // Cap the fill alpha so the basemap and the class polylines drawn on
+      // top stay readable through/over the tint.
+      const fillCss = sym ? rgba(sym.color, Math.min(Math.max(sym.color[3], 80), 110)) : "rgba(252,201,237,0.4)";
       const strokeCss = sym && sym.outline ? rgba(sym.outline.color) : "rgba(110,110,110,1)";
       for (const f of layer.features) {
         for (const ring of ((f.geometry && f.geometry.rings) || [])) {
@@ -893,7 +966,8 @@ function renderCombinedCanvas({ title, layers, point, verdictColor, bbox, citati
     } else {
       for (const f of layer.features) {
         const sym = symbolForFeature(layer.drawingInfo, layer.rendererField, f.attributes || {});
-        ctx.strokeStyle = rgba(sym.color); ctx.lineWidth = Math.max(sym.width, 2) + 1;
+        // Kept slim so the basemap's street-name labels stay legible beside the overlay.
+        ctx.strokeStyle = rgba(sym.color); ctx.lineWidth = Math.max(sym.width, 1.5) + 0.5;
         ctx.lineCap = "round"; ctx.lineJoin = "round";
         for (const path of ((f.geometry && f.geometry.paths) || [])) {
           ctx.beginPath();
@@ -923,7 +997,7 @@ function renderCombinedCanvas({ title, layers, point, verdictColor, bbox, citati
   });
 
   ctx.restore();
-  drawScaleBar(ctx, mapX + 10, mapY + mapH - 14, bbox, mapW);
+  drawScaleBar(ctx, mapX + 10, mapY + mapH - 14, frame, mapW);
 
   ctx.fillStyle = "#17324d"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.textAlign = "center";
   ctx.fillText("N", mapX + mapW - 14, mapY + 16); ctx.textAlign = "left";
@@ -981,12 +1055,15 @@ async function buildPointReport(pt, radiusMeters) {
   const verdict = pt.result ? pt.result.verdict : "";
   const verdictColor = BUCKET_COLOR[verdictBucket(verdict)];
   const nowStamp = new Date().toLocaleString();
-  const bbox = reportFrameBBox(pt.lat, pt.lon, radiusMeters);
+  const frame = reportFrame(pt.lat, pt.lon, radiusMeters);
   const notes = [], citationLines = [], links = [];
+
+  // Basemap fetch runs concurrently with the data-layer queries below.
+  const basemapPromise = fetchBasemapTiles(frame, figLayout().mapW * 2).catch(() => null);
 
   let classLayers = [];
   if (state && NFC_WIRED[state]) {
-    try { classLayers = await fetchClassLayers(state, bbox, pt.lat, pt.lon); }
+    try { classLayers = await fetchClassLayers(state, frame, pt.lat, pt.lon); }
     catch (e) { notes.push("Road-class layer unavailable: " + e.message); }
   } else {
     notes.push(state ? "Road-class (NFC) lookup is not wired for " + state + " - urban boundary only."
@@ -994,8 +1071,11 @@ async function buildPointReport(pt, radiusMeters) {
   }
 
   let acubLayer = null;
-  try { acubLayer = await fetchAcubLayer(bbox); }
+  try { acubLayer = await fetchAcubLayer(frame); }
   catch (e) { notes.push("Urban-boundary layer unavailable: " + e.message); }
+
+  const basemap = await basemapPromise;
+  if (!basemap) notes.push("Street basemap tiles unavailable - data layers shown on a plain background.");
 
   if (classLayers.length && classLayers.every(l => l.features.length === 0))
     notes.push("No classified road segments in this frame.");
@@ -1012,6 +1092,7 @@ async function buildPointReport(pt, radiusMeters) {
     citationLines.push("Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — " + acubLayer.url);
     links.push({ label: "Urban boundary — NTAD 2020 Adjusted Urban Areas layer at this site", url: liveLayerLink(REST.ACUB, pt.lat, pt.lon) });
   }
+  if (basemap) citationLines.push("Basemap: © Esri World Street Map tiles, fetched for this frame at report time");
   citationLines.push("Retrieved " + nowStamp + " · frame ≈ " + ((2 * radiusMeters) / 1609.344).toFixed(2) +
     " mi wide · classification buffer " + REPORT_BUFFER_FEET + " ft");
   links.push({ label: "Google Maps at this site", url: "https://www.google.com/maps?q=" + pt.lat + "," + pt.lon });
@@ -1024,7 +1105,7 @@ async function buildPointReport(pt, radiusMeters) {
   const title = classLayers.length
     ? state + " road functional class + 2020 Adjusted Urban Boundary"
     : "2020 Adjusted Census Urban Boundary";
-  const figure = renderCombinedCanvas({ title, layers, point: pt, verdictColor, bbox, citationLines, notes })
+  const figure = renderCombinedCanvas({ title, layers, point: pt, verdictColor, frame, basemap, citationLines, notes })
     .toDataURL("image/png");
   return { pt, state, verdict, figure, links };
 }

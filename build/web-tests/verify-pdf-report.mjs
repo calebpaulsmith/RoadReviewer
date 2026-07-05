@@ -56,7 +56,19 @@ page.on("console", m => {
 await page.route("**/*", async route => {
   const url = route.request().url();
   if (url.startsWith("file://")) return route.continue();
-  if (url.includes("arcgisonline.com")) return route.abort();   // basemap tiles: irrelevant to this test
+  // World_Street_Map tiles: serve real captured tiles (fixtures/tiles/) with a
+  // CORS header, exercising the taint-free basemap compositing path — a
+  // tainted canvas would make toDataURL throw and fail the whole test. Tiles
+  // outside the captured set (e.g. the interactive Leaflet map's low zooms)
+  // and the imagery/labels layers abort as before.
+  const tileM = url.match(/World_Street_Map\/MapServer\/tile\/(\d+)\/(\d+)\/(\d+)/);
+  if (tileM) {
+    try {
+      const body = readFileSync(join(here, "fixtures", "tiles", `${tileM[1]}-${tileM[2]}-${tileM[3]}.jpg`));
+      return route.fulfill({ contentType: "image/jpeg", headers: { "Access-Control-Allow-Origin": "*" }, body });
+    } catch { return route.abort(); }
+  }
+  if (url.includes("arcgisonline.com")) return route.abort();   // imagery/labels layers: irrelevant to this test
 
   const json = { contentType: "application/json" };
   // --- classification pass (rr-core, returnGeometry=false) ---
@@ -104,8 +116,20 @@ let text = bytes.toString("latin1");
   }
 }
 
+// Direct probe of the basemap path: the default Kalamazoo frame at z16 needs
+// exactly the 12 captured tiles, all of which must load via crossOrigin
+// without tainting.
+const basemapTileCount = await page.evaluate(async () => {
+  const f = reportFrame(42.28536, -85.57025, 600);
+  const bm = await fetchBasemapTiles(f, 748);
+  return bm ? bm.tiles.length : 0;
+});
+const netLogText = await page.evaluate(() => document.getElementById("netLog").textContent);
+
 const checks = [
   ["classification produced the expected federal-aid row", verdictRowOk],
+  ["street basemap tiles load for the frame (12 at z16)", basemapTileCount === 12],
+  ["basemap tile fetch disclosed in the network log", netLogText.includes("basemap tiles")],
   ["PDF magic bytes", bytes.slice(0, 5).toString("ascii") === "%PDF-"],
   ["non-trivial size (>50KB, images embedded)", bytes.length > 50_000],
   ["cover page title", text.includes("Federal-Aid Classification Report")],
@@ -128,10 +152,12 @@ console.log(fail ? "VERIFY FAILED" : "VERIFY PASSED", "| pdf bytes:", bytes.leng
 
 if (process.env.SAVE_SAMPLES) {
   copyFileSync(dlPath, join(here, "sample-report.pdf"));
-  const figurePng = await page.evaluate(({ miMetaStr, miGeomStr, acubMetaStr, acubGeomStr }) => {
+  const figurePng = await page.evaluate(async ({ miMetaStr, miGeomStr, acubMetaStr, acubGeomStr }) => {
     const miM = JSON.parse(miMetaStr), miG = JSON.parse(miGeomStr);
     const acM = JSON.parse(acubMetaStr), acG = JSON.parse(acubGeomStr);
     const point = { lat: 42.28536, lon: -85.57025 };
+    const frame = reportFrame(point.lat, point.lon, 600);
+    const basemap = await fetchBasemapTiles(frame, 748);
     return renderCombinedCanvas({
       title: "MI road functional class + 2020 Adjusted Urban Boundary",
       layers: [
@@ -140,9 +166,10 @@ if (process.env.SAVE_SAMPLES) {
         { geometryType: "polyline", rendererField: "FunctionalSystem", drawingInfo: miM.drawingInfo,
           features: miG.features, legendHeader: "Road functional class (MDOT)" },
       ],
-      point, verdictColor: "#d73027", bbox: reportFrameBBox(point.lat, point.lon, 600),
+      point, verdictColor: "#d73027", frame, basemap,
       citationLines: ["Road class: Functional System — https://mdotgis.state.mi.us/.../FeatureServer/353",
         "Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — https://services.arcgis.com/...",
+        "Basemap: © Esri World Street Map tiles, fetched for this frame at report time",
         "Retrieved (test) · frame ≈ 0.75 mi wide · classification buffer 200 ft"],
       notes: [],
     }).toDataURL("image/png");
