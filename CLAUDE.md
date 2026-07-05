@@ -1176,11 +1176,30 @@ summarized here so it isn't relitigated:
   half-width; default 600 m ≈ 0.75 mi across - deliberately further out
   than the original 250 m figure; retune by editing the option values).
   Below the figure each page carries clickable live source links (jsPDF
-  `textWithLink`): MI uses the same curated FEMA NFC/ACUB webmap deep
-  link as the Excel NFC Map column, IN/WI/ACUB side-load their
-  FeatureServer into the FEMA Map Viewer via `url=` +
-  `find=/marker=/level=` (the `URL_NFC_MAPVIEW*` patterns from
-  `modConstants.bas`), plus a Google Maps link. Rather than
+  `textWithLink`); the review legend carries the same per-layer links.
+  These were reworked (2026-07-06, PR #17) to prefer **each state's own
+  public-facing app** over the generic ArcGIS viewer: MI opens MDOT's
+  "NFC, NHS & ACUB" ArcGIS Experience app and IN opens INDOT's
+  "Functional Classification & Urban Area Boundary" Experience app, each
+  deep-linked to the site via the Experience Builder hash-parameter form
+  `#<mapWidgetId>=center:lon,lat,4326,level:16,marker:lon,lat;4326` (the
+  widget IDs — MI `widget_167`, IN `widget_6` — were recovered from each
+  app's config JSON at `sharing/rest/content/items/<id>/data?f=json`, not
+  guessed). Both apps show functional class *and* the adjusted urban
+  boundary by default, so a single link answers both questions and the
+  class-layer + ACUB links dedup to it. Experience Builder can't toggle
+  layer visibility by URL, but the defaults are the wanted layers, so
+  that's moot. WisDOT publishes **no** statewide public functional-class
+  app (static county/urban PDFs + login-gated WISLR only), so Wisconsin —
+  and any state whose app doesn't cover ACUB — falls back to the generic
+  ArcGIS Map Viewer (`arcgis.com/apps/mapviewer`) with the FeatureServer
+  side-loaded and the point pinned via the documented `center=`/`level=`
+  pair (more reliable than the old FEMA-viewer `find=` string). Plus a
+  Google Maps link. See `STATE_APP` / `classLayerLiveLink` /
+  `acubLiveLink` in `web/index.html` and the per-state "official state
+  map" notes in `sources.html`; the Excel tool's `URL_NFC_MAPVIEW*`
+  constants (§9.3b) are unchanged and still use the older webmap/side-load
+  patterns. Rather than
   screenshotting a live map, the figure is drawn on a plain `<canvas>`
   styled with **each layer's own published `drawingInfo.renderer`** (the
   state's/USDOT's actual class-to-color mapping, read from the layer's
@@ -1256,10 +1275,16 @@ summarized here so it isn't relitigated:
 - **Open items:** the "FHWA Road Checker" name risks implying agency
   affiliation (page carries an "unofficial, not affiliated" disclaimer;
   consider "Federal-Aid Road Checker"); basemap tiles necessarily reveal
-  the viewed area to Esri (disclosed in the footer); not yet click-tested
-  in a real browser by a human; state auto-detect uses rough bounding
-  boxes (wrong guesses fail soft to "review manually" + dropdown
-  override).
+  the viewed area to Esri (disclosed in the footer); state auto-detect
+  uses rough bounding boxes (wrong guesses fail soft to "review manually"
+  + dropdown override). **The MI/IN Experience-app deep links still need a
+  one-time real-browser confirmation** — the hash-parameter form and the
+  recovered widget IDs are right per Esri's docs + each app's config, but
+  a JS single-page app can't be verified headless here; worst case they
+  degrade to the app opening at its default extent instead of the pinned
+  point, so it fails soft. The WI/ACUB Map Viewer side-loads carry the
+  same older caveat (pin+zoom resolve even if the side-loaded layer
+  overlay doesn't render).
 - **Hosting.** `.github/workflows/pages.yml` deploys `web/` (no build
   step — the folder is uploaded as-is) to GitHub Pages on every push to
   `main` that touches `web/**`. This only takes effect once the repo's
