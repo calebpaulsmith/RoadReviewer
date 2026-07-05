@@ -10,10 +10,29 @@ retired-segment filters, same 150/200-ft fallback buffers, same
 Report" button turns the classified points into a citeable PDF — see
 below.
 
+## Results pane
+
+Results render as one compact card per site (not a spreadsheet-style
+table), so nothing ever scrolls horizontally and many sites fit on
+screen. Each card carries a solid-color verdict badge (FEDERAL AID /
+NON-FEDERAL AID / REVIEW / FAILED) over a matching row tint and left
+border, then unpacks the Excel tool's pipe-joined class string into
+individual road chips: "N road segments within 200 ft:" followed by one
+chip per distinct road/class, each swatched in the standard FHWA class
+color (the same palette the map overlay and PDF figures use, so chip
+color = line color on the map). Where the source layer carries a road
+name on the class feature (both Wisconsin layers), the chip pairs
+name + class ("STH 86 E · Major Collector"); Michigan/Indiana class
+layers publish no name field, so their chips show class only (with a ×n
+multiplier for repeated segments) alongside the separate Route and
+TIGER street-name lookups. An Urban/Rural chip cites the ACUB polygon
+name. CSV / copy-for-Excel exports keep the original flat columns
+(pipe-joined) for spreadsheet hand-off.
+
 ## Site-by-site review
 
 Pasted site names are surfaced as labels on the map pins (permanent up to
-25 sites, hover past that). Clicking a table row or a pin zooms straight
+25 sites, hover past that). Clicking a result card or a pin zooms straight
 to that site; **Prev / Next** above the map step through the sites one by
 one (wrapping at the ends). While a site is selected and "Source layers"
 is checked, the page fetches the authoritative geometry around it — the
