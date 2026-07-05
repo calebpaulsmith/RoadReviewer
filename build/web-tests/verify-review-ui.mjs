@@ -86,12 +86,20 @@ const tooltipTexts = await page.locator(".leaflet-tooltip").allTextContents();
 checks.push(["2 name labels on map", tooltipTexts.length === 2]);
 checks.push(["labels carry the pasted names", tooltipTexts.join("|").includes("Kalamazoo culvert") && tooltipTexts.join("|").includes("Site B")]);
 
+// --- result cards: verdict badge + per-segment class chips ---
+const row0 = await page.locator("#resultsBody .row").first().textContent();
+checks.push(["card carries FEDERAL AID badge text", row0.includes("FEDERAL AID")]);
+checks.push(["card counts segments within the buffer", row0.includes("1 road segment within 200 ft")]);
+checks.push(["card has a Minor Collector class chip", await page.locator("#resultsBody .row").first().locator(".chip", { hasText: "Minor Collector" }).count() === 1]);
+checks.push(["card cites the ACUB urban area", row0.includes("Urban · Kalamazoo, MI")]);
+checks.push(["card lists TIGER street names", row0.includes("S Pitcher St")]);
+
 // --- click row -> zoom + select + layers ---
-await page.locator("#resultsBody tr").nth(1).locator("td").first().click();
+await page.locator("#resultsBody .row").nth(1).locator(".site-name").click();
 await page.waitForFunction(() => document.getElementById("siteLegend").style.display === "block"
   && !document.getElementById("siteLegend").textContent.includes("loading"), { timeout: 15000 });
 checks.push(["review info shows 2 / 2 + name", (await page.locator("#reviewInfo").textContent()).includes("2 / 2 — Site B")]);
-checks.push(["clicked row is highlighted", await page.locator("#resultsBody tr.selected").count() === 1]);
+checks.push(["clicked row is highlighted", await page.locator("#resultsBody .row.selected").count() === 1]);
 checks.push(["map zoomed to site (z=17)", await page.evaluate(() => map.getZoom()) === 17]);
 checks.push(["map centered on site", await page.evaluate(() => {
   const c = map.getCenter(); return Math.abs(c.lat - 42.6911) < 0.001 && Math.abs(c.lng - -84.5360) < 0.001; })]);

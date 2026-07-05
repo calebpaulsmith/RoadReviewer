@@ -91,7 +91,7 @@ await page.route("**/*", async route => {
 await page.goto(PAGE, { waitUntil: "domcontentloaded" });
 await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("1 point(s) classified"), { timeout: 15000 });
-const verdictRowOk = (await page.locator("tr.v-fed td").first().textContent())?.includes("Kalamazoo");
+const verdictRowOk = (await page.locator("#resultsBody .row.v-fed").first().textContent())?.includes("Kalamazoo");
 
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 30000 }),

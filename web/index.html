@@ -7,10 +7,10 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
   :root {
-    --fed:    #fdecea; --fed-border:    #d73027;
-    --nonfed: #e9f6ec; --nonfed-border: #1a9850;
-    --review: #fef7e0; --review-border: #b58900;
-    --failed: #f0f0f0; --failed-border: #888;
+    --fed:    #fadbd4; --fed-border:    #d73027;
+    --nonfed: #d6eedd; --nonfed-border: #1a9850;
+    --review: #fcefc0; --review-border: #b58900;
+    --failed: #ececec; --failed-border: #888;
     --ink: #1c2733; --muted: #5b6b7b; --line: #d9e1e8;
   }
   * { box-sizing: border-box; }
@@ -44,17 +44,34 @@
     border: 1px solid var(--line); background: #fff; cursor: pointer;
   }
   button:hover { background: #eef3f7; }
-  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
-  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eef2f5; white-space: nowrap; }
-  th { background: #f1f5f8; font-weight: 600; position: sticky; top: 0; }
-  td.wrap { white-space: normal; min-width: 180px; }
-  tr.v-fed    td { background: var(--fed); }    tr.v-fed    td:first-child { box-shadow: inset 3px 0 0 var(--fed-border); }
-  tr.v-nonfed td { background: var(--nonfed); } tr.v-nonfed td:first-child { box-shadow: inset 3px 0 0 var(--nonfed-border); }
-  tr.v-review td { background: var(--review); } tr.v-review td:first-child { box-shadow: inset 3px 0 0 var(--review-border); }
-  tr.v-failed td { background: var(--failed); } tr.v-failed td:first-child { box-shadow: inset 3px 0 0 var(--failed-border); }
-  tr.v-pending td { color: var(--muted); font-style: italic; }
-  td .links a { margin-right: 8px; font-size: 12.5px; }
+  /* Results: one compact, wrapping card per site — no horizontal scroll. */
+  .rowlist { border: 1px solid var(--line); border-radius: 6px; background: #fff; overflow: hidden; }
+  .rowlist:empty { display: none; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px;
+         padding: 4px 10px 4px 7px; border-bottom: 1px solid rgba(28,39,51,.1);
+         border-left: 5px solid #b9c4cd; cursor: pointer; font-size: 12.5px; line-height: 1.4; }
+  .row:last-child { border-bottom: none; }
+  .row.v-fed    { background: var(--fed);    border-left-color: var(--fed-border); }
+  .row.v-nonfed { background: var(--nonfed); border-left-color: var(--nonfed-border); }
+  .row.v-review { background: var(--review); border-left-color: var(--review-border); }
+  .row.v-failed { background: var(--failed); border-left-color: var(--failed-border); }
+  .row.v-pending { color: var(--muted); font-style: italic; }
+  .row .site-name { font-weight: 600; font-size: 13px; font-style: normal; color: var(--ink); }
+  .row .coords { color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .badge { font-weight: 700; font-size: 10.5px; letter-spacing: .4px; padding: 1px 8px;
+           border-radius: 9px; color: #fff; white-space: nowrap; font-style: normal; }
+  .b-fed { background: var(--fed-border); } .b-nonfed { background: var(--nonfed-border); }
+  .b-review { background: var(--review-border); } .b-failed { background: var(--failed-border); }
+  .verdict-detail { font-weight: 600; }
+  .segsum { color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #fff;
+          border: 1px solid #c5cfd8; border-radius: 10px; padding: 0 8px 0 5px; white-space: nowrap; }
+  .chip .cw { width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,.3); flex: none; }
+  .chip.urban { background: #f5e9f6; border-color: #c79bd1; }
+  .row .streets { color: var(--muted); }
+  .row .streets b { color: var(--ink); font-weight: 600; }
+  .row .links { margin-left: auto; }
+  .row .links a { margin-left: 8px; font-size: 11.5px; white-space: nowrap; }
   a { color: #205d8c; }
   details.netlog { margin-top: 16px; font-size: 12.5px; color: var(--muted); }
   details.netlog pre { max-height: 180px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0 0; }
@@ -79,8 +96,7 @@
   #siteLegend .swp { display: inline-block; width: 12px; height: 12px; border: 1px solid #7c8b98; margin-right: 6px; vertical-align: middle; }
   .site-label { background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 3px;
     padding: 1px 5px; font-size: 11px; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
-  #resultsBody tr { cursor: pointer; }
-  tr.selected { outline: 2px solid #2c6ca8; outline-offset: -2px; }
+  .row.selected { outline: 2px solid #2c6ca8; outline-offset: -2px; }
 </style>
 </head>
 <body>
@@ -162,15 +178,7 @@ Site 12, 44.2700, -83.5200"></textarea>
       <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">Download FIRMettes (ZIP)</button>
       <button id="clearBtn">Clear</button>
     </div>
-    <div class="tablewrap">
-      <table id="resultsTable">
-        <thead><tr>
-          <th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>FHWA Class</th><th>Urban/Rural</th>
-          <th>Urban Area (ACUB)</th><th>Route</th><th>Street(s)</th><th class="wrap">Federal Aid Status</th><th>Links</th>
-        </tr></thead>
-        <tbody id="resultsBody"></tbody>
-      </table>
-    </div>
+    <div id="resultsBody" class="rowlist"></div>
   </div>
 
   <details class="netlog">
@@ -290,6 +298,9 @@ async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fall
   return json;
 }
 
+// Per-segment detail for the UI: [{code, name}] — one entry per returned
+// segment, name only where the source layer carries it on the same feature
+// (WI both layers; MI/IN class layers have no name field, see §4.2/§4.2a).
 async function queryMichiganNfc(lat, lon, bufferFt) {
   const nfc = await queryWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt);
   const codes = extractIntegers(nfc, "FunctionalSystem");
@@ -298,7 +309,7 @@ async function queryMichiganNfc(lat, lon, bufferFt) {
     const route = await queryWithFallback(REST.MDOT_ROUTE, lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt);
     roadName = (firstString(route, "RouteDesignation") + " " + firstString(route, "RouteNumber")).trim();
   } catch (e) { /* route name is best-effort, matching modClassify */ }
-  return { codes, roadName };
+  return { codes, roadName, segments: codes.map(c => ({ code: c, name: "" })) };
 }
 
 async function queryIndianaNfc(lat, lon, bufferFt) {
@@ -309,20 +320,35 @@ async function queryIndianaNfc(lat, lon, bufferFt) {
     const nm = await queryWithFallback(REST.IN_ROADNAME, lat, lon, "st_full", "1=1", bufferFt);
     roadName = firstString(nm, "st_full");
   } catch (e) { /* best-effort */ }
-  return { codes, roadName };
+  return { codes, roadName, segments: codes.map(c => ({ code: c, name: "" })) };
 }
 
 async function queryWisconsinNfc(lat, lon, bufferFt) {
   const trunk = await queryWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt);
   if (featureCount(trunk) > 0) {
-    const codes = attrValues(trunk, "FED_FC_CD").map(Number).filter(Number.isFinite).map(Math.trunc);
+    const clean = v => (v === undefined || v === null) ? "" : String(v).trim();
+    const segments = [];
+    for (const f of trunk.features) {
+      const a = f.attributes || {};
+      const code = Number(a.FED_FC_CD);
+      if (clean(a.FED_FC_CD) === "" || !Number.isFinite(code)) continue;
+      segments.push({ code: Math.trunc(code),
+        name: [a.HWYTYPE, a.HWYNUM, a.HWYDIR].map(clean).filter(Boolean).join(" ") });
+    }
     const roadName = [firstString(trunk, "HWYTYPE"), firstString(trunk, "HWYNUM"), firstString(trunk, "HWYDIR")]
       .join(" ").replace(/\s+/g, " ").trim();
-    return { codes, roadName };
+    return { codes: segments.map(s => s.code), roadName, segments };
   }
   const loc = await queryWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt);
-  const codes = extractIntegers(loc, "FNCT_CLS_CTGY_TYCD").map(wisconsinLocalCategoryToFhwa);
-  return { codes, roadName: firstString(loc, "ST_LABL_NM") };
+  const clean = v => (v === undefined || v === null) ? "" : String(v).trim();
+  const segments = [];
+  for (const f of (loc.features || [])) {
+    const a = f.attributes || {};
+    const cat = Number(a.FNCT_CLS_CTGY_TYCD);
+    if (clean(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) continue;
+    segments.push({ code: wisconsinLocalCategoryToFhwa(Math.trunc(cat)), name: clean(a.ST_LABL_NM) });
+  }
+  return { codes: segments.map(s => s.code), roadName: firstString(loc, "ST_LABL_NM"), segments };
 }
 
 const NFC_WIRED = { MI: queryMichiganNfc, IN: queryIndianaNfc, WI: queryWisconsinNfc };
@@ -362,7 +388,8 @@ function federalAidVerdict(codes, isUrban, bufferFt) {
 // TIGER street names (non-fatal) -> class label + verdict.
 async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET) {
   const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", classLabel: "",
-                roadName: "", streets: "", verdict: "", failed: false };
+                roadName: "", streets: "", streetList: [], verdict: "", failed: false,
+                segments: [], bufferFt };
   const acubBuffer = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
 
   let acub;
@@ -381,17 +408,19 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
     return out;
   }
 
-  let codes, roadName;
+  let codes, roadName, segments;
   try {
-    ({ codes, roadName } = await nfcQuery(lat, lon, bufferFt));
+    ({ codes, roadName, segments } = await nfcQuery(lat, lon, bufferFt));
   } catch (e) {
     out.verdict = "Failed - NFC query (" + e.message + ")"; out.failed = true; return out;
   }
   out.roadName = roadName || "";
+  out.segments = segments || codes.map(c => ({ code: c, name: "" }));
 
   try {
     const tiger = await runQuery(REST.TIGER_ROADS, lat, lon, "NAME", "1=1", bufferFt);
-    out.streets = [...new Set(attrValues(tiger, "NAME").map(String))].join(" | ");
+    out.streetList = [...new Set(attrValues(tiger, "NAME").map(String))];
+    out.streets = out.streetList.join(" | ");
   } catch (e) { /* non-fatal, matching modClassify */ }
 
   out.classLabel = classLabels(codes, bufferFt);
@@ -505,6 +534,68 @@ function sourceLink(state) {
   return `<a href="sources.html${SOURCE_ANCHOR[state] || "#unwired"}" target="_blank" rel="noopener">Source</a>`;
 }
 
+/* ---- result-card builders ---- */
+// Chip swatch colors per FHWA class — the standard FHWA palette, identical to
+// the fhwaFallbackDrawingInfo values the map figures/legend use, so a chip's
+// color matches the same class's line color on the map.
+const FHWA_CHIP_COLOR = { 1: "#0070ff", 2: "#a900e6", 3: "#e60000", 4: "#38a800",
+                          5: "#ffaa00", 6: "#ffff00", 7: "#343434", 0: "#8c8c8c" };
+const BUCKET_WORD = { fed: "FEDERAL AID", nonfed: "NON-FEDERAL AID", review: "REVIEW", failed: "FAILED" };
+
+function badgeHtml(verdict, bucket) {
+  // Split "Federal aid - Urban Minor Collector" into a solid badge + detail.
+  const m = verdict.match(/^(Federal aid|Non-federal aid|Review|Failed)\s*-\s*(.*)$/i);
+  const detail = m ? m[2] : verdict;
+  return `<span class="badge b-${bucket}">${BUCKET_WORD[bucket] || bucket.toUpperCase()}</span>` +
+    (detail ? `<span class="verdict-detail">${esc(detail)}</span>` : "");
+}
+
+// The roads found near the point: a count + one chip per distinct road/class,
+// each swatched in that class's FHWA color (the spreadsheet's "A | B | C"
+// string, unpacked). Segments of the same road+class collapse into one chip
+// with a ×n multiplier.
+function roadChipsHtml(res) {
+  const segs = res.segments || [];
+  // No segments: the verdict badge already reads "No road segment within N ft
+  // - review manually", so don't repeat it here.
+  if (!segs.length) return "";
+  const groups = new Map();
+  for (const s of segs) {
+    const k = s.code + "|" + (s.name || "");
+    if (!groups.has(k)) groups.set(k, { code: s.code, name: s.name || "", n: 0 });
+    groups.get(k).n++;
+  }
+  const chips = [...groups.values()]
+    .sort((a, b) => (a.code || 99) - (b.code || 99) || a.name.localeCompare(b.name))
+    .map(g => {
+      const cls = functionalSystemLabel(g.code);
+      const label = (g.name ? `<b>${esc(g.name)}</b> · ` : "") + esc(cls) + (g.n > 1 ? ` ×${g.n}` : "");
+      return `<span class="chip" title="FHWA functional class ${g.code} — ${esc(cls)}">` +
+        `<i class="cw" style="background:${FHWA_CHIP_COLOR[g.code] || FHWA_CHIP_COLOR[0]}"></i>${label}</span>`;
+    });
+  const n = segs.length;
+  return `<span class="segsum">${n} road segment${n > 1 ? "s" : ""} within ${res.bufferFt} ft:</span> ` + chips.join(" ");
+}
+
+function urbanChipHtml(res) {
+  if (!res.urbanRural) return "";
+  if (res.urbanRural === "Urban")
+    return `<span class="chip urban" title="Inside a 2020 Adjusted Census Urban Boundary"><i class="cw" style="background:#d886c8"></i>Urban · ${esc(res.acubName || "adjusted urban area")}</span>`;
+  return `<span class="chip" title="Outside every 2020 Adjusted Census Urban Boundary"><i class="cw" style="background:#e8f0e4"></i>Rural</span>`;
+}
+
+function extrasHtml(res) {
+  const bits = [];
+  // Trunkline/centerline route name, only when the chips don't already carry names.
+  if (res.roadName && !(res.segments || []).some(s => s.name))
+    bits.push(`<span class="streets">Route: <b>${esc(res.roadName)}</b></span>`);
+  const streets = res.streetList && res.streetList.length ? res.streetList
+    : (res.streets ? res.streets.split(" | ") : []);
+  if (streets.length)
+    bits.push(`<span class="streets" title="Street names within the search buffer (Census TIGER)">Streets: <b>${streets.map(esc).join("</b>, <b>")}</b></span>`);
+  return bits.join(" ");
+}
+
 function render() {
   const seq = ++renderSeq;
   const body = $("resultsBody");
@@ -516,10 +607,11 @@ function render() {
   let done = 0, total = 0;
 
   currentPoints.forEach((p, idx) => {
-    const tr = document.createElement("tr");
+    const tr = document.createElement("div");
     if (p.invalid) {
-      tr.className = "v-failed";
-      tr.innerHTML = `<td>line ${p.line}</td><td colspan="9" class="wrap">Could not read a lat/lon from: <code>${esc(p.raw)}</code></td><td></td>`;
+      tr.className = "row v-failed";
+      tr.innerHTML = `<span class="site-name">line ${p.line}</span>` +
+        `<span>Could not read a lat/lon from: <code>${esc(p.raw)}</code></span>`;
       body.appendChild(tr);
       return;
     }
@@ -527,9 +619,11 @@ function render() {
     const stateSel = $("stateSel").value;
     const state = stateSel === "AUTO" ? (detectState(p.lat, p.lon) || "??") : stateSel;
     const key = p.lat + "," + p.lon + "," + state;
-    tr.className = "v-pending";
-    tr.innerHTML = `<td>${esc(p.name)}</td><td>${p.lat}</td><td>${p.lon}</td><td>${state}</td>` +
-      `<td colspan="6">querying…</td><td class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</td>`;
+    const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
+      `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
+    tr.className = "row v-pending";
+    tr.innerHTML = headHtml + `<span>querying…</span>` +
+      `<span class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</span>`;
     body.appendChild(tr);
     tr.addEventListener("click", e => { if (e.target.closest("a")) return; selectSiteByPoint(p); });
 
@@ -553,13 +647,11 @@ function render() {
       if (seq !== renderSeq) return;   // stale render
       p.result = res;
       const bucket = verdictBucket(res.verdict);
-      tr.className = "v-" + bucket;
+      tr.className = "row v-" + bucket;
       const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
-      tr.innerHTML =
-        `<td>${esc(p.name)}</td><td>${p.lat}</td><td>${p.lon}</td><td>${state}</td>` +
-        `<td>${esc(res.classLabel)}</td><td>${esc(res.urbanRural)}</td><td>${esc(res.acubName)}</td>` +
-        `<td>${esc(res.roadName)}</td><td class="wrap">${esc(res.streets)}</td>` +
-        `<td class="wrap"><b>${esc(res.verdict)}</b>${retry}</td><td class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</td>`;
+      tr.innerHTML = headHtml + badgeHtml(res.verdict, bucket) + retry +
+        [roadChipsHtml(res), urbanChipHtml(res), extrasHtml(res)].filter(Boolean).join(" ") +
+        `<span class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</span>`;
       marker.setStyle({ fillColor: BUCKET_COLOR[bucket] });
       marker.setPopupContent(
         `<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br>` +
@@ -1346,7 +1438,7 @@ async function selectSite(i) {
   if (!pts.length) return;
   reviewIdx = ((i % pts.length) + pts.length) % pts.length;   // wrap both directions
   const p = pts[reviewIdx];
-  document.querySelectorAll("#resultsBody tr.selected").forEach(tr => tr.classList.remove("selected"));
+  document.querySelectorAll("#resultsBody .row.selected").forEach(tr => tr.classList.remove("selected"));
   // Highlight the row but don't scroll the page to it — Prev/Next/pin-click
   // are map-focused actions, and jumping the viewport down to the results
   // table on every step fights that (the row is still visible via the

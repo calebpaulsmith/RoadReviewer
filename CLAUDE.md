@@ -1143,10 +1143,22 @@ summarized here so it isn't relitigated:
 - **Paste-and-see UX.** Coordinates pasted into the textarea are parsed,
   classified and pinned on a Leaflet map automatically (debounced input
   event — no submit button). Rows/pins use the same red/green/yellow
-  federal-aid buckets as the Sites table and KML export. A visible
+  federal-aid buckets as the Sites table and KML export. Results render
+  as one compact flex card per site rather than a spreadsheet-style
+  table (2026-07-05 redesign: no horizontal scroll, thin rows, solid
+  verdict badge + tinted row): the Excel tool's pipe-joined class
+  string is unpacked into "N road segments within 200 ft:" plus one
+  chip per road/class, swatched in the standard FHWA class colors —
+  the same palette the map overlay and PDF figures use. WI chips pair
+  name + class (both WI layers carry names on the class feature);
+  MI/IN class layers have no name field, so their chips are class-only
+  with a ×n multiplier, next to the separate Route/TIGER street names.
+  rr-core's classifyPoint exposes `segments`/`bufferFt`/`streetList`
+  for this, alongside the unchanged flat fields. A visible
   network log lists every request the page makes; Leaflet is vendored
   locally so there are no CDN calls. Exports: CSV download +
-  copy-for-Excel TSV, both generated in the browser.
+  copy-for-Excel TSV, both generated in the browser — these keep the
+  original flat pipe-joined columns for spreadsheet hand-off.
 - **Same logic as Excel.** `web/index.html`'s `<script id="rr-core">`
   block is a hand-port of `modClassify.bas`/`modConstants.bas` (same
   where-clauses, fallback buffers incl. the 200-ft ACUB floor, verdict
