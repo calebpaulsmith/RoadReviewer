@@ -1511,7 +1511,9 @@ Four additions after the split, per user direction:
    "Federal Adjusted Urban Area" layer (an ACUB analog) if a state-native
    urban-boundary source is ever wanted.
 
-Further refinements in the same PR (all verified on live services):
+### Column hiding, Sites-only actions, 250 ft buffer, Michigan link (PR #23)
+
+Follow-up after #22 merged (all verified on live services):
 
 4. **Optional columns G-K hidden by default** (Description, Address,
    Category, Costs, Work Completion) on **both** products
