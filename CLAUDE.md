@@ -1511,6 +1511,37 @@ Four additions after the split, per user direction:
    "Federal Adjusted Urban Area" layer (an ACUB analog) if a state-native
    urban-boundary source is ever wanted.
 
+Further refinements in the same PR (all verified on live services):
+
+4. **Optional columns G-K hidden by default** (Description, Address,
+   Category, Costs, Work Completion) on **both** products
+   (`modBuild.ApplyProductColumns`), keeping the paste area tight around
+   Latitude/Longitude. Reversible; values still flow into KML/CSV/map
+   stamps. Column *indices* are unchanged, so verifiers that write by index
+   (incl. the FIRMette test writing Category at col 9) still work.
+5. **Standard product: all Sites actions moved to the Sites sheet.** Start
+   Here's action buttons (Check Roads, Re-run, Photo Links, Export CSV/KML,
+   Send-to-AGOL) are now a full button bar on Sites row 1
+   (`WriteSitesToolbar` is product-aware: standard = 6 buttons, inspector =
+   the 2 shortcuts + its own Start Here toolbar). The row-1 hint text was
+   dropped (the yellow `(optional)` headers guide input). Standard Start
+   Here is now inputs + Build/Reset only.
+6. **Search buffer editable on both products, default 250 ft.**
+   `DEFAULT_BUFFER_FEET` and `ACUB_MIN_BUFFER_FEET` both 200 -> **250**; the
+   standard Start Here gained the editable buffer cell (`JobBufferFeet` is
+   now a shared named range). `verify-classify` re-run at 250 ft — the WI
+   STH 52 regression still reads "Non-federal aid - Rural Minor Collector".
+7. **Sources sheet opens on "1. SOURCES"** — the title + intro above it were
+   removed from `modSources`.
+8. **Michigan NFC Map link no longer shows an MPO label.**
+   `URL_NFC_MAPVIEW` switched from MDOT's curated NFC/NHS/ACUB webmap (item
+   `6a1702b9…`) to the same FEMA-Map-Viewer side-load as IN/WI (MDOT layer
+   353 via `url=`, clean `find`/`marker`/`level` pin). The old webmap
+   carried an MPO layer whose region labels (e.g. "…Transportation
+   Coordinating Initiative") printed over the marker and read as the site's
+   name. Trade-off: the curated ACUB overlay isn't shown on that link
+   anymore. All three wired states now use the same side-load link shape.
+
 ---
 
 ## 8. Design decisions (resolved) and remaining open questions

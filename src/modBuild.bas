@@ -250,26 +250,25 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     ws.Range("B12").Value = "How to use:"
     ws.Range("B12").Font.Bold = True
     StepLine ws, 13, "1.  Pick your state below."
-    StepLine ws, 14, "2.  Paste your points on the Sites tab - the yellow columns (Latitude, Longitude, Description)."
-    StepLine ws, 15, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
+    StepLine ws, 14, "2.  Paste your Latitude and Longitude on the Sites tab (the yellow columns)."
+    StepLine ws, 15, "3.  On the Sites tab, click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
     LabelValue ws, 17, "State", NR_STATE, "MI"
     LabelValue ws, 18, "Output Folder", NR_OUTFOLDER, ""
     LabelValue ws, 19, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 20, "Road/boundary search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
     AddStateValidation ws.Cells(17, 3)
     SetOutputFolderDefault ws.Cells(18, 3)
     AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
+    AddBufferValidation ws.Cells(20, 3)
 
-    AddButton ws, 18, ws.Rows(21).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, 250, ws.Rows(21).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
-    AddButton ws, 18, ws.Rows(24).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
-    AddButton ws, 18, ws.Rows(27).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
-    AddButton ws, 215, ws.Rows(27).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
-    AddButton ws, 18, ws.Rows(30).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
-    AddButton ws, 18, ws.Rows(34).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 36, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
+    NoteLine ws, 22, "The action buttons (Check Roads, Re-run, Photo Links, Export CSV/KML, Send to AGOL) are on the Sites tab's top row."
+    NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses. 250 ft is a good default."
+
+    AddButton ws, 18, ws.Rows(26).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 28, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
         "Build / Reset repairs the layout - your Sites data is preserved."
-    VersionLabel ws, 38
+    VersionLabel ws, 30
 End Sub
 
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
@@ -290,23 +289,12 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     LabelValue ws, 21, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
     AddStateValidation ws.Cells(18, 3)
     AddButton ws, ws.Cells(19, 4).Left + 6, ws.Cells(19, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
-
-    ' Buffer must be a whole number between 1 and 1000 ft. Out-of-range
-    ' values fall back to DEFAULT_BUFFER_FEET via modClassify.BufferFeet,
-    ' but the validation catches mistakes at entry time.
-    With ws.Cells(21, 3).Validation
-        .Delete
-        .Add Type:=xlValidateWholeNumber, AlertStyle:=xlValidAlertStop, _
-            Operator:=xlBetween, Formula1:="1", Formula2:="1000"
-        .IgnoreBlank = True
-        .ErrorMessage = "Enter a whole number between 1 and 1000 ft."
-        .ShowError = True
-    End With
+    AddBufferValidation ws.Cells(21, 3)
 
     NoteLine ws, 23, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
         "Output Folder can stay blank - a OneDrive default is used and shown after each export."
     NoteLine ws, 24, "Search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
-        "urban-boundary check, min 200 ft). 200 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
+        "urban-boundary check, min 250 ft). 250 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
     NoteLine ws, 25, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab for every layer + caveat."
 
     SectionLabel ws, 27, "1.  Classify Roads"
@@ -339,6 +327,20 @@ Private Sub AddStateValidation(ByVal cell As Range)
         .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=STATE_LIST
         .IgnoreBlank = True
         .InCellDropdown = True
+    End With
+End Sub
+
+' Whole-number 1..1000 validation for the Search-buffer cell (both products).
+' Out-of-range values still fall back to DEFAULT_BUFFER_FEET via
+' modClassify.BufferFeet; this just catches typos at entry time.
+Private Sub AddBufferValidation(ByVal cell As Range)
+    With cell.Validation
+        .Delete
+        .Add Type:=xlValidateWholeNumber, AlertStyle:=xlValidAlertStop, _
+            Operator:=xlBetween, Formula1:="1", Formula2:="1000"
+        .IgnoreBlank = True
+        .ErrorMessage = "Enter a whole number between 1 and 1000 ft."
+        .ShowError = True
     End With
 End Sub
 
@@ -405,11 +407,14 @@ Private Sub BuildSites()
     ws.Tab.Color = RGB(60, 60, 60)
 End Sub
 
-' Row 1 toolbar: the two most-used actions live ON the Sites sheet so the
-' paste -> classify -> review loop never leaves it. Buttons are free-floating
-' so hiding the WO/DI columns (standard product) can't squash them.
+' Row 1 toolbar: the Sites actions live ON the Sites sheet so the paste ->
+' classify -> review loop never leaves it. Buttons are free-floating so
+' hiding columns (WO/DI, G-K) can't squash them. In the standard product
+' EVERY common action is here (Start Here has no action buttons); the
+' inspector keeps just the two shortcuts, its heavier workflow staying on
+' its own Start Here toolbar.
 Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
-    Dim sh As Shape, i As Long
+    Dim i As Long
     ' Idempotent rebuild: drop only our own shapes (named RR_*).
     For i = ws.Shapes.Count To 1 Step -1
         If Left$(ws.Shapes(i).Name, 3) = "RR_" Then ws.Shapes(i).Delete
@@ -417,18 +422,24 @@ Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
 
     ws.Rows(SITES_TOOLBAR_ROW).RowHeight = 26
 
-    Set sh = AddButton(ws, 2, 2, 110, 22, "Check Roads", "CheckRoads", CLR_BTN_GO)
-    sh.Name = "RR_CheckRoads"
-    sh.Placement = xlFreeFloating
-    Set sh = AddButton(ws, 118, 2, 190, 22, "Photo Links (selected rows)", "OpenImageryForSelection")
-    sh.Name = "RR_PhotoLinks"
-    sh.Placement = xlFreeFloating
+    AddToolbarButton ws, "RR_CheckRoads", 2, 95, "Check Roads", "CheckRoads", True
+    If ProductIsInspector() Then
+        AddToolbarButton ws, "RR_PhotoLinks", 100, 190, "Photo Links (selected rows)", "OpenImageryForSelection", False
+    Else
+        AddToolbarButton ws, "RR_ReRun", 100, 105, "Re-run Failed", "ReRunFailedRows", False
+        AddToolbarButton ws, "RR_PhotoLinks", 208, 150, "Photo Links (selected)", "OpenImageryForSelection", False
+        AddToolbarButton ws, "RR_Csv", 361, 95, "Export CSV", "ExportSitesCsv", False
+        AddToolbarButton ws, "RR_Kml", 459, 95, "Export KML", "ExportSitesToKML", False
+        AddToolbarButton ws, "RR_Agol", 557, 175, "Send to AGOL Map", "SendSitesToAgolMap", False
+    End If
+End Sub
 
-    With ws.Cells(SITES_TOOLBAR_ROW, COL_CATEGORY)
-        .Value = "Fill in the yellow columns - everything else fills itself. Select rows, then Photo Links to review imagery."
-        .Font.Italic = True
-        .Font.Color = RGB(90, 90, 90)
-    End With
+Private Sub AddToolbarButton(ByVal ws As Worksheet, ByVal shapeName As String, ByVal leftPt As Single, _
+        ByVal widthPt As Single, ByVal caption As String, ByVal macroName As String, ByVal isGo As Boolean)
+    Dim sh As Shape
+    Set sh = AddButton(ws, leftPt, 2, widthPt, 22, caption, macroName, IIf(isGo, CLR_BTN_GO, CLR_BTN))
+    sh.Name = shapeName
+    sh.Placement = xlFreeFloating
 End Sub
 
 Private Sub WriteSitesHeader(ByVal ws As Worksheet)
@@ -659,4 +670,13 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     ws.Columns(COL_DI).Hidden = hideCols
     ws.Columns(COL_FIRMSTATUS).Hidden = hideCols
     ws.Columns(COL_MAPSTATUS).Hidden = hideCols
+
+    ' Optional user-data columns (Description..Work Completion = cols G-K) are
+    ' hidden by default on both products to keep the paste area tight around
+    ' Latitude/Longitude. Unhide to enter them; their values still flow into
+    ' the KML/CSV exports and (inspector) the map-page stamps when present.
+    Dim c As Long
+    For c = COL_DESC To COL_WORKCOMP
+        ws.Columns(c).Hidden = True
+    Next c
 End Sub

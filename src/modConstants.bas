@@ -47,11 +47,11 @@ Public Const NR_OUTFOLDER As String = "JobOutputFolder"
 Public Const NR_AGOLMAP As String = "JobAgolMap"
 ' Search radius (in feet) used when the exact point-on-polyline intersect
 ' returns no road segments. The classifier always tries an exact intersect
-' first; this buffer is the second-chance fallback. Default 200 ft (read
-' from Start Here, capped to [1, 1000] in modClassify.BufferFeet). The
-' standard product has no cell for it and always runs on the default.
+' first; this buffer is the second-chance fallback. Default 250 ft, read
+' from an editable Start Here cell on BOTH products, capped to [1, 1000] in
+' modClassify.BufferFeet.
 Public Const NR_BUFFER As String = "JobBufferFeet"
-Public Const DEFAULT_BUFFER_FEET As Long = 200
+Public Const DEFAULT_BUFFER_FEET As Long = 250
 
 ' ---- Sites table geometry ----
 ' Row 1 is a slim toolbar (hint text + Check Roads / Photo Links buttons)
@@ -115,18 +115,18 @@ Public Const URL_BING As String = "https://www.bing.com/maps?cp={LAT}~{LON}&lvl=
 Public Const URL_GEARTH As String = "https://earth.google.com/web/search/{LAT},{LON}"
 Public Const URL_FEMAVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?latitude={LAT}&longitude={LON}"
-' Open the FEMA-hosted NFC/ACUB webmap (item 6a1702b9147243d1a5ee62cd614bc681)
-' in ArcGIS Online Map Viewer, centered + markered on the row's point.
-' The previous link pointed at the MDOT Experience app, whose popup chrome
-' blocked the inspector from clicking through to the actual damage point;
-' the FEMA webmap is the same data without the experience's UI wrapper.
-'
-' (Tried appending &visibleLayers=NfcNhsPub_8332,193df725e5e-layer-20 to
-' force only NFC + ACUB on by default. The new Map Viewer choked on the
-' URL — the webmap didn't load at all. Reverted. Realistic fix is to
-' save a custom webmap in AGOL with the two layers preset visible and
-' point this URL there instead.)
-Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
+' Open the row's point on the FEMA-hosted ArcGIS Map Viewer with MDOT's NFC
+' FeatureServer (layer 353) side-loaded and a clean pin (find/marker/level) -
+' the same pattern as the Indiana/Wisconsin links below.
+' History: this used to open MDOT's curated NFC/NHS/ACUB webmap
+' (item 6a1702b9...), but that webmap carries a "Metropolitan Planning
+' Organizations" layer whose large region labels (e.g. "...Transportation
+' Coordinating Initiative") print right over the marker and read as if they
+' were the site's own name. Side-loading only the NFC layer drops a plain
+' pin with no MPO label. Trade-off: the curated ACUB overlay isn't shown
+' here anymore (urban/rural already comes from the classification), and if a
+' Map Viewer version can't render the url= layer the pin+zoom still resolve.
+Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fmdotgis.state.mi.us%2Farcgis%2Frest%2Fservices%2FWidget%2FNextGenPrFinderPub%2FFeatureServer%2F353&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 
 ' Indiana and Wisconsin don't have a curated combined NFC+ACUB webmap the
 ' way MI does, so these side-load the state's own live NFC FeatureServer

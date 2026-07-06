@@ -35,18 +35,6 @@ Public Sub BuildSourcesSheet()
     ws.Columns("B").ColumnWidth = 120
     mRow = 2
 
-    With ws.Cells(mRow, 2)
-        .Value = "Sources & Quirks"
-        .Font.Size = 20
-        .Font.Bold = True
-    End With
-    mRow = mRow + 1
-    Body ws, "Where every result comes from. SOURCES (top) lists each state's official public map and the data " & _
-        "service this tool reads; QUIRKS & CAVEATS (bottom) explains, in plain language, the things about that " & _
-        "data that shape the answer. This tool is a screening aid, not an authoritative source - read the " & _
-        "disclaimer on Start Here and verify every point on the official map."
-    mRow = mRow + 1
-
     ' ===================== SECTION 1: SOURCES =====================
     Section ws, "1.  SOURCES"
     Body ws, "For each state: the OFFICIAL PUBLIC MAP (open it to confirm a point yourself) and the DATA SERVICE " & _
