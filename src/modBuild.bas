@@ -180,6 +180,49 @@ Private Sub SectionLabel(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As St
     ws.Cells(r, 2).Font.Size = 12
 End Sub
 
+' Prominent red-bordered disclaimer box spanning B:C over `rowCount` rows.
+' Same wording on both products - this is the "not authoritative" contract
+' the user asked to have front and center. Kept in sync with modSources'
+' echo of it and with web/index.html's on-page disclaimer.
+Private Sub DisclaimerBlock(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal rowCount As Long)
+    Dim rng As Range, r As Long, hdr As String, body As String
+    hdr = "IMPORTANT - NOT AN AUTHORITATIVE FHWA OR ELIGIBILITY DETERMINATION"
+    body = "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
+        "candidates for a person to review, and may miss or mis-tag roads. It is not an authoritative source " & _
+        "for FHWA functional classification. EVERY coordinate must be verified by a human against the official " & _
+        "source map - use each row's NFC Map link and the Sources tab. Results are informational only and do " & _
+        "NOT constitute a federal-aid, funding, or eligibility determination. A point on or near an urban/rural " & _
+        "boundary is deliberately treated as Urban (within the search buffer; see the Sources tab) so boundary " & _
+        "roads are not missed - always confirm these manually."
+    Set rng = ws.Range(ws.Cells(firstRow, 2), ws.Cells(firstRow + rowCount - 1, 3))
+    rng.Merge
+    rng.Value = hdr & vbLf & body
+    rng.WrapText = True
+    rng.HorizontalAlignment = xlLeft
+    rng.VerticalAlignment = xlTop
+    rng.Font.Color = RGB(150, 0, 0)
+    rng.Interior.Color = RGB(255, 238, 238)
+    With rng.Borders
+        .LineStyle = xlContinuous
+        .Color = RGB(192, 0, 0)
+        .Weight = xlMedium
+    End With
+    ' Bold just the header line (merged text lives in the top-left cell).
+    ws.Cells(firstRow, 2).Characters(1, Len(hdr)).Font.Bold = True
+    For r = firstRow To firstRow + rowCount - 1
+        ws.Rows(r).RowHeight = 21
+    Next r
+End Sub
+
+' Small grey build/version stamp so a shared copy is traceable to its PR.
+Private Sub VersionLabel(ByVal ws As Worksheet, ByVal r As Long)
+    With ws.Cells(r, 2)
+        .Value = ProductTitle() & "  -  " & BUILD_REFERENCE
+        .Font.Size = 9
+        .Font.Color = RGB(130, 130, 130)
+    End With
+End Sub
+
 ' ---- Start Here -----------------------------------------------------------
 
 Private Sub BuildStartHere()
@@ -202,54 +245,59 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     TitleBlock ws, "RoadReviewer", _
         "Is it a federal-aid road? FHWA functional class + adjusted urban boundary checker."
 
-    ws.Range("B5").Value = "How to use:"
-    ws.Range("B5").Font.Bold = True
-    StepLine ws, 6, "1.  Pick your state below."
-    StepLine ws, 7, "2.  Paste your points on the Sites tab - the yellow columns (Latitude, Longitude, Description)."
-    StepLine ws, 8, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
+    DisclaimerBlock ws, 5, 6
 
-    LabelValue ws, 10, "State", NR_STATE, "MI"
-    LabelValue ws, 11, "Output Folder (optional)", NR_OUTFOLDER, ""
-    LabelValue ws, 12, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
-    AddStateValidation ws.Cells(10, 3)
-    AddButton ws, ws.Cells(11, 4).Left + 6, ws.Cells(11, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
+    ws.Range("B12").Value = "How to use:"
+    ws.Range("B12").Font.Bold = True
+    StepLine ws, 13, "1.  Pick your state below."
+    StepLine ws, 14, "2.  Paste your points on the Sites tab - the yellow columns (Latitude, Longitude, Description)."
+    StepLine ws, 15, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
-    NoteLine ws, 14, "Output Folder can stay blank - exports save next to this workbook. " & _
+    LabelValue ws, 17, "State", NR_STATE, "MI"
+    LabelValue ws, 18, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 19, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    AddStateValidation ws.Cells(17, 3)
+    AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
+
+    NoteLine ws, 21, "Output Folder can stay blank - exports save next to this workbook. " & _
         "AGOL Webmap URL is only needed for the AGOL Map column / Send-to-AGOL button."
-    NoteLine ws, 15, "Michigan, Indiana and Wisconsin road-class lookups are wired. Other states still get the " & _
-        "urban-boundary (ACUB) check. Every service queried is documented on the Sources tab."
+    NoteLine ws, 22, "Michigan, Indiana and Wisconsin road-class lookups are wired. Other states still get the " & _
+        "urban-boundary (ACUB) check. Every service, layer and caveat is documented on the Sources tab."
 
-    AddButton ws, 18, ws.Rows(17).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, 250, ws.Rows(17).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
-    AddButton ws, 18, ws.Rows(20).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
-    AddButton ws, 18, ws.Rows(23).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
-    AddButton ws, 215, ws.Rows(23).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
-    AddButton ws, 18, ws.Rows(26).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
-    AddButton ws, 18, ws.Rows(30).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 32, "Build / Reset repairs the layout; your Sites data is preserved."
+    AddButton ws, 18, ws.Rows(24).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 250, ws.Rows(24).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
+    AddButton ws, 18, ws.Rows(27).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
+    AddButton ws, 18, ws.Rows(30).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
+    AddButton ws, 215, ws.Rows(30).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
+    AddButton ws, 18, ws.Rows(33).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    AddButton ws, 18, ws.Rows(37).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 39, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 41
 End Sub
 
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     TitleBlock ws, "Site Inspector Review Tool", _
         "FEMA Public Assistance site inspection toolkit - classification, photos, FIRMettes and map pages."
 
-    StepLine ws, 5, "Fill in the job info, add points on the Sites tab, then run the numbered steps top to bottom."
+    DisclaimerBlock ws, 5, 6
 
-    LabelValue ws, 7, "Work Order (WO #)", NR_WO, ""
-    LabelValue ws, 8, "Impact (DI #)", NR_DI, ""
-    LabelValue ws, 9, "Disaster Number", NR_DISASTER, ""
-    LabelValue ws, 10, "Applicant", NR_APPLICANT, ""
-    LabelValue ws, 11, "State", NR_STATE, "MI"
-    LabelValue ws, 12, "Output Folder (optional)", NR_OUTFOLDER, ""
-    LabelValue ws, 13, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 14, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
-    AddStateValidation ws.Cells(11, 3)
-    AddButton ws, ws.Cells(12, 4).Left + 6, ws.Cells(12, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
+    StepLine ws, 12, "Fill in the job info, add points on the Sites tab, then run the numbered steps top to bottom."
+
+    LabelValue ws, 14, "Work Order (WO #)", NR_WO, ""
+    LabelValue ws, 15, "Impact (DI #)", NR_DI, ""
+    LabelValue ws, 16, "Disaster Number", NR_DISASTER, ""
+    LabelValue ws, 17, "Applicant", NR_APPLICANT, ""
+    LabelValue ws, 18, "State", NR_STATE, "MI"
+    LabelValue ws, 19, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 20, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 21, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
+    AddStateValidation ws.Cells(18, 3)
+    AddButton ws, ws.Cells(19, 4).Left + 6, ws.Cells(19, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
 
     ' Buffer must be a whole number between 1 and 1000 ft. Out-of-range
     ' values fall back to DEFAULT_BUFFER_FEET via modClassify.BufferFeet,
     ' but the validation catches mistakes at entry time.
-    With ws.Cells(14, 3).Validation
+    With ws.Cells(21, 3).Validation
         .Delete
         .Add Type:=xlValidateWholeNumber, AlertStyle:=xlValidAlertStop, _
             Operator:=xlBetween, Formula1:="1", Formula2:="1000"
@@ -258,33 +306,34 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
         .ShowError = True
     End With
 
-    NoteLine ws, 16, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
+    NoteLine ws, 23, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
         "Output Folder can stay blank - a OneDrive default is used and shown after each export."
-    NoteLine ws, 17, "Search buffer is the fallback radius when no road intersects the exact point. 200 ft is a good " & _
-        "default; lower it for dense urban grids, raise it for sparse rural networks."
-    NoteLine ws, 18, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab."
+    NoteLine ws, 24, "Search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
+        "urban-boundary check, min 200 ft). 200 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
+    NoteLine ws, 25, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab for every layer + caveat."
 
-    SectionLabel ws, 20, "1.  Classify Roads"
-    AddButton ws, 18, ws.Rows(21).Top, 200, 32, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, 228, ws.Rows(21).Top, 170, 32, "Re-run Failed Rows", "ReRunFailedRows"
+    SectionLabel ws, 27, "1.  Classify Roads"
+    AddButton ws, 18, ws.Rows(28).Top, 200, 32, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 228, ws.Rows(28).Top, 170, 32, "Re-run Failed Rows", "ReRunFailedRows"
 
-    SectionLabel ws, 24, "2.  Review Photos"
-    AddButton ws, 18, ws.Rows(25).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
+    SectionLabel ws, 31, "2.  Review Photos"
+    AddButton ws, 18, ws.Rows(32).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
 
-    SectionLabel ws, 28, "3.  Maps & FIRMettes"
-    AddButton ws, 18, ws.Rows(29).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(29).Top, 190, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
-    AddButton ws, 18, ws.Rows(32).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages"
-    AddButton ws, 218, ws.Rows(32).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    AddButton ws, 18, ws.Rows(35).Top, 250, 30, "Export Combined Map PDF", "ExportCombinedMapPdf"
+    SectionLabel ws, 35, "3.  Maps & FIRMettes"
+    AddButton ws, 18, ws.Rows(36).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(36).Top, 190, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
+    AddButton ws, 18, ws.Rows(39).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages"
+    AddButton ws, 218, ws.Rows(39).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
+    AddButton ws, 18, ws.Rows(42).Top, 250, 30, "Export Combined Map PDF", "ExportCombinedMapPdf"
 
-    SectionLabel ws, 38, "Exports & hand-off"
-    AddButton ws, 18, ws.Rows(39).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
-    AddButton ws, 218, ws.Rows(39).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
-    AddButton ws, 18, ws.Rows(42).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    SectionLabel ws, 45, "Exports & hand-off"
+    AddButton ws, 18, ws.Rows(46).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
+    AddButton ws, 218, ws.Rows(46).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
+    AddButton ws, 18, ws.Rows(49).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
 
-    AddButton ws, 18, ws.Rows(45).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 47, "Build / Reset repairs the layout; your Sites data is preserved."
+    AddButton ws, 18, ws.Rows(52).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 54, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 56
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)

@@ -177,12 +177,25 @@ try {
   Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }
 
+  Write-Host "=== Start Here disclaimer + version ===" -ForegroundColor Cyan
+  $start = $wb.Worksheets('Start Here')
+  $startBlob = ''
+  foreach ($cell in $start.UsedRange.Cells) { $startBlob += ([string]$cell.Value2) + "`n" }
+  if ($startBlob -notmatch 'NOT AN AUTHORITATIVE') { throw "Start Here is missing the disclaimer block" }
+  if ($startBlob -notmatch 'eligibility determination') { throw "Start Here disclaimer missing the eligibility clause" }
+  if ($startBlob -notmatch 'PR #') { throw "Start Here missing the PR/version label" }
+  Write-Host "  disclaimer block + version label present" -ForegroundColor Green
+
   Write-Host "=== Sources sheet content ===" -ForegroundColor Cyan
   $sources = $wb.Worksheets('Sources')
-  $usedText = [string]$sources.UsedRange.Cells(1, 2).Value2
+  $sourcesBlob = ''
+  foreach ($cell in $sources.UsedRange.Cells) { $sourcesBlob += ([string]$cell.Value2) + "`n" }
   $sourcesCellCount = $excel.WorksheetFunction.CountA($sources.UsedRange)
   Write-Host ("  Sources sheet non-empty cells: " + $sourcesCellCount)
   if ($sourcesCellCount -lt 20) { throw "Sources sheet looks empty" }
+  if ($sourcesBlob -notmatch 'BOUNDARY ROADS') { throw "Sources sheet missing the boundary-roads caveat" }
+  if ($sourcesBlob -notmatch 'does NOT authoritatively') { throw "Sources sheet missing the not-authoritative disclaimer" }
+  Write-Host "  boundary caveat + disclaimer present on Sources" -ForegroundColor Green
 
   # Clean up the test row so the saved file stays empty
   $sites.Range($sites.Cells($FirstDataRow, 4), $sites.Cells($FirstDataRow, 6)).ClearContents()

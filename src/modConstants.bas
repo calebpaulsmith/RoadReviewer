@@ -19,6 +19,10 @@ Public Const PRODUCT_INSPECTOR As String = "Inspector"
 ' Hidden workbook-level defined name that stores which product this file is.
 Public Const NM_PRODUCT As String = "RR_Product"
 
+' Version stamp shown on Start Here + the Sources sheet so a shared copy can
+' be traced back to the PR / build it came from. Bump this on each release.
+Public Const BUILD_REFERENCE As String = "PR #19"
+
 ' ---- Sheet names ----
 Public Const SH_START As String = "Start Here"
 Public Const SH_SITES As String = "Sites"

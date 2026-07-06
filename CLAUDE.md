@@ -1412,6 +1412,43 @@ the column order changed and the header moved to row 2. Old files keep
 working as-is (their embedded VBA is self-consistent); new work should
 start from the new deliverables.
 
+### Front-page disclaimer, boundary handling, citation page, version stamp (PR #19)
+
+Four additions after the split, per user direction:
+
+1. **Front-page disclaimer** (`modBuild.DisclaimerBlock`) — a red-bordered
+   box near the top of Start Here on **both** products: the tool does NOT
+   authoritatively identify FHWA roads, it flags high-probability
+   candidates for human review, is not authoritative, every coordinate
+   must be verified by a human on the source map, and results do not
+   constitute a federal-aid / funding / eligibility determination. Same
+   wording echoed on the Sources sheet ("Read this first") and in
+   `web/index.html`. Adding it reflowed both Start Here layouts (buttons
+   are positioned by `ws.Rows(N).Top`, so every row index below the box
+   shifted down; named-range cells moved accordingly — the skeleton
+   verifier checks `RefersTo` presence, not fixed rows, so it still
+   passes).
+2. **Boundary-road handling is intentional and now documented.** The
+   answer to "does a point on/near an urban boundary get counted Urban?"
+   is **yes** — the ACUB check's fallback radius has a 200 ft floor
+   (`ACUB_MIN_BUFFER_FEET`, §7a increment 4), so a point on a
+   boundary-forming road or a few feet onto the rural side resolves
+   **Urban**, biasing toward a federal-aid flag for review rather than
+   silently dropping a boundary road. This is now spelled out on the
+   Sources sheet ("BOUNDARY ROADS") and in the inspector's Search-buffer
+   note, not just in this design doc.
+3. **Citation page** = the `Sources` sheet (`modSources.bas`), already
+   added in the split; PR #19 enriched it with the disclaimer echo, the
+   boundary caveat, and a verified-on/version footer. It mirrors
+   `web/sources.html` (org, service URL, exact layer, fields read, every
+   schema quirk per state).
+4. **Version/PR stamp** — `BUILD_REFERENCE` constant in `modConstants`
+   (`"PR #19"`), shown as a small grey label at the bottom of Start Here
+   (`modBuild.VersionLabel`) and in the Sources footer, so a shared copy
+   is traceable to the build/PR it came from. Bump it each release.
+   `verify-skeleton.ps1` asserts the disclaimer text, the eligibility
+   clause, the `PR #` label, and the `BOUNDARY ROADS` caveat.
+
 ---
 
 ## 8. Design decisions (resolved) and remaining open questions

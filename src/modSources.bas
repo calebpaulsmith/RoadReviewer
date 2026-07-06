@@ -24,6 +24,15 @@ Public Sub BuildSourcesSheet()
     Body ws, "Every service this tool queries, with the exact layer, the fields read, and the quirks that shape the results."
     mRow = mRow + 1
 
+    Section ws, "Read this first - what this tool is (and isn't)"
+    Body ws, "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
+        "candidates for a person to review, and can miss or mis-tag a road. It is not an authoritative source for " & _
+        "FHWA functional classification."
+    Body ws, "Every coordinate must be verified by a human against the official source map before it is relied on - " & _
+        "use each Sites row's NFC Map link and the citations below. Results are informational only and do NOT " & _
+        "constitute a federal-aid, funding, or eligibility determination."
+    mRow = mRow + 1
+
     Section ws, "How the federal-aid check works"
     Body ws, "The FHWA functional class comes from each state's own roads layer. Urban vs Rural comes from the " & _
         "nationwide 2020 Adjusted Urban Boundary (ACUB) polygons - never from the state layer, even when it " & _
@@ -32,9 +41,13 @@ Public Sub BuildSourcesSheet()
         "Minor Collector or greater. Non-federal-aid classes: Rural Local, Urban Local, Rural Minor Collector. " & _
         "The tool classifies the road, never the project - the reviewer decides what federal-aid status means " & _
         "for a given work order."
-    Body ws, "Every lookup tries the exact point first, then retries with a fallback radius (default 200 ft). The " & _
-        "urban-boundary check always uses at least 200 ft, so a point a few feet outside the polygon - e.g. on " & _
-        "the wrong side of a road that itself touches the boundary - still resolves Urban."
+    Body ws, "Every lookup tries the exact point first, then retries with a fallback radius (the Search buffer, " & _
+        "default 200 ft)."
+    Body ws, "BOUNDARY ROADS: the urban-boundary check always uses a radius of at least 200 ft. So when a GPS point " & _
+        "sits ON or just OUTSIDE an urban boundary - e.g. on a road that itself forms the boundary, or a few feet " & _
+        "onto the rural side - the point is deliberately treated as URBAN (which leans toward a federal-aid flag " & _
+        "for review) rather than being missed. This is intentional: it is safer to over-flag a boundary road for " & _
+        "human review than to silently drop it. Always confirm boundary cases manually on the source map."
     mRow = mRow + 1
 
     Section ws, "Michigan - MDOT"
@@ -106,6 +119,11 @@ Public Sub BuildSourcesSheet()
     Body ws, "No functional-class layer is wired for these states yet. The ACUB urban/rural check still runs on " & _
         "every row; the Federal Aid Status column reads ""ACUB only - class lookup not wired for this state"" " & _
         "so nothing silently pretends to be classified."
+    mRow = mRow + 1
+
+    Body ws, "All layer names, fields and quirks were confirmed against each service's live REST metadata " & _
+        "(?f=json), 2026-07-01 through 2026-07-05. This tool classifies the road, never the project. " & _
+        ProductTitle() & " - " & BUILD_REFERENCE & "."
 
     HideGridlines ws
     ws.Tab.Color = RGB(120, 120, 120)
