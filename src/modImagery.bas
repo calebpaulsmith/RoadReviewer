@@ -27,8 +27,8 @@ Public Sub OpenImageryForSelection()
     End If
 
     If rows.Count > MAX_AUTO_OPEN Then
-        If MsgBox("This will open about " & rows.Count * 4 & " browser tabs (" & rows.Count & _
-            " sites x 4 sources). Continue?", vbQuestion + vbYesNo, "Review Imagery") <> vbYes Then Exit Sub
+        If MsgBox("This will open about " & rows.Count * 5 & " browser tabs (" & rows.Count & _
+            " sites x 5 sources). Continue?", vbQuestion + vbYesNo, "Review Imagery") <> vbYes Then Exit Sub
     End If
 
     Dim r As Variant, opened As Long
@@ -66,6 +66,7 @@ Private Sub OpenImageryForRow(ByVal ws As Worksheet, ByVal r As Long)
     OpenUrl BuildUrl(URL_GMAP, lat, lon)
     OpenUrl BuildUrl(URL_STREETVIEW, lat, lon)
     OpenUrl BuildUrl(URL_BING, lat, lon)
+    OpenUrl BuildUrl(URL_GEARTH, lat, lon)
     OpenUrl BuildUrl(URL_FEMAVIEW, lat, lon)
 End Sub
 

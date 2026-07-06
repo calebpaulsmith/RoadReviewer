@@ -24,11 +24,16 @@ Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 ' itself touches the boundary should still resolve Urban.
 Private Const ACUB_MIN_BUFFER_FEET As Long = 200
 
-Public Sub ClassifyAllRows()
+' The one primary action (friction fix: the old separate Geocode ->
+' Classify ordering trap is gone). Check Roads geocodes any row that has
+' an Address but no coordinates, then classifies every row.
+Public Sub CheckRoads()
     ClassifyRows False
 End Sub
 
-Public Sub ReRunFailedClassifications()
+' Re-runs only rows whose Federal Aid Status starts with "Failed - ",
+' which includes geocode failures (F12).
+Public Sub ReRunFailedRows()
     ClassifyRows True
 End Sub
 
@@ -40,7 +45,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
     Set ws = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
-        If Not gHeadless Then MsgBox "No site rows found. Add points on the Sites sheet first.", vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox "No site rows found. Add points on the Sites sheet first.", vbInformation, "Check Roads"
         Exit Sub
     End If
 
@@ -54,7 +59,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
     stateHasNfc = NfcWired(stateCode)
     If Not stateHasNfc Then
         If Not gHeadless Then MsgBox "Road-class (NFC) lookup is not yet wired for " & stateCode & "." & vbCrLf & _
-            "The ACUB urban-boundary check will still run on every row.", vbInformation, "Classify Roads"
+            "The ACUB urban-boundary check will still run on every row.", vbInformation, "Check Roads"
     End If
 
     For r = SITES_FIRST_DATA_ROW To last
@@ -63,7 +68,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         End If
     Next r
     If total = 0 Then
-        If Not gHeadless Then MsgBox IIf(onlyFailed, "No failed rows to re-run.", "No site rows to classify."), vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox IIf(onlyFailed, "No failed rows to re-run.", "No site rows to classify."), vbInformation, "Check Roads"
         Exit Sub
     End If
 
@@ -88,9 +93,9 @@ NextRow:
 Done:
     ClearStatus
     If Err.Number <> 0 Then
-        If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Classify Roads"
+        If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Check Roads"
     Else
-        If Not gHeadless Then MsgBox "Classified " & processed & " row(s).", vbInformation, "Classify Roads"
+        If Not gHeadless Then MsgBox "Classified " & processed & " row(s).", vbInformation, "Check Roads"
     End If
 End Sub
 
@@ -111,6 +116,22 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     TraceLine "ClassifyOneRow row=" & r & " name=" & CStr(ws.Cells(r, COL_SITENAME).Value)
     ' Idempotent: clear prior lookup output before writing (N5).
     ClearLookupCells ws, r
+
+    ' Auto-geocode (F4, folded into Check Roads): a row with an Address but
+    ' no valid coordinates gets one Census geocoder pass first. Coordinates
+    ' already typed into the row are never overwritten. A geocode failure
+    ' lands in Federal Aid Status with the Failed prefix so Re-run Failed
+    ' Rows retries it along with everything else.
+    If Not HasValidCoords(ws, r) Then
+        If Not IsBlank(ws.Cells(r, COL_ADDRESS).Value) Then
+            Dim geoErr As String
+            If Not GeocodeRow(ws, r, geoErr) Then
+                ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "geocode: " & geoErr
+                TraceLine "  geocode failed: " & geoErr
+                Exit Sub
+            End If
+        End If
+    End If
 
     If Not HasValidCoords(ws, r) Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "no/invalid coordinates"

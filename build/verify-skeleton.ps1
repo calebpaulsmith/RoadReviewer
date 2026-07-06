@@ -1,6 +1,11 @@
 # Verification §5.2 + §5.3: skeleton present, every button wired, Sites
-# hyperlinks/validation working. Pure inspection - does NOT call out to
-# any remote service.
+# hyperlinks/validation working, product-specific surface correct. Pure
+# inspection - does NOT call out to any remote service.
+#
+# Product-aware: reads the hidden RR_Product defined name baked in by
+# build.ps1 (Standard -> RoadReviewer.xlsm, Inspector -> Site Inspector
+# Review Tool.xlsm) and asserts that product's expected inputs, buttons
+# and hidden columns. Run it once per built workbook.
 
 param([string]$XlsmPath = (Join-Path $env:TEMP 'RoadReviewer.xlsm'))
 
@@ -8,7 +13,12 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
-$expectedSheets = @('Home','Setup','Sites','1. Classify Roads','2. Review Imagery','3. Maps & FIRMettes')
+$expectedSheets = @('Start Here', 'Sites', 'Sources')
+
+# New canonical Sites layout: row 1 toolbar, row 2 header, data from row 3.
+$HeaderRow = 2
+$FirstDataRow = 3
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -16,6 +26,15 @@ $excel.DisplayAlerts = $false
 try {
   $wb = $excel.Workbooks.Open($XlsmPath, $false, $true)   # ReadOnly=true so we don't dirty the file
   $proj = $wb.VBProject
+
+  # ---- Which product is this file? ----
+  $product = 'Inspector'   # missing name defaults to Inspector, same as the VBA
+  try {
+    $refersTo = [string]$wb.Names('RR_Product').RefersTo   # looks like ="Standard"
+    if ($refersTo -match 'Standard') { $product = 'Standard' }
+  } catch { }
+  $isInspector = ($product -eq 'Inspector')
+  Write-Host ("=== Product: {0} ===" -f $product) -ForegroundColor Cyan
 
   Write-Host "=== Sheets ===" -ForegroundColor Cyan
   $present = @{}
@@ -42,17 +61,18 @@ try {
   Write-Host ("  found " + $publicSubs.Count + " callable subs across modules")
 
   Write-Host "=== Buttons ===" -ForegroundColor Cyan
-  $btnCount = 0; $orphans = @()
+  $btnCount = 0; $orphans = @(); $onActions = @{}
   foreach ($ws in $wb.Worksheets) {
     foreach ($sh in $ws.Shapes) {
       $oa = ""
       try { $oa = [string]$sh.OnAction } catch {}
       if ($oa) {
         $btnCount++
+        $onActions[$oa] = $true
         $resolved = $publicSubs[$oa]
         $caption = $sh.TextFrame2.TextRange.Text
         $status = if ($resolved) { "OK   ($resolved)" } else { "ORPHAN"; $orphans += "$($ws.Name)::$caption -> $oa" }
-        Write-Host ("  [{0,-22}] {1,-40} -> {2,-32} {3}" -f $ws.Name, $caption, $oa, $status)
+        Write-Host ("  [{0,-12}] {1,-44} -> {2,-28} {3}" -f $ws.Name, $caption, $oa, $status)
       }
     }
   }
@@ -64,45 +84,86 @@ try {
     Write-Host ("  $btnCount buttons, every OnAction resolves") -ForegroundColor Green
   }
 
+  # Product button surface: shared actions everywhere; workflow-3 actions
+  # inspector-only.
+  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','ExportSitesCsv','ExportSitesToKML','SendSitesToAgolMap','BuildWorkbook')
+  $inspectorActions = @('DownloadFirmettes','ReRunFailedFirmettes','PrepareMapPages','AddMapPage','ExportCombinedMapPdf')
+  foreach ($a in $sharedActions) {
+    if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
+  }
+  foreach ($a in $inspectorActions) {
+    if ($isInspector -and -not $onActions.ContainsKey($a)) { throw "Inspector build missing button for: $a" }
+    if (-not $isInspector -and $onActions.ContainsKey($a)) { throw "Standard build must NOT have a button for: $a" }
+  }
+  Write-Host "  product button surface correct" -ForegroundColor Green
+
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
-  $expectedNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobState','JobOutputFolder','JobAgolMap','JobBufferFeet')
-  foreach ($n in $expectedNames) {
+  $sharedNames = @('JobState','JobOutputFolder','JobAgolMap')
+  $inspectorNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobBufferFeet')
+  foreach ($n in $sharedNames) {
     try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
   }
+  foreach ($n in $inspectorNames) {
+    $found = $true
+    try { $r = $wb.Names($n) } catch { $found = $false }
+    if ($isInspector) {
+      if (-not $found) { throw "Inspector build missing named range: $n" }
+      Write-Host ("  " + $n + " -> " + $r.RefersTo)
+    } else {
+      if ($found) { throw "Standard build must NOT have named range: $n" }
+    }
+  }
+  Write-Host "  product named-range surface correct" -ForegroundColor Green
 
-  Write-Host "=== Sites headers ===" -ForegroundColor Cyan
+  Write-Host "=== Sites headers (row $HeaderRow) ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')
-  $expectedHeaders = @('WO #','DI #','Site #','Site Name','Address','Latitude','Longitude','Category','Description','Costs','Work Completion','Geocode Status','Google Maps','Street View','Bing','FEMA Viewer','FIRMette Portal','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
   for ($c = 1; $c -le $expectedHeaders.Count; $c++) {
-    $got = [string]$sites.Cells(1,$c).Value2
+    $got = [string]$sites.Cells($HeaderRow, $c).Value2
     $want = $expectedHeaders[$c-1]
     if ($got -ne $want) { throw ("Header mismatch at col " + $c + ": got '" + $got + "', want '" + $want + "'") }
   }
   Write-Host ("  all " + $expectedHeaders.Count + " headers match constants") -ForegroundColor Green
+
+  Write-Host "=== Product column hiding ===" -ForegroundColor Cyan
+  # Inspector-only columns: WO(1), DI(2), FIRMette Status(26), Map Status(27)
+  foreach ($c in @(1, 2, 26, 27)) {
+    $hidden = [bool]$sites.Columns($c).Hidden
+    if ($isInspector -and $hidden) { throw "Inspector build should show column $c" }
+    if (-not $isInspector -and -not $hidden) { throw "Standard build should hide column $c" }
+  }
+  Write-Host ("  inspector-only columns " + $(if ($isInspector) { 'visible' } else { 'hidden' }) + " as expected") -ForegroundColor Green
+
+  Write-Host "=== Sites toolbar (row 1) ===" -ForegroundColor Cyan
+  $toolbarNames = @()
+  foreach ($sh in $sites.Shapes) { $toolbarNames += $sh.Name }
+  foreach ($n in @('RR_CheckRoads', 'RR_PhotoLinks')) {
+    if ($toolbarNames -notcontains $n) { throw "Sites toolbar missing shape: $n" }
+  }
+  Write-Host "  Check Roads + Photo Links buttons present on the Sites sheet" -ForegroundColor Green
 
   Write-Host "=== Sites hyperlink resolution (test coord) ===" -ForegroundColor Cyan
   # Use the Kalamazoo test coord. We have to open in r/w to write cells; reopen.
   $wb.Close($false)
   $wb = $excel.Workbooks.Open($XlsmPath, $false, $false)
   $sites = $wb.Worksheets('Sites')
-  $sites.Cells(2, 4).Value = 'Test - Kalamazoo'   # Site Name
-  $sites.Cells(2, 6).Value = 42.28536              # Lat
-  $sites.Cells(2, 7).Value = -85.57025             # Lon
+  $sites.Cells($FirstDataRow, 4).Value2 = 'Test - Kalamazoo'   # Site Name
+  $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536      # Lat
+  $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='FEMA Viewer'; 17='FIRMette Portal'; 18='NFC Map' }
+  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='Google Earth'; 17='FEMA Viewer'; 18='FIRMette Portal'; 19='NFC Map' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
-    $cell = $sites.Cells(2, $k)
+    $cell = $sites.Cells($FirstDataRow, $k)
     $f = [string]$cell.Formula
     $v = [string]$cell.Value2
-    # Formula should reference the lat/lon cells
     if (-not $f.StartsWith('=')) { throw "Col $k formula empty: $f" }
-    Write-Host ("  col {0,2} ({1,-21}) shows: '{2}'  -- formula intact: {3} chars" -f $k, $linkCols[$k], $v, $f.Length)
+    if (-not $v) { throw ("Col $k ({0}) shows empty with a valid coord" -f $linkCols[$k]) }
+    Write-Host ("  col {0,2} ({1,-16}) shows: '{2}'  -- formula intact: {3} chars" -f $k, $linkCols[$k], $v, $f.Length)
   }
 
   Write-Host "=== Sites validation ===" -ForegroundColor Cyan
-  $latVal = $sites.Cells(2, 6).Validation
-  $lonVal = $sites.Cells(2, 7).Validation
+  $latVal = $sites.Cells($FirstDataRow, 5).Validation
+  $lonVal = $sites.Cells($FirstDataRow, 6).Validation
   # xlValidateDecimal = 2
   Write-Host ("  Latitude  validation type=" + $latVal.Type + " (2=Decimal)  formula1=" + $latVal.Formula1 + "  formula2=" + $latVal.Formula2)
   Write-Host ("  Longitude validation type=" + $lonVal.Type + " (2=Decimal)  formula1=" + $lonVal.Formula1 + "  formula2=" + $lonVal.Formula2)
@@ -110,17 +171,24 @@ try {
   if ($latVal.Formula1 -ne '-90' -or $latVal.Formula2 -ne '90') { throw "Latitude validation range wrong" }
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
-  Write-Host "=== Conditional formatting on Federal Aid Status column ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells(2,19), $sites.Cells(2,24))
+  Write-Host "=== Conditional formatting on Federal Aid Status columns ===" -ForegroundColor Cyan
+  $r = $sites.Range($sites.Cells($FirstDataRow, 20), $sites.Cells($FirstDataRow, 25))
   $fcCount = $r.FormatConditions.Count
-  Write-Host ("  format conditions count on class..eligibility row 2: " + $fcCount)
+  Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }
 
+  Write-Host "=== Sources sheet content ===" -ForegroundColor Cyan
+  $sources = $wb.Worksheets('Sources')
+  $usedText = [string]$sources.UsedRange.Cells(1, 2).Value2
+  $sourcesCellCount = $excel.WorksheetFunction.CountA($sources.UsedRange)
+  Write-Host ("  Sources sheet non-empty cells: " + $sourcesCellCount)
+  if ($sourcesCellCount -lt 20) { throw "Sources sheet looks empty" }
+
   # Clean up the test row so the saved file stays empty
-  $sites.Range($sites.Cells(2,4), $sites.Cells(2,7)).ClearContents()
+  $sites.Range($sites.Cells($FirstDataRow, 4), $sites.Cells($FirstDataRow, 6)).ClearContents()
   $wb.Save()
 
-  Write-Host "VERIFICATION PASSED" -ForegroundColor Green
+  Write-Host "VERIFICATION PASSED ($product)" -ForegroundColor Green
   $wb.Close($true)
 }
 catch {

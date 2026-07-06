@@ -6,7 +6,7 @@ Option Explicit
 ' reviewer can take the whole hand-off in one file.
 
 Public Sub ExportSitesCsv()
-    Dim ws As Worksheet, last As Long, r As Long, c As Long, line As String, csv As String
+    Dim ws As Worksheet, last As Long, r As Long, csv As String
     Set ws = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
@@ -15,20 +15,11 @@ Public Sub ExportSitesCsv()
     End If
 
     ' Header row.
-    For c = 1 To COL_LAST
-        line = line & IIf(c > 1, ",", "") & CsvField(CStr(ws.Cells(SITES_HEADER_ROW, c).Value))
-    Next c
-    csv = line & vbCrLf
+    csv = CsvLine(ws, SITES_HEADER_ROW, True) & vbCrLf
 
     ' Data rows (skip fully-empty rows).
     For r = SITES_FIRST_DATA_ROW To last
-        If Not RowIsEmpty(ws, r) Then
-            line = ""
-            For c = 1 To COL_LAST
-                line = line & IIf(c > 1, ",", "") & CsvField(CellText(ws, r, c))
-            Next c
-            csv = csv & line & vbCrLf
-        End If
+        If Not RowIsEmpty(ws, r) Then csv = csv & CsvLine(ws, r, False) & vbCrLf
     Next r
 
     Dim folder As String, file As String
@@ -37,7 +28,7 @@ Public Sub ExportSitesCsv()
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export CSV"
         Exit Sub
     End If
-    file = folder & "RoadReviewer Sites.csv"
+    file = folder & ProductTitle() & " Sites.csv"
 
     If Not WriteCsvFile(file, csv) Then
         If Not gHeadless Then MsgBox "Could not write the CSV (is it open in another program?).", vbExclamation, "Export CSV"
@@ -46,12 +37,46 @@ Public Sub ExportSitesCsv()
     If Not gHeadless Then MsgBox "Exported the Sites table to:" & vbCrLf & file, vbInformation, "Export CSV"
 End Sub
 
+' One CSV line for a row, product-filtered. The comma sits between EMITTED
+' columns, counted separately from the loop index - keying the separator
+' off "is the line still empty" would silently swallow leading empty
+' fields (e.g. a blank Site #) and shift the whole row left by one.
+Private Function CsvLine(ByVal ws As Worksheet, ByVal r As Long, ByVal isHeader As Boolean) As String
+    Dim c As Long, emitted As Long, line As String
+    For c = 1 To COL_LAST
+        If ColumnInProduct(c) Then
+            If emitted > 0 Then line = line & ","
+            If isHeader Then
+                line = line & CsvField(CStr(ws.Cells(r, c).Value))
+            Else
+                line = line & CsvField(CellText(ws, r, c))
+            End If
+            emitted = emitted + 1
+        End If
+    Next c
+    CsvLine = line
+End Function
+
+' Inspector-only columns are dropped from the standard product's CSV, same
+' set the Sites sheet hides (modBuild.ApplyProductColumns).
+Private Function ColumnInProduct(ByVal c As Long) As Boolean
+    If ProductIsInspector() Then
+        ColumnInProduct = True
+        Exit Function
+    End If
+    Select Case c
+        Case COL_WO, COL_DI, COL_FIRMSTATUS, COL_MAPSTATUS: ColumnInProduct = False
+        Case Else: ColumnInProduct = True
+    End Select
+End Function
+
 ' For hyperlink-formula columns, export the resolved URL rather than "Map".
 Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Long) As String
     Select Case c
         Case COL_GMAP: CellText = BuildUrl(URL_GMAP, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_STREETVIEW: CellText = BuildUrl(URL_STREETVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_BING: CellText = BuildUrl(URL_BING, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
+        Case COL_GEARTH: CellText = BuildUrl(URL_GEARTH, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FEMAVIEW: CellText = BuildUrl(URL_FEMAVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_FIRMPORTAL: CellText = BuildUrl(URL_FIRMPORTAL, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case COL_NFCMAP: CellText = NfcMapUrlForRow(ws, r)
@@ -60,7 +85,7 @@ Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Lon
     End Select
     ' Blank the link columns when the row has no coordinates.
     Select Case c
-        Case COL_GMAP, COL_STREETVIEW, COL_BING, COL_FEMAVIEW, COL_FIRMPORTAL, COL_NFCMAP, COL_AGOLMAP
+        Case COL_GMAP, COL_STREETVIEW, COL_BING, COL_GEARTH, COL_FEMAVIEW, COL_FIRMPORTAL, COL_NFCMAP, COL_AGOLMAP
             If Not HasValidCoords(ws, r) Then CellText = ""
     End Select
 End Function

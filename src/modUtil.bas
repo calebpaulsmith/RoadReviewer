@@ -37,6 +37,44 @@ Public Sub SetTrace(ByVal path As String)
     On Error GoTo 0
 End Sub
 
+' ---- Product identity ------------------------------------------------------
+' Which of the two products this workbook is (PRODUCT_STANDARD /
+' PRODUCT_INSPECTOR) is baked in at build time as a hidden defined name, so
+' it survives save/reopen and the in-Excel "Build / Reset Workbook" button
+' rebuilds the same product. build.ps1 calls SetProduct via Application.Run
+' before running BuildWorkbook.
+
+Public Sub SetProduct(ByVal productName As String)
+    On Error Resume Next
+    ThisWorkbook.Names(NM_PRODUCT).Delete
+    On Error GoTo 0
+    ThisWorkbook.Names.Add Name:=NM_PRODUCT, RefersTo:="=""" & productName & """", Visible:=False
+End Sub
+
+' Missing/garbled name defaults to Inspector - the superset product - so a
+' workbook built before this flag existed keeps its full behavior.
+Public Function ProductName() As String
+    Dim v As String
+    On Error Resume Next
+    v = ThisWorkbook.Names(NM_PRODUCT).RefersTo   ' looks like ="Standard"
+    On Error GoTo 0
+    v = Replace(Replace(v, "=", ""), """", "")
+    If v <> PRODUCT_STANDARD Then v = PRODUCT_INSPECTOR
+    ProductName = v
+End Function
+
+Public Function ProductIsInspector() As Boolean
+    ProductIsInspector = (ProductName() = PRODUCT_INSPECTOR)
+End Function
+
+Public Function ProductTitle() As String
+    If ProductIsInspector() Then
+        ProductTitle = "Site Inspector Review Tool"
+    Else
+        ProductTitle = "RoadReviewer"
+    End If
+End Function
+
 Public Sub TraceLine(ByVal txt As String)
     If Len(gTracePath) = 0 Then Exit Sub
     Dim fnum As Integer
@@ -70,7 +108,7 @@ Public Function SitesSheet() As Worksheet
     Set ws = SheetByName(SH_SITES)
     If ws Is Nothing Then
         Err.Raise vbObjectError + 1, "SitesSheet", _
-            "The '" & SH_SITES & "' sheet is missing. Run BuildWorkbook from the Home sheet first."
+            "The '" & SH_SITES & "' sheet is missing. Click Build / Reset Workbook on the Start Here sheet first."
     End If
     Set SitesSheet = ws
 End Function

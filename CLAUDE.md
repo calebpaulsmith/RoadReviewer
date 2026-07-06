@@ -1,11 +1,24 @@
 # RoadReviewer
 
-A FEMA Public Assistance Site Inspector toolkit. Replaces and consolidates two
+A FEMA Public Assistance road-review toolkit. Replaces and consolidates two
 prototype workbooks (`GPS Checker - TN updated 3.5.2026.xlsm` and
-`Site Inspector Tool 1.xlsm`) into a single, polished, macro-driven Excel
-workbook that staff can actually use without training.
+`Site Inspector Tool 1.xlsm`) into polished, macro-driven Excel workbooks
+that staff can actually use without training.
 
-Target users: FEMA PA Site Inspectors, most of whom will not use anything
+**Two products are built from one shared `src/` tree** (split decided
+2026-07-05; see §7c for the full design):
+
+1. **`RoadReviewer.xlsm`** (standard) — for PDMGs, state/local partners and
+   project reviewers. Road classification + photo-source links only; three
+   sheets (Start Here / Sites / Sources); inputs are just State, an optional
+   Output Folder (blank = next to the workbook) and an optional AGOL webmap
+   URL. "Pick the state, paste lat/lon, click Check Roads."
+2. **`Site Inspector Review Tool.xlsm`** (inspector) — everything the
+   standard product does plus WO/DI/Disaster/Applicant job stamping, batch
+   FIRMette download, MapPages and the combined-map PDF. Same three-sheet
+   shape.
+
+Target users: FEMA PA staff and partners, most of whom will not use anything
 complicated. Target platform: Excel on a hardened government-issued Windows
 laptop. No add-ins, no PowerShell, no admin rights — only what is already
 installed.
@@ -224,9 +237,11 @@ hand-rolled JSON parsing.
 
 ### 3.1 Functional
 
-- **F1. One workbook.** A single `.xlsm` is the deliverable. Proposed
-  filename `RoadReviewer.xlsm`. **(decided: single workbook, three workflow
-  sheets, one shared Sites table.)**
+- **F1. One workbook** ~~A single `.xlsm` is the deliverable~~ —
+  **superseded 2026-07-05 (§7c): two workbooks are now built from the one
+  shared `src/` tree** (`RoadReviewer.xlsm` standard + `Site Inspector
+  Review Tool.xlsm` inspector), each with the same three-sheet shape
+  (Start Here / Sites / Sources) and one shared Sites table.
 - **F2. Single source of truth.** All workflows read from one `Sites`
   table on one sheet. The user enters address *or* lat/lon once and never
   retypes it.
@@ -667,7 +682,7 @@ which is harmless here.
 |---|---|---|---|---|---|
 | 1 | Higher-class road | `39.7684` | `-86.1581` | `6` (Minor Collector), downtown Indianapolis / Monument Circle area, route_id `549095041900000R1` | `5` (Active) |
 | 2 | Higher-class road | `39.4234` | `-86.7628` | `3` (Principal Arterial - Other), near Martinsville, route_id `20000002310000001` | `5` (Active) |
-| 3 | Local road | `39.9876` | `-86.0128` | `7` (Local), rural Hancock County, route_id `52901903520000001` | `5` (Active) |
+| 3 | Local road | `39.9876` | `-86.0128` | `7` (Local), route_id `52901903520000001` — originally logged as "rural Hancock County", but the 2026-07-05 verify-classify run showed the point is at the Marion/Hamilton county line INSIDE the `Indianapolis, IN` ACUB polygon, so the correct verdict is "Non-federal aid - Urban Local" (the class code was the live-verified part) | `5` (Active) |
 
 ### 4.2b Wisconsin road classification (V1)
 
@@ -893,33 +908,47 @@ These came up reading the prototypes; capturing them so they aren't lost.
 .github/workflows/pages.yml       deploys web/ to GitHub Pages on push to main (§7b)
 GPS Checker - TN updated 3.5.2026.xlsm   prototype 1 (reference, do not modify)
 Site Inspector Tool 1.xlsm              prototype 2 (reference, do not modify)
-RoadReviewer.xlsm                       V1 deliverable — committed for easy access; rebuild
-                                          via `build\build.ps1` after any src/ change
-src/                                    V1 VBA source (importable .bas modules)
-  modConstants.bas                      sheet names, column indices, URLs, FunctionalSystem domain,
-                                          FIRMette poll constants, MapPages layout constants
-  modUtil.bas                           shared helpers + gHeadless/gTrace plumbing
-                                          (Sites-sheet binder, URL builder, WaitSeconds, CleanFileName)
+RoadReviewer.xlsm                       Standard product (PDMGs/partners/reviewers) — committed;
+                                          rebuild via `build\build.ps1` after any src/ change
+Site Inspector Review Tool.xlsm         Inspector product (full toolkit) — committed; built from
+                                          the SAME src/ tree by the same script (§7c)
+src/                                    Shared VBA source (importable .bas modules, both products)
+  modConstants.bas                      product ids, sheet names, column indices, URLs,
+                                          FunctionalSystem domain, FIRMette poll constants,
+                                          MapPages layout constants
+  modUtil.bas                           shared helpers + gHeadless/gTrace plumbing + product
+                                          identity (SetProduct / ProductIsInspector / ProductTitle)
   modHttp.bas                           browser-UA GET + narrow JSON extraction (VBScript.RegExp)
                                           + HttpDownloadPdf (binary PDF via ADODB.Stream)
-  modBuild.bas                          BuildWorkbook — constructs every sheet/range/button at run time
-  modClassify.bas                       Workflow 1 — NFC + ACUB + route name + eligibility (F7/F12)
-  modGeocode.bas                        Census one-line geocoder → lat/lon (F4)
-  modImagery.bas                        Workflow 2 — open curated imagery set for selected rows
-  modMaps.bas                           Workflow 3 — FIRMette download (FEMA GP service),
-                                          MapPages layout, ExportCombinedMapPdf, KML export
-  modExport.bas                         Sites table → CSV with resolved link URLs (F10)
+  modBuild.bas                          BuildWorkbook — product-branched Start Here + Sites
+                                          (toolbar row, tints, product column-hiding)
+  modSources.bas                        Sources sheet — per-state citations + quirks (§7c)
+  modClassify.bas                       Check Roads — geocode + NFC + ACUB + route name +
+                                          federal-aid verdict, re-run-failed (F7/F12)
+  modGeocode.bas                        GeocodeRow helper — Census one-line geocoder, called
+                                          per-row from Check Roads (F4; no standalone button)
+  modImagery.bas                        open curated photo-link set (incl. Google Earth) for
+                                          selected rows
+  modMaps.bas                           Inspector workflow 3 — FIRMette download (FEMA GP
+                                          service), MapPages layout, ExportCombinedMapPdf,
+                                          KML export, output-folder resolution
+  modExport.bas                         Sites table → CSV with resolved link URLs, product-
+                                          filtered columns (F10)
 build/                                  Local assembly + verification scripts (not for end users)
-  build.ps1                             COM-driven build: imports every .bas, runs BuildWorkbook,
-                                          saves RoadReviewer.xlsm into %TEMP% (the repo's build/
-                                          dir has an Everyone-Deny ACE from the sandbox that
-                                          breaks Excel's SaveAs temp-file pattern)
+  build.ps1                             COM-driven build; `-Product Standard|Inspector|Both`
+                                          (default Both) → RoadReviewer.xlsm + Site Inspector
+                                          Review Tool.xlsm at the repo root (stages SaveAs in
+                                          %TEMP% because the repo dirs carry an Everyone-Deny
+                                          ACE that breaks Excel's SaveAs temp-file pattern)
   BuildHelper.bas                       Build-time-only module; sets gHeadless + traps errors
                                           to %TEMP%\RoadReviewer_build_error.txt, removed
                                           before save
   verify-skeleton.ps1                   §5.2 + §5.3 — sheets, buttons, named ranges, headers,
-                                          hyperlink formulas, decimal validation
-  verify-classify.ps1                   §5.4 — test coords for MI/IN/WI against live MDOT/INDOT/WisDOT + NTAD
+                                          hyperlink formulas, decimal validation; product-aware
+                                          (auto-detects RR_Product, asserts each product's
+                                          button/name/hidden-column surface) — run once per built file
+  verify-classify.ps1                   §5.4 — test coords for MI/IN/WI against live MDOT/INDOT/WisDOT + NTAD,
+                                          plus an address-only row exercising Check Roads' auto-geocode
   verify-rerun-and-state.ps1            §5.7 + §5.8 — re-run-failed-rows + state selector
   verify-firmette-maps.ps1              Workflow 3 — DownloadFirmettes + PrepareMapPages
                                           + ExportCombinedMapPdf against live FEMA GP
@@ -1102,22 +1131,18 @@ suppresses its success/failure MsgBox when an automation host (build.ps1,
 verify-*.ps1) sets it via `Application.Run "SetHeadless", True`. Cell +
 StatusBar state remain, so results stay observable when running headless.
 
-**Testing checklist for the local (Excel-equipped) session:**
+**Increment 6 — the two-product split (2026-07-05).** The single workbook
+became `RoadReviewer.xlsm` (standard) + `Site Inspector Review Tool.xlsm`
+(inspector); six sheets collapsed to three; geocoding folded into Check
+Roads; new column order + Sites toolbar row. Full design, verification
+results and two bug fixes found during the pass in **§7c**. The
+per-capability status above still describes the shared logic accurately;
+run the §9.2 runbook (build both, verify each product) after any `src/`
+change.
 
-```
-# One-time:
-powershell -ExecutionPolicy Bypass -File build\build.ps1
-
-# Verify in order. Each script opens %TEMP%\RoadReviewer.xlsm.
-powershell -ExecutionPolicy Bypass -File build\verify-skeleton.ps1        # §5.2 + §5.3
-powershell -ExecutionPolicy Bypass -File build\verify-classify.ps1        # §5.4
-powershell -ExecutionPolicy Bypass -File build\verify-rerun-and-state.ps1 # §5.7 + §5.8
-powershell -ExecutionPolicy Bypass -File build\verify-firmette-maps.ps1   # Workflow 3
-```
-
-Open `%TEMP%\RoadReviewer.xlsm` in Excel for the button-click smoke pass:
-imagery one-click (§5.5), geocoder, and any UI feel-test before handing
-off to a non-developer co-worker (§5.10).
+Open the built workbooks in Excel for the button-click smoke pass:
+imagery one-click (§5.5), the address auto-geocode, and any UI feel-test
+before handing off to a non-developer co-worker (§5.10).
 
 ---
 
@@ -1299,6 +1324,96 @@ summarized here so it isn't relitigated:
 
 ---
 
+## 7c. Two-product split + workflow simplification (2026-07-05)
+
+The single six-sheet workbook was split into two products for two distinct
+audiences, per user direction. All decisions below were made explicitly in
+that design session — do not relitigate.
+
+### The two products
+
+Both are built from the same `src/` tree by `build\build.ps1` and share the
+same three-sheet shape — **Start Here** (all inputs + every action button),
+**Sites**, **Sources** (per-state citations + quirks, `modSources.bas`).
+There are no navigation-only buttons and no per-workflow sheets anymore.
+
+| | RoadReviewer.xlsm (Standard) | Site Inspector Review Tool.xlsm (Inspector) |
+|---|---|---|
+| Audience | PDMGs, state/local partners, project reviewers | FEMA PA site inspectors |
+| Inputs | State, Output Folder (optional), AGOL URL (optional) | + WO, DI, Disaster, Applicant, Search buffer |
+| Buttons | Check Roads, Re-run Failed, Photo Links, CSV, KML, Send-to-AGOL, Build/Reset | + Download/Re-run FIRMettes, Prepare Map Pages, Add Blank Map Page, Export Combined Map PDF |
+| Sites columns | WO#, DI#, FIRMette Status, Map Status **hidden** (and dropped from its CSV) | all visible |
+| Output folder default (blank) | same folder as the .xlsm (falls back to the §8.9 probe if unsaved / an https path) | §8.9 OneDrive-FEMA pattern, unchanged |
+
+### Product identity plumbing
+
+The product id is baked in at build time as a **hidden defined name**
+`RR_Product` (`modUtil.SetProduct`, called by build.ps1 via
+`Application.Run` before `BuildWorkbookSafe`). Runtime code branches via
+`ProductIsInspector()` / `ProductTitle()`; a missing name defaults to
+Inspector (the superset) so pre-split workbooks keep full behavior. The
+in-Excel "Build / Reset Workbook" button rebuilds the same product.
+`COL_*` constants are shared — the standard product *hides* inspector-only
+columns rather than having its own column map, which is what keeps
+modClassify/modMaps/modExport product-agnostic.
+
+### Workflow simplifications (both products)
+
+1. **One primary action.** "Check Roads" = auto-geocode (any row with an
+   Address but no coords, Census geocoder, never overwrites typed coords)
+   then classify. The standalone Geocode button/sub is gone
+   (`modGeocode.GeocodeRow` is a helper called per-row from
+   `modClassify.ClassifyOneRow`). Geocode failures write
+   `Failed - geocode: …` into Federal Aid Status so **Re-run Failed Rows**
+   (renamed from ReRunFailedClassifications; CheckRoads replaced
+   ClassifyAllRows) retries them too.
+2. **Sites toolbar row.** Sites row 1 now holds a hint line + two
+   free-floating buttons (Check Roads, Photo Links for selected rows) so
+   the paste → classify → review loop never leaves the sheet. Header moved
+   to **row 2**, first data row is **3** (`SITES_TOOLBAR_ROW` /
+   `SITES_HEADER_ROW` / `SITES_FIRST_DATA_ROW`).
+3. **Paste-friendly column order.** Latitude | Longitude | Description are
+   contiguous; Address sits to the RIGHT of Description (rarely used).
+   New canonical order: WO(1) DI(2) Site#(3) Site Name(4) Lat(5) Lon(6)
+   Description(7) Address(8) Category(9) Costs(10) Work Completion(11)
+   Geocode Status(12) | links: Google Maps(13) Street View(14) Bing(15)
+   **Google Earth(16, new)** FEMA Viewer(17) FIRMette Portal(18) NFC
+   Map(19) | results: FHWA Class(20) Urban/Rural(21) ACUB Name(22) Road
+   Name(23) Street Name(24) Federal Aid Status(25) | FIRMette Status(26)
+   Map Status(27) AGOL Map(28).
+4. **Input/output tinting.** Input columns are light yellow with
+   "(optional)" header suffixes where applicable; lookup/result columns
+   light grey; the tri-color verdict conditional formats win over the
+   static tints when they match.
+5. **Google Earth link** (`URL_GEARTH`, earth.google.com/web/search) added
+   as a column and to the multi-open photo set (now 5 tabs/site) — it was
+   the by-name-requested pre-disaster imagery source.
+6. **Search buffer hidden in standard.** No cell/named range is created;
+   `SetupValue` returns "" for the missing name and `BufferFeet()` falls
+   back to the 200 ft default. Inspector keeps the field.
+
+### Verified 2026-07-05 (all on the live services, this machine)
+
+verify-skeleton (both products), verify-classify (MI/IN/WI + the
+auto-geocode row, all pass), verify-rerun-and-state, verify-firmette-maps
+(828 KB FIRMette + Location Map PDF), verify-blank-wodi, plus a manual
+standard-product CSV test (lands next to the workbook, drops the four
+inspector-only columns, includes Google Earth). Two fixes came out of that
+pass: (a) the §4.2a Indiana test point 39.9876,-86.0128 was mislabeled
+"rural Hancock County" — it is inside the Indianapolis ACUB (test now
+expects Urban Local); (b) a CSV off-by-one where keying the comma off
+"line still empty" swallowed leading empty fields (blank Site #) — the
+separator is now counted per EMITTED column (`modExport.CsvLine`).
+
+### Migration note
+
+Workbooks filled in under the old single-product layout do NOT migrate:
+the column order changed and the header moved to row 2. Old files keep
+working as-is (their embedded VBA is self-consistent); new work should
+start from the new deliverables.
+
+---
+
 ## 8. Design decisions (resolved) and remaining open questions
 
 ### Resolved (do not relitigate)
@@ -1364,8 +1479,8 @@ Experience-app marker URL parameter format (§4.3) is still TBD — only
 affects the per-row "Open in map" deep link (F11), not the classification
 logic. Can be pinned down during the §5.4 smoke test.
 
-The "NFC Map" Sites column (col 18, formerly labeled "MDOT NFC Map") is
-now state-aware (§9.3b): it dispatches on Setup's State dropdown between
+The "NFC Map" Sites column (col 19 since the §7c reorder, formerly labeled
+"MDOT NFC Map") is state-aware (§9.3b): it dispatches on Setup's State dropdown between
 `URL_NFC_MAPVIEW` (MI's curated FEMA webmap), `URL_NFC_MAPVIEW_IN`, and
 `URL_NFC_MAPVIEW_WI` (the latter two side-load the state's own live NFC
 FeatureServer into the plain FEMA Map Viewer rather than a curated
@@ -1391,64 +1506,70 @@ once before relying on IN/WI classifications for real inspection work.
 Reference material for whoever is editing `src/` next. Lookup-style; the
 narrative version of how these bugs got found is in §7a.
 
-### 9.1 Rebuild the workbook after a `src/` change
+### 9.1 Rebuild the workbooks after a `src/` change
 
-`build\build.ps1` defaults its `-OutPath` to `RoadReviewer.xlsm` at the
-repo root, so a rebuild just overwrites the committed deliverable in
-place. Close any open Excel first — the file is locked while open.
+`build\build.ps1` builds **both products by default**
+(`-Product Standard|Inspector|Both`, default `Both`) into the repo root:
+`RoadReviewer.xlsm` + `Site Inspector Review Tool.xlsm`. Close any open
+Excel first — the files are locked while open.
 
 ```powershell
-# from anywhere
+# from anywhere - builds both products
 & "C:\Users\caleb\OneDrive\Desktop\Scripts\RoadReviewer\build\build.ps1"
 
-# then commit the refreshed .xlsm
+# then commit the refreshed .xlsm files
 cd "C:\Users\caleb\OneDrive\Desktop\Scripts\RoadReviewer"
-git add RoadReviewer.xlsm <other src files>
-git commit -m "Rebuild RoadReviewer.xlsm: <what changed in src/>"
+git add RoadReviewer.xlsm "Site Inspector Review Tool.xlsm" <other src files>
+git commit -m "Rebuild workbooks: <what changed in src/>"
 git push origin main
 ```
 
-The build:
+The build, per product:
 
-1. Starts a hidden Excel via COM.
+1. Starts a hidden Excel via COM (one instance for the whole run).
 2. Imports every `.bas` from `src/` plus `build\BuildHelper.bas`.
-3. Calls `BuildWorkbookSafe`, which flips `gHeadless = True` and then
-   invokes `BuildWorkbook`. The Safe wrapper writes any error to
+3. Calls `SetProduct` (bakes the hidden `RR_Product` name, §7c) then
+   `BuildWorkbookSafe`, which flips `gHeadless = True` and invokes
+   `BuildWorkbook`. The Safe wrapper writes any error to
    `%TEMP%\RoadReviewer_build_error.txt` and re-raises so the COM host
    sees a real exception instead of Excel sitting in VBE break mode.
 4. Removes `BuildHelper` from the project before save (build-time-only).
-5. SaveAs to the OutPath as `xlOpenXMLWorkbookMacroEnabled` (52).
-6. Quits Excel cleanly.
+5. SaveAs into %TEMP% staging as `xlOpenXMLWorkbookMacroEnabled` (52),
+   then `Copy-Item -Force` into the repo root (ACL workaround, §9.4).
+6. Quits Excel cleanly after the last product.
 
-Takes ~10s on a typical laptop. Override `-OutPath` for one-off builds
-(e.g. `-OutPath "$env:TEMP\rr-scratch.xlsm"`).
+Takes ~20s for both on a typical laptop. Use `-Product` for one product
+and `-OutDir` for a different destination folder.
 
 ### 9.2 Verifier suite
 
 Every script in `build/` flips `gHeadless` on, runs a target workflow
-against `%TEMP%\RoadReviewer.xlsm` (override with `-XlsmPath`), and
-asserts results. Point `-XlsmPath` at the committed file at the repo
-root when verifying a build that's already been shipped.
+against a built workbook (`-XlsmPath`), and asserts results. The classify
+scripts work against either product (the classify path is shared); the
+FIRMette/MapPages scripts need the **inspector** build (the standard
+product has no FIRMette buttons or WO/DI named ranges).
 
-| Script | What it covers | Network? |
-|---|---|---|
-| `verify-skeleton.ps1` | §5.2 + §5.3 — sheets, buttons (every OnAction resolves), named ranges, Sites headers, hyperlink formulas, lat/lon decimal validation, INELIGIBLE conditional formatting | no |
-| `verify-classify.ps1` | §5.4 — Workflow 1 against the §4.2/§4.2a/§4.2b test coords for MI, IN and WI | MDOT + INDOT + WisDOT + NTAD |
-| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=MN gates NFC (MI/IN/WI must NOT gate); ReRunFailed only retries `Failed - ` rows | MDOT + NTAD |
-| `verify-firmette-maps.ps1` | Workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | FEMA Print FIRMette GP |
-| `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | FEMA GP |
+| Script | What it covers | Run against | Network? |
+|---|---|---|---|
+| `verify-skeleton.ps1` | §5.2 + §5.3 — sheets, buttons (every OnAction resolves), product button/named-range surface, Sites headers (row 2), hidden inspector-only columns, toolbar buttons, hyperlink formulas (incl. Google Earth), lat/lon decimal validation, verdict conditional formatting, Sources content | each product | no |
+| `verify-classify.ps1` | §5.4 — Check Roads against the §4.2/§4.2a/§4.2b test coords for MI, IN and WI + an address-only auto-geocode row | standard (or either) | MDOT + INDOT + WisDOT + NTAD + Census |
+| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=MN gates NFC (MI/IN/WI must NOT gate); ReRunFailedRows only retries `Failed - ` rows | standard (or either) | MDOT + NTAD |
+| `verify-firmette-maps.ps1` | Inspector workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | inspector | FEMA Print FIRMette GP |
+| `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
 
 Run the whole suite from a clean state:
 
 ```powershell
 $repo = "C:\Users\caleb\OneDrive\Desktop\Scripts\RoadReviewer"
-& "$repo\build\build.ps1"
-$xl = "$repo\RoadReviewer.xlsm"
-& "$repo\build\verify-skeleton.ps1"        -XlsmPath $xl
-& "$repo\build\verify-classify.ps1"        -XlsmPath $xl
-& "$repo\build\verify-rerun-and-state.ps1" -XlsmPath $xl
-& "$repo\build\verify-firmette-maps.ps1"   -XlsmPath $xl
-& "$repo\build\verify-blank-wodi.ps1"      -XlsmPath $xl
+& "$repo\build\build.ps1"                  # builds both products
+$std = "$repo\RoadReviewer.xlsm"
+$ins = "$repo\Site Inspector Review Tool.xlsm"
+& "$repo\build\verify-skeleton.ps1"        -XlsmPath $std
+& "$repo\build\verify-skeleton.ps1"        -XlsmPath $ins
+& "$repo\build\verify-classify.ps1"        -XlsmPath $std
+& "$repo\build\verify-rerun-and-state.ps1" -XlsmPath $std
+& "$repo\build\verify-firmette-maps.ps1"   -XlsmPath $ins
+& "$repo\build\verify-blank-wodi.ps1"      -XlsmPath $ins
 ```
 
 Trace output from any verifier lands in
@@ -1510,7 +1631,8 @@ results are still observable when headless.
 
 The Sites table has **two** ArcGIS Online links per row:
 
-1. **NFC Map** (col 18, `COL_NFCMAP`) — state-aware since §9.3b: MI opens
+1. **NFC Map** (col 19, `COL_NFCMAP` — col 18 before the §7c column
+   reorder) — state-aware since §9.3b: MI opens
    the FEMA-hosted NFC/ACUB webmap (`webmap=6a1702b9147243d1a5ee62cd614bc681`
    on `fema.maps.arcgis.com`) centered + markered on the row's coords; the
    previous URL pointed at the MDOT Experience app, whose popup chrome
@@ -1518,11 +1640,12 @@ The Sites table has **two** ArcGIS Online links per row:
    point, so the FEMA webmap link (same underlying data, no UI wrapper)
    replaced it. IN/WI and any other state get a different URL - see §9.3b.
 
-2. **AGOL Map** (col 24) — driven by Setup's `JobAgolMap` cell
-   (`Setup!$B$11`). When the inspector pastes their own AGOL webmap
-   URL there, every Sites row gets a hyperlink that opens that webmap
-   centered + markered on the row. Empty cell when Setup is blank, so
-   the column is unobtrusive when nobody has wired it up.
+2. **AGOL Map** (col 28, `COL_AGOLMAP` — col 24 before the §7c column
+   reorder) — driven by the `JobAgolMap` cell on Start Here. When the
+   user pastes their own AGOL webmap URL there, every Sites row gets a
+   hyperlink that opens that webmap centered + markered on the row.
+   Empty cell when the URL is blank, so the column is unobtrusive when
+   nobody has wired it up.
 
 The URL-stitching formula auto-detects whether the pasted URL already
 has a `?` (most AGOL share URLs do, e.g.
