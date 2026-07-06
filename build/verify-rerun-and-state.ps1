@@ -31,7 +31,7 @@ try {
   $sites = $wb.Worksheets('Sites')
 
   Write-Host "Clearing rows..."
-  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 28)).ClearContents()
+  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 29)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_state_trace.txt')) | Out-Null
@@ -47,10 +47,10 @@ try {
   $sites.Cells(3, 6).Value2 = [double]-83.045
   $excel.Run('CheckRoads') | Out-Null
 
-  $row_class = [string]$sites.Cells(3, 20).Value2
-  $row_urban = [string]$sites.Cells(3, 21).Value2
-  $row_acub  = [string]$sites.Cells(3, 22).Value2
-  $row_elig  = [string]$sites.Cells(3, 25).Value2
+  $row_class = [string]$sites.Cells(3, 14).Value2
+  $row_urban = [string]$sites.Cells(3, 15).Value2
+  $row_acub  = [string]$sites.Cells(3, 16).Value2
+  $row_elig  = [string]$sites.Cells(3, 19).Value2
   Write-Host ("  class: '" + $row_class + "'  urban/rural: '" + $row_urban + "'  ACUB: '" + $row_acub + "'  elig: '" + $row_elig + "'")
   if ($row_class -ne '') { throw "Row 3 should have blank class when state=MN (NFC not wired), got '$row_class'" }
   if ($row_acub -notlike "*Detroit*") { throw ("Row 3 ACUB should still resolve to Detroit (ACUB is nationwide), got '" + $row_acub + "'") }
@@ -63,29 +63,29 @@ try {
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   # Clear + plant: row 3 has a stale "Failed - simulated" mark (should retry);
   # row 4 has a previous OK classify (should NOT change).
-  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 28)).ClearContents()
+  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 29)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(3, 4).Value2 = 'Failed row (will retry)'
   $sites.Cells(3, 5).Value2 = [double]42.28536
   $sites.Cells(3, 6).Value2 = [double]-85.57025
-  $sites.Cells(3, 25).Value2 = 'Failed - simulated test failure'   # Federal Aid Status
+  $sites.Cells(3, 19).Value2 = 'Failed - simulated test failure'   # Federal Aid Status
 
   $sites.Cells(4, 4).Value2 = 'Already-classified row (should not retry)'
   $sites.Cells(4, 5).Value2 = [double]42.6911
   $sites.Cells(4, 6).Value2 = [double]-84.5360
-  $sites.Cells(4, 20).Value2 = 'PREVIOUS-CLASS-MARKER'   # FHWA Class
-  $sites.Cells(4, 25).Value2 = 'Non-federal aid - Urban Local (sticky)'   # Federal Aid Status
+  $sites.Cells(4, 14).Value2 = 'PREVIOUS-CLASS-MARKER'   # FHWA Class
+  $sites.Cells(4, 19).Value2 = 'Non-federal aid - Urban Local (sticky)'   # Federal Aid Status
 
   Write-Host "  Before re-run:"
-  Write-Host ("    row 3 elig = '" + [string]$sites.Cells(3, 25).Value2 + "'")
-  Write-Host ("    row 4 class = '" + [string]$sites.Cells(4, 20).Value2 + "'  elig = '" + [string]$sites.Cells(4, 25).Value2 + "'")
+  Write-Host ("    row 3 elig = '" + [string]$sites.Cells(3, 19).Value2 + "'")
+  Write-Host ("    row 4 class = '" + [string]$sites.Cells(4, 14).Value2 + "'  elig = '" + [string]$sites.Cells(4, 19).Value2 + "'")
 
   $excel.Run('ReRunFailedRows') | Out-Null
 
   Write-Host "  After re-run:"
-  $r3 = [string]$sites.Cells(3, 25).Value2
-  $r4_class = [string]$sites.Cells(4, 20).Value2
-  $r4_elig = [string]$sites.Cells(4, 25).Value2
+  $r3 = [string]$sites.Cells(3, 19).Value2
+  $r4_class = [string]$sites.Cells(4, 14).Value2
+  $r4_elig = [string]$sites.Cells(4, 19).Value2
   Write-Host ("    row 3 elig = '" + $r3 + "'")
   Write-Host ("    row 4 class = '" + $r4_class + "'  elig = '" + $r4_elig + "'")
 
@@ -95,7 +95,7 @@ try {
   Write-Host "  §5.7 PASSED" -ForegroundColor Green
 
   # Cleanup
-  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 28)).ClearContents()
+  $sites.Range($sites.Cells(3, 1), $sites.Cells(11, 29)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null

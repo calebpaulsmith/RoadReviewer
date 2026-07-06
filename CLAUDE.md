@@ -1564,6 +1564,51 @@ Follow-up after #22 merged (all verified on live services):
    name. Trade-off: the curated ACUB overlay isn't shown on that link
    anymore. All three wired states now use the same side-load link shape.
 
+### Per-road distances, ambiguity-aware verdict, Review Reason column, photo-link reorder (PR #24)
+
+Big classify-logic change. The verdict used to be "any detected federal-aid
+segment -> red". It now models **the road the point is ON** and flags
+*ambiguity* instead of silently guessing.
+
+1. **Per-road distances.** Every road query now fetches geometry
+   (`returnGeometry=true&outSR=4326`) and computes a true point-to-polyline
+   distance in feet (local equirectangular projection + point-to-segment,
+   `modHttp.MinDistanceFt`/`FeatureBlocks`/`PointSegDistM`). The **Road Name**
+   column is now a merged, nearest-first `Name (D ft) | Name (D ft)` list
+   from all detected roads (state class/route layers + Census TIGER), e.g.
+   `S Pitcher St (2 ft) | Sheldon St (197 ft)`.
+2. **Primary road drives red/green.** The **closest** class segment decides:
+   its class federal-aid -> RED; otherwise green base. This replaces the old
+   "any nearby federal road -> red".
+3. **Yellow only downgrades green** (never red - "red stays red"). A green row
+   becomes yellow ("Review - <reason>") when an ambiguity could actually make
+   it federal, with a <=3-word note in the new **Review Reason** column
+   (`COL_REVIEWNOTE`, col 20). Reasons, most-specific first: **Second road
+   close** (2nd-closest road within 30 ft of the closest AND federal-aid),
+   **Nearby FHWA road** (any other detected road is federal-aid), **Urban
+   boundary edge** (a Minor Collector whose point is outside the ACUB polygon
+   but within the boundary buffer - the only class where urban/rural flips
+   the verdict; `DetermineAcub` now distinguishes exact-inside vs
+   boundary-buffer vs rural).
+4. **Photo links moved right of the results** (user request): imagery links
+   (Google Maps..FIRMette Portal) are now cols 21-26, after the results;
+   **NFC Map stays on the left** (col 13). Results are cols 14-20
+   (contiguous - grey tint + tri-color CF span them). FIRMette/Map Status/AGOL
+   unchanged at 27/28/29. The layout is 100% `COL_*`-constant-driven, so
+   modBuild/modExport/modMaps needed no edits - only the constants + the
+   verifiers' hardcoded indices.
+
+**Build-time compile check (the fix for a recurring trap).** VBA compiles each
+module lazily, so a syntax error in a module the build never *executes*
+(`modHttp`, `modClassify`) slipped past a "successful" build and only surfaced
+(as a modal that hangs headless Excel) at the user's first Check Roads - twice
+this round (a mid-module `Private Const`, and a single-line `If ... ElseIf`).
+`build\compile-check.ps1` now force-compiles those modules (calls one function
+from each, in a background job with a 60 s timeout so a compile-error modal
+can't hang) and `build.ps1` runs it after every build. Two VBA rules to keep
+in mind (both in §9.3): module-level declarations must precede all procedures,
+and a single-line `If` may use `Else` but **not** `ElseIf`.
+
 ---
 
 ## 8. Design decisions (resolved) and remaining open questions
@@ -1754,6 +1799,13 @@ Function not defined"* on every caller. The function is renamed to
 **`line` is also reserved.** Used by `Line Input #` and the `Line`
 method on Shape. Same JIT-failure pattern. `TraceLine` takes
 `ByVal txt As String`, not `ByVal line As String`.
+
+**A single-line `If` can use `Else` but NOT `ElseIf`.**
+`If t < 0 Then t = 0 ElseIf t > 1 Then t = 1` is a compile "Syntax error";
+split it into two single-line `If`s or a multi-line `If ... ElseIf ... End
+If` block. Bit `PointSegDistM` (PR #24). Like the mid-module-declaration and
+reserved-word traps, this only surfaces when the *module* is compiled, which
+the build didn't force until `build\compile-check.ps1` was added (§9.1).
 
 **ArcGIS JSON has case-sensitive attribute keys.** Default
 `NewRegex(..., ignoreCase:=False)`. A case-insensitive

@@ -62,7 +62,7 @@ try {
   $excel.Run('SetHeadless', $true) | Out-Null
 
   Write-Host "Clearing any prior test rows ($FirstRow..$LastTestRow)..."
-  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 28)).ClearContents()
+  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 29)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   $failures = @()
@@ -104,12 +104,13 @@ try {
 
     foreach ($t in $stateTests) {
       $r = $t.Row
-      $cls = [string]$sites.Cells($r, 20).Value2  # FHWA Class
-      $ur  = [string]$sites.Cells($r, 21).Value2  # Urban/Rural
-      $ac  = [string]$sites.Cells($r, 22).Value2  # ACUB Name
-      $rn  = [string]$sites.Cells($r, 23).Value2  # Road Name (state-specific layer)
-      $st  = [string]$sites.Cells($r, 24).Value2  # Street Name (Census TIGER)
-      $el  = [string]$sites.Cells($r, 25).Value2  # Federal Aid Status
+      $cls = [string]$sites.Cells($r, 14).Value2  # FHWA Class
+      $ur  = [string]$sites.Cells($r, 15).Value2  # Urban/Rural
+      $ac  = [string]$sites.Cells($r, 16).Value2  # ACUB Name
+      $rn  = [string]$sites.Cells($r, 17).Value2  # Road Name (merged, with distances)
+      $st  = [string]$sites.Cells($r, 18).Value2  # Street Name (Census TIGER)
+      $el  = [string]$sites.Cells($r, 19).Value2  # Federal Aid Status
+      $rr  = [string]$sites.Cells($r, 20).Value2  # Review Reason (yellow note)
       $gc  = [string]$sites.Cells($r, 12).Value2  # Geocode Status
       Write-Host ""
       Write-Host ("  row {0}: {1}" -f $r, $t.Name)
@@ -119,6 +120,7 @@ try {
       Write-Host ("    road name   : {0}" -f $rn)
       Write-Host ("    street name : {0}" -f $st)
       Write-Host ("    eligibility : {0}" -f $el)
+      Write-Host ("    review note : {0}" -f $rr)
       if ($t.ContainsKey('ExpectGeocode')) {
         $glat = [string]$sites.Cells($r, 5).Value2
         $glon = [string]$sites.Cells($r, 6).Value2
@@ -144,7 +146,7 @@ try {
   }
 
   # Cleanup the test data so the saved file stays empty for the user.
-  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 28)).ClearContents()
+  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 29)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null

@@ -470,6 +470,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_ROADNAME) = "Road Name"
     h(COL_STREET) = "Street Name"
     h(COL_ELIGIBILITY) = "Federal Aid Status"
+    h(COL_REVIEWNOTE) = "Review Reason"
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
     h(COL_AGOLMAP) = "AGOL Map"
@@ -616,6 +617,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_ROADNAME).ColumnWidth = 16
     ws.Columns(COL_STREET).ColumnWidth = 22
     ws.Columns(COL_ELIGIBILITY).ColumnWidth = 24
+    ws.Columns(COL_REVIEWNOTE).ColumnWidth = 18
     ws.Columns(COL_GEOCODE).ColumnWidth = 16
     ws.Columns(COL_FIRMSTATUS).ColumnWidth = 18
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
@@ -627,7 +629,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ' these static fills when they match, so the verdict colors still show.
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_WO), ws.Cells(r2, COL_WORKCOMP)).Interior.Color = CLR_INPUT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_GEOCODE), ws.Cells(r2, COL_GEOCODE)).Interior.Color = CLR_RESULT
-    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_ELIGIBILITY)).Interior.Color = CLR_RESULT
+    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_REVIEWNOTE)).Interior.Color = CLR_RESULT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_FIRMSTATUS), ws.Cells(r2, COL_MAPSTATUS)).Interior.Color = CLR_RESULT
 
     ' Tri-state highlight on the Federal Aid Status column:
@@ -641,7 +643,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ' overlap: in Excel the FIRST matching rule wins, so non-federal
     ' is checked before federal.
     eligCol = "$" & ColLetter(COL_ELIGIBILITY) & SITES_FIRST_DATA_ROW
-    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_ELIGIBILITY))
+    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_REVIEWNOTE))
         .FormatConditions.Delete
         .FormatConditions.Add Type:=xlExpression, _
             Formula1:="=LEFT(" & eligCol & ",15)=""Non-federal aid"""

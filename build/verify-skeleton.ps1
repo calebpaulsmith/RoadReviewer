@@ -18,7 +18,7 @@ $expectedSheets = @('Start Here', 'Sites', 'Sources')
 # New canonical Sites layout: row 1 toolbar, row 2 header, data from row 3.
 $HeaderRow = 2
 $FirstDataRow = 3
-$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','FIRMette Status','Map Status','AGOL Map')
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status','AGOL Map')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -125,8 +125,8 @@ try {
   Write-Host ("  all " + $expectedHeaders.Count + " headers match constants") -ForegroundColor Green
 
   Write-Host "=== Product column hiding ===" -ForegroundColor Cyan
-  # Inspector-only columns: WO(1), DI(2), FIRMette Status(26), Map Status(27)
-  foreach ($c in @(1, 2, 26, 27)) {
+  # Inspector-only columns: WO(1), DI(2), FIRMette Status(27), Map Status(28)
+  foreach ($c in @(1, 2, 27, 28)) {
     $hidden = [bool]$sites.Columns($c).Hidden
     if ($isInspector -and $hidden) { throw "Inspector build should show column $c" }
     if (-not $isInspector -and -not $hidden) { throw "Standard build should hide column $c" }
@@ -151,7 +151,7 @@ try {
   $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 13='Google Maps'; 14='Street View'; 15='Bing'; 16='Google Earth'; 17='FEMA Viewer'; 18='FIRMette Portal'; 19='NFC Map' }
+  $linkCols = @{ 13='NFC Map'; 21='Google Maps'; 22='Street View'; 23='Bing'; 24='Google Earth'; 25='FEMA Viewer'; 26='FIRMette Portal' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells($FirstDataRow, $k)
     $f = [string]$cell.Formula
@@ -172,7 +172,7 @@ try {
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
   Write-Host "=== Conditional formatting on Federal Aid Status columns ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells($FirstDataRow, 20), $sites.Cells($FirstDataRow, 25))
+  $r = $sites.Range($sites.Cells($FirstDataRow, 14), $sites.Cells($FirstDataRow, 20))
   $fcCount = $r.FormatConditions.Count
   Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }
