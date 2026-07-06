@@ -7,12 +7,6 @@ Option Explicit
 ' back to the row. Michigan, Indiana and Wisconsin are wired in V1; other
 ' states still get the ACUB check (F8).
 
-Private Const MI_NFC_OUTFIELDS As String = "FunctionalSystem,PR"
-Private Const MI_ROUTE_OUTFIELDS As String = "RouteDesignation,RouteNumber"
-Private Const IN_NFC_OUTFIELDS As String = "functional_class"
-Private Const IN_ROADNAME_OUTFIELDS As String = "st_full"
-Private Const WI_TRUNK_OUTFIELDS As String = "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR"
-Private Const WI_LOCAL_OUTFIELDS As String = "FNCT_CLS_CTGY_TYCD,ST_LABL_NM"
 Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 
 ' The ACUB (urban-boundary) fallback search always uses at least this many
@@ -23,6 +17,13 @@ Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 ' prevent - a site sitting a few feet on the wrong side of a road that
 ' itself touches the boundary should still resolve Urban.
 Private Const ACUB_MIN_BUFFER_FEET As Long = 250
+
+' Distance (ft) under which the two closest roads count as "close together" -
+' close enough that which one the GPS point actually sits on is ambiguous, so
+' a federal-aid second road there is worth surfacing (request 3). Module-level
+' declarations MUST precede every Sub/Function (VBA "Only comments may appear
+' after End Sub" rule, §9.3), so it lives up here, not next to its user.
+Private Const CLOSE_ROAD_FEET As Double = 30
 
 ' The one primary action (friction fix: the old separate Geocode ->
 ' Classify ordering trap is gone). Check Roads geocodes any row that has
@@ -140,26 +141,25 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     End If
 
     Dim lat As String, lon As String, errMsg As String
+    Dim latP As Double, lonP As Double
     lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
     lon = InvariantNum(ws.Cells(r, COL_LON).Value)
+    latP = CDbl(lat): lonP = CDbl(lon)
 
-    ' --- ACUB (urban/rural) - runs for every state, and is the single
-    ' source of truth for the Urban/Rural column even on states whose own
-    ' NFC layer happens to carry its own urban/rural flag (§4.2). Uses its
-    ' own floor-guaranteed buffer (AcubBufferFeet), not the raw road-search
-    ' BufferFeet, so a point sitting just outside an ACUB polygon - e.g. on
-    ' the wrong side of a road that itself touches the boundary - still
-    ' resolves Urban even if JobBufferFeet has been narrowed for precise
-    ' road matching in a dense grid. ---
-    Dim acubJson As String, isUrban As Boolean, acubName As String
-    acubJson = QueryWithFallback(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", AcubBufferFeet(), errMsg)
+    ' --- ACUB (urban/rural), the single source of truth for Urban/Rural on
+    ' every state (§4.2). Distinguish THREE outcomes: the point is inside an
+    ' ACUB polygon (exactUrban, definitely Urban), it is outside but within
+    ' the boundary buffer (boundaryAmbiguous - right on the urban edge), or
+    ' clearly rural. The ambiguity feeds the yellow "Urban boundary edge"
+    ' flag for Minor Collectors, whose federal-aid status flips on urban vs
+    ' rural (request 2). ---
+    Dim exactUrban As Boolean, boundaryAmbiguous As Boolean, acubName As String
+    DetermineAcub lat, lon, exactUrban, boundaryAmbiguous, acubName, errMsg
     If Len(errMsg) > 0 Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "ACUB query (" & errMsg & ")"
         Exit Sub
     End If
-    isUrban = (FeatureCount(acubJson) > 0)
-    If isUrban Then acubName = FirstString(acubJson, "NAME")
-    ws.Cells(r, COL_URBANRURAL).Value = IIf(isUrban, "Urban", "Rural")
+    ws.Cells(r, COL_URBANRURAL).Value = IIf(exactUrban, "Urban", "Rural")
     ws.Cells(r, COL_ACUBNAME).Value = acubName
 
     If Not NfcWired(stateCode) Then
@@ -167,123 +167,333 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
         Exit Sub
     End If
 
-    ' --- NFC class + road name (state-specific layer) ---
-    Dim codes As Collection, roadName As String
-    Select Case stateCode
-        Case "MI": QueryMichiganNfc lat, lon, codes, roadName, errMsg
-        Case "IN": QueryIndianaNfc lat, lon, codes, roadName, errMsg
-        Case "WI": QueryWisconsinNfc lat, lon, codes, roadName, errMsg
-    End Select
+    ' --- Road segments (class + distance) + named roads (name + distance),
+    ' all with geometry so we know how far each road is from the point. segs
+    ' drives the federal-aid verdict; roads is the Road Name display list. ---
+    Dim segs As Collection, roads As Collection
+    Set roads = New Collection
+    QueryStateRoads stateCode, lat, lon, latP, lonP, segs, roads, errMsg
     If Len(errMsg) > 0 Then
         ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "NFC query (" & errMsg & ")"
         Exit Sub
     End If
-    ws.Cells(r, COL_ROADNAME).Value = roadName
 
-    ' --- Street name(s) via Census TIGER (covers everything the state's own
-    ' road-name field misses — e.g. MDOT 543 and Indiana's centerline layer
-    ' both only reliably carry designated/trunkline names). Failures here
-    ' are non-fatal — keep going so the classification still lands even if
-    ' TIGER is briefly unavailable. ---
-    Dim tigerErr As String, streets As String
-    streets = LookupStreetNames(lat, lon, tigerErr)
-    ws.Cells(r, COL_STREET).Value = streets
+    ' Census TIGER street names (with distances) - covers the local streets
+    ' the state layers name poorly. Non-fatal; also fills the Street Name
+    ' column. Adds its named roads into the merged Road Name list.
+    Dim tigerErr As String, streetNames As String
+    streetNames = AppendTigerRoads(lat, lon, latP, lonP, roads, tigerErr)
+    ws.Cells(r, COL_STREET).Value = streetNames
 
-    ' --- Class label + Federal Aid Status verdict ---
-    ws.Cells(r, COL_CLASS).Value = ClassLabels(codes)
-    ws.Cells(r, COL_ELIGIBILITY).Value = FederalAidVerdict(codes, isUrban)
+    ' --- Displays + verdict ---
+    ws.Cells(r, COL_ROADNAME).Value = FormatRoadList(roads)
+    ws.Cells(r, COL_CLASS).Value = ClassLabelsFromSegs(segs)
+
+    Dim verdict As String, reason As String
+    ComputeVerdict segs, exactUrban, boundaryAmbiguous, verdict, reason
+    ws.Cells(r, COL_ELIGIBILITY).Value = verdict
+    ws.Cells(r, COL_REVIEWNOTE).Value = reason
 End Sub
 
-' Michigan: NFC class from MDOT layer 353 (FunctionalSystem, bare FHWA 1-7,
-' §4.2), road name from the companion route-designation layer 543 (blank for
-' local streets - that's expected, TIGER fills the gap). Both filtered to
-' exclude retired LRS segments.
-Private Sub QueryMichiganNfc(ByVal lat As String, ByVal lon As String, _
-        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
-    Dim nfcJson As String, routeJson As String, routeErr As String
-    nfcJson = QueryWithFallback(REST_MDOT_NFC, lat, lon, MI_NFC_OUTFIELDS, "RHRetireDate IS NULL", BufferFeet(), errMsg)
+' Point-in-ACUB-polygon (exact) first; only if the point is outside any
+' polygon do we buffer out to the boundary floor to detect "on the edge".
+Private Sub DetermineAcub(ByVal lat As String, ByVal lon As String, _
+        ByRef exactUrban As Boolean, ByRef boundaryAmbiguous As Boolean, _
+        ByRef acubName As String, ByRef errMsg As String)
+    Dim j As String
+    j = RunQuery(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", 0, errMsg, False)
     If Len(errMsg) > 0 Then Exit Sub
-    Set codes = ExtractIntegers(nfcJson, "FunctionalSystem")
-
-    routeJson = QueryWithFallback(REST_MDOT_ROUTE, lat, lon, MI_ROUTE_OUTFIELDS, "RHRetireDate IS NULL", BufferFeet(), routeErr)
-    If Len(routeErr) = 0 Then roadName = BuildRouteName(routeJson)
+    If FeatureCount(j) > 0 Then
+        exactUrban = True: boundaryAmbiguous = False: acubName = FirstString(j, "NAME")
+        Exit Sub
+    End If
+    j = RunQuery(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", AcubBufferFeet(), errMsg, False)
+    If Len(errMsg) > 0 Then Exit Sub
+    If FeatureCount(j) > 0 Then
+        exactUrban = False: boundaryAmbiguous = True: acubName = FirstString(j, "NAME")
+    Else
+        exactUrban = False: boundaryAmbiguous = False: acubName = ""
+    End If
 End Sub
 
-' Indiana: NFC class from LRSE_Functional_Class layer 22 (functional_class,
-' bare FHWA 1-7, no urban/rural embedded - §4.2a). record_status=5 (Active)
-' is Indiana's analog to Michigan's RHRetireDate filter. Road name is a
-' separate, un-keyed point query against the statewide centerline layer -
-' Indiana's functional-class layer carries no name field at all (not even a
-' trunkline-only one like MDOT 543), so this is blank more often; TIGER
-' backs it up.
-Private Sub QueryIndianaNfc(ByVal lat As String, ByVal lon As String, _
-        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
-    Dim nfcJson As String, nameJson As String, nameErr As String
-    nfcJson = QueryWithFallback(REST_IN_NFC, lat, lon, IN_NFC_OUTFIELDS, "record_status=5", BufferFeet(), errMsg)
-    If Len(errMsg) > 0 Then Exit Sub
-    Set codes = ExtractIntegers(nfcJson, "functional_class")
-
-    nameJson = QueryWithFallback(REST_IN_ROADNAME, lat, lon, IN_ROADNAME_OUTFIELDS, "1=1", BufferFeet(), nameErr)
-    If Len(nameErr) = 0 Then roadName = FirstString(nameJson, "st_full")
+' Dispatch per wired state. Fills segs (each item Array(fhwaClass, distFt))
+' and appends named roads (each item Array(name, distFt)) to roads.
+Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVal lon As String, _
+        ByVal latP As Double, ByVal lonP As Double, _
+        ByRef segs As Collection, ByRef roads As Collection, ByRef errMsg As String)
+    Set segs = New Collection
+    Select Case stateCode
+        Case "MI"
+            ' Class from layer 353; trunkline route names from 543.
+            AddClassSegs REST_MDOT_NFC, "FunctionalSystem", "RHRetireDate IS NULL", False, False, _
+                lat, lon, latP, lonP, segs, errMsg
+            If Len(errMsg) > 0 Then Exit Sub
+            AddNamedRoads REST_MDOT_ROUTE, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
+                "MI_ROUTE", lat, lon, latP, lonP, roads
+        Case "IN"
+            AddClassSegs REST_IN_NFC, "functional_class", "record_status=5", False, False, _
+                lat, lon, latP, lonP, segs, errMsg
+            If Len(errMsg) > 0 Then Exit Sub
+            AddNamedRoads REST_IN_ROADNAME, "st_full", "1=1", "SINGLE:st_full", lat, lon, latP, lonP, roads
+        Case "WI"
+            ' State Trunk Network first (FED_FC_CD is a bare FHWA string);
+            ' only if nothing there, the Local Road Network snapshot.
+            AddClassSegs REST_WI_STATE_TRUNK, "FED_FC_CD", "1=1", True, False, _
+                lat, lon, latP, lonP, segs, errMsg
+            If Len(errMsg) > 0 Then Exit Sub
+            If segs.Count > 0 Then
+                AddNamedRoads REST_WI_STATE_TRUNK, "HWYTYPE,HWYNUM,HWYDIR", "1=1", "WI_TRUNK", _
+                    lat, lon, latP, lonP, roads
+            Else
+                AddClassSegs REST_WI_LOCAL_ROADS, "FNCT_CLS_CTGY_TYCD", "1=1", False, True, _
+                    lat, lon, latP, lonP, segs, errMsg
+                If Len(errMsg) > 0 Then Exit Sub
+                AddNamedRoads REST_WI_LOCAL_ROADS, "ST_LABL_NM", "1=1", "SINGLE:ST_LABL_NM", _
+                    lat, lon, latP, lonP, roads
+            End If
+    End Select
 End Sub
 
-' Wisconsin: two layers queried in sequence (§4.2b). Try the State Trunk
-' Network first (FED_FC_CD is already a bare FHWA 1-7 string) since it's the
-' more authoritative/current source for state highways. Only when nothing
-' intersects there does it fall back to the Local Road Network snapshot,
-' whose FNCT_CLS_CTGY_TYCD needs WisconsinLocalCategoryToFhwa() to strip the
-' embedded urban/rural digit back out to a bare FHWA code. Neither layer
-' needs a retired-segment filter (both are point-in-time snapshot extracts,
-' confirmed via live schema probe) or a browser User-Agent (AGOL-hosted,
-' same pattern as the nationwide ACUB layer).
-Private Sub QueryWisconsinNfc(ByVal lat As String, ByVal lon As String, _
-        ByRef codes As Collection, ByRef roadName As String, ByRef errMsg As String)
-    Dim trunkJson As String, localJson As String, fc As Variant, cat As Variant
-    Set codes = New Collection
-
-    trunkJson = QueryWithFallback(REST_WI_STATE_TRUNK, lat, lon, WI_TRUNK_OUTFIELDS, "1=1", BufferFeet(), errMsg)
+' Query a functional-class layer with geometry and append each segment's
+' (fhwaClass, distanceFt) to segs. isStringClass=True reads the class as a
+' string field (WI FED_FC_CD); wiLocalDecode=True runs the value through
+' WisconsinLocalCategoryToFhwa (WI local-roads category code).
+Private Sub AddClassSegs(ByVal baseUrl As String, ByVal classField As String, ByVal whereClause As String, _
+        ByVal isStringClass As Boolean, ByVal wiLocalDecode As Boolean, _
+        ByVal lat As String, ByVal lon As String, ByVal latP As Double, ByVal lonP As Double, _
+        ByRef segs As Collection, ByRef errMsg As String)
+    Dim json As String, blocks As Collection, b As Variant, cls As Long
+    json = RunQuery(baseUrl, lat, lon, classField, whereClause, BufferFeet(), errMsg, True)
     If Len(errMsg) > 0 Then Exit Sub
+    Set blocks = FeatureBlocks(json)
+    For Each b In blocks
+        cls = ClassFromBlock(CStr(b), classField, isStringClass, wiLocalDecode)
+        If cls >= 0 Then segs.Add Array(cls, MinDistanceFt(CStr(b), lonP, latP))
+    Next b
+End Sub
 
-    If FeatureCount(trunkJson) > 0 Then
-        For Each fc In ExtractStrings(trunkJson, "FED_FC_CD")
-            If IsNumeric(fc) Then codes.Add CLng(fc)
-        Next fc
-        roadName = BuildWisconsinTrunkRoadName(trunkJson)
+Private Function ClassFromBlock(ByVal block As String, ByVal classField As String, _
+        ByVal isStringClass As Boolean, ByVal wiLocalDecode As Boolean) As Long
+    Dim v As String, ints As Collection
+    If isStringClass Then
+        v = FirstString(block, classField)
+    Else
+        Set ints = ExtractIntegers(block, classField)
+        If ints.Count > 0 Then v = CStr(ints(1))
+    End If
+    If Len(v) = 0 Or Not IsNumeric(v) Then ClassFromBlock = -1: Exit Function
+    If wiLocalDecode Then
+        ClassFromBlock = WisconsinLocalCategoryToFhwa(CLng(v))
+    Else
+        ClassFromBlock = CLng(v)
+    End If
+End Function
+
+' Query a name-bearing layer with geometry and append each named road's
+' (name, distanceFt) to roads. nameMode picks how the name is built from the
+' feature block.
+Private Sub AddNamedRoads(ByVal baseUrl As String, ByVal outFields As String, ByVal whereClause As String, _
+        ByVal nameMode As String, ByVal lat As String, ByVal lon As String, _
+        ByVal latP As Double, ByVal lonP As Double, ByRef roads As Collection)
+    Dim json As String, blocks As Collection, b As Variant, nm As String, e As String
+    json = RunQuery(baseUrl, lat, lon, outFields, whereClause, BufferFeet(), e, True)
+    If Len(e) > 0 Then Exit Sub       ' road names are non-fatal
+    Set blocks = FeatureBlocks(json)
+    For Each b In blocks
+        nm = RoadNameFromBlock(CStr(b), nameMode)
+        If Len(nm) > 0 Then roads.Add Array(nm, MinDistanceFt(CStr(b), lonP, latP))
+    Next b
+End Sub
+
+Private Function RoadNameFromBlock(ByVal block As String, ByVal nameMode As String) As String
+    Select Case True
+        Case nameMode = "MI_ROUTE"
+            RoadNameFromBlock = Trim$(FirstString(block, "RouteDesignation") & " " & FirstString(block, "RouteNumber"))
+        Case nameMode = "WI_TRUNK"
+            RoadNameFromBlock = Trim$(FirstString(block, "HWYTYPE") & " " & FirstString(block, "HWYNUM") & " " & FirstString(block, "HWYDIR"))
+        Case Left$(nameMode, 7) = "SINGLE:"
+            RoadNameFromBlock = Trim$(FirstString(block, Mid$(nameMode, 8)))
+    End Select
+End Function
+
+' Census TIGER Local Roads (layer 8), with geometry. Appends each street's
+' (name, distanceFt) to roads AND returns a plain pipe-joined name list for
+' the Street Name column. Non-fatal on failure.
+Private Function AppendTigerRoads(ByVal lat As String, ByVal lon As String, _
+        ByVal latP As Double, ByVal lonP As Double, ByRef roads As Collection, _
+        ByRef errMsg As String) As String
+    Dim json As String, blocks As Collection, b As Variant, nm As String
+    Dim seen As String, out As String
+    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", "1=1", BufferFeet(), errMsg, True)
+    If Len(errMsg) > 0 Then Exit Function
+    Set blocks = FeatureBlocks(json)
+    For Each b In blocks
+        nm = Trim$(FirstString(CStr(b), "NAME"))
+        If Len(nm) > 0 Then
+            roads.Add Array(nm, MinDistanceFt(CStr(b), lonP, latP))
+            If InStr(seen, "|" & LCase$(nm) & "|") = 0 Then
+                seen = seen & "|" & LCase$(nm) & "|"
+                out = out & IIf(Len(out) > 0, " | ", "") & nm
+            End If
+        End If
+    Next b
+    AppendTigerRoads = out
+End Function
+
+' Merge the collected roads into one "Name (D ft) | Name (D ft)" string:
+' dedup by name (keep the nearest distance), sort nearest-first (request 3).
+Private Function FormatRoadList(ByVal roads As Collection) As String
+    Dim dict As Object, rv As Variant, nm As String, d As Double, key As String
+    Set dict = CreateObject("Scripting.Dictionary")
+    For Each rv In roads
+        nm = Trim$(CStr(rv(0))): d = CDbl(rv(1))
+        If Len(nm) > 0 Then
+            key = LCase$(nm)
+            If Not dict.Exists(key) Then
+                dict.Add key, Array(nm, d)
+            ElseIf d < CDbl(dict(key)(1)) Then
+                dict(key) = Array(nm, d)
+            End If
+        End If
+    Next rv
+    If dict.Count = 0 Then Exit Function
+
+    ' Collect + insertion-sort by distance.
+    Dim arr() As Variant, cnt As Long, k As Variant, i As Long, j As Long, tmp As Variant
+    ReDim arr(0 To dict.Count - 1)
+    cnt = 0
+    For Each k In dict.Keys
+        arr(cnt) = dict(k): cnt = cnt + 1
+    Next k
+    For i = 1 To cnt - 1
+        tmp = arr(i): j = i - 1
+        Do While j >= 0
+            If CDbl(arr(j)(1)) <= CDbl(tmp(1)) Then Exit Do
+            arr(j + 1) = arr(j): j = j - 1
+        Loop
+        arr(j + 1) = tmp
+    Next i
+
+    Dim out As String
+    For i = 0 To cnt - 1
+        out = out & IIf(Len(out) > 0, " | ", "") & arr(i)(0) & " (" & Format$(arr(i)(1), "0") & " ft)"
+    Next i
+    FormatRoadList = out
+End Function
+
+' Distinct FHWA class labels across the detected segments, nearest-first.
+Private Function ClassLabelsFromSegs(ByVal segs As Collection) As String
+    If segs.Count = 0 Then
+        ClassLabelsFromSegs = "No road segment within " & BufferFeet() & " ft"
+        Exit Function
+    End If
+    Dim sorted() As Variant, seen As String, out As String, i As Long, label As String
+    sorted = SortSegsByDist(segs)
+    For i = 0 To UBound(sorted)
+        label = FunctionalSystemLabel(CLng(sorted(i)(0)))
+        If InStr(seen, "|" & label & "|") = 0 Then
+            seen = seen & "|" & label & "|"
+            out = out & IIf(Len(out) > 0, " | ", "") & label
+        End If
+    Next i
+    ClassLabelsFromSegs = out
+End Function
+
+' The core verdict (requests 1-3). Yellow only ever DOWNGRADES green ("looks
+' non-federal but an ambiguity could make it federal - review"); a road whose
+' own closest segment is federal-aid stays RED. Reason (<=3 words) goes to the
+' Review Reason column and is echoed in the "Review - ..." status so the row
+' tints yellow.
+Private Sub ComputeVerdict(ByVal segs As Collection, ByVal exactUrban As Boolean, _
+        ByVal boundaryAmbiguous As Boolean, ByRef verdict As String, ByRef reason As String)
+    reason = ""
+    If segs.Count = 0 Then
+        verdict = "Review - no road within " & BufferFeet() & " ft"
+        reason = "No road found"
         Exit Sub
     End If
 
-    localJson = QueryWithFallback(REST_WI_LOCAL_ROADS, lat, lon, WI_LOCAL_OUTFIELDS, "1=1", BufferFeet(), errMsg)
-    If Len(errMsg) > 0 Then Exit Sub
-    For Each cat In ExtractIntegers(localJson, "FNCT_CLS_CTGY_TYCD")
-        codes.Add WisconsinLocalCategoryToFhwa(CLng(cat))
-    Next cat
-    roadName = FirstString(localJson, "ST_LABL_NM")
+    Dim sorted() As Variant
+    sorted = SortSegsByDist(segs)          ' nearest-first
+    Dim pClass As Long, pDist As Double
+    pClass = CLng(sorted(0)(0)): pDist = CDbl(sorted(0)(1))
+
+    ' The road the point is ON (closest segment) drives red/green.
+    If pClass = 0 Then
+        verdict = "Review - non-certified class, check manually"
+        reason = "Non-certified"
+        Exit Sub
+    End If
+    If ClassIsFederal(pClass, exactUrban) Then
+        verdict = "Federal aid - " & PrefixedClass(pClass, exactUrban)   ' RED stays RED
+        Exit Sub
+    End If
+
+    ' Primary is non-federal -> green base. Build its label.
+    Dim baseText As String
+    If pClass = 6 Then
+        baseText = "Non-federal aid - Rural Minor Collector"   ' non-fed 6 => rural
+    ElseIf pClass = 7 Then
+        baseText = "Non-federal aid - " & IIf(exactUrban, "Urban", "Rural") & " Local"
+    Else
+        baseText = "Non-federal aid - " & PrefixedClass(pClass, exactUrban)
+    End If
+
+    ' Ambiguities that turn green -> yellow, most-specific reason first.
+    ' (a) the 2nd-closest road is within 30 ft of the closest AND is federal.
+    If UBound(sorted) >= 1 Then
+        If (CDbl(sorted(1)(1)) - pDist) < CLOSE_ROAD_FEET And ClassIsFederal(CLng(sorted(1)(0)), exactUrban) Then
+            reason = "Second road close"
+        End If
+    End If
+    ' (b) any other detected road is federal-aid.
+    If Len(reason) = 0 Then
+        Dim i As Long
+        For i = 1 To UBound(sorted)
+            If ClassIsFederal(CLng(sorted(i)(0)), exactUrban) Then reason = "Nearby FHWA road": Exit For
+        Next i
+    End If
+    ' (c) a Minor Collector sitting on the urban boundary (urban would flip it
+    ' to federal). Only matters for class 6.
+    If Len(reason) = 0 And pClass = 6 And boundaryAmbiguous Then
+        reason = "Urban boundary edge"
+    End If
+
+    If Len(reason) > 0 Then
+        verdict = "Review - " & reason
+    Else
+        verdict = baseText
+    End If
 End Sub
 
-Private Function BuildWisconsinTrunkRoadName(ByVal trunkJson As String) As String
-    Dim hwytype As String, hwynum As String, hwydir As String
-    hwytype = FirstString(trunkJson, "HWYTYPE")
-    hwynum = FirstString(trunkJson, "HWYNUM")
-    hwydir = FirstString(trunkJson, "HWYDIR")
-    BuildWisconsinTrunkRoadName = Trim$(hwytype & " " & hwynum & " " & hwydir)
+' A segment's class is federal-aid: 1-5 always; 6 (Minor Collector) only when
+' urban; 7 (Local) never; 0 (non-certified) is handled as "review" upstream.
+Private Function ClassIsFederal(ByVal cls As Long, ByVal isUrban As Boolean) As Boolean
+    Select Case cls
+        Case 1, 2, 3, 4, 5: ClassIsFederal = True
+        Case 6: ClassIsFederal = isUrban
+        Case Else: ClassIsFederal = False
+    End Select
 End Function
 
-' Query Census TIGER Local Roads (layer 8) within the search buffer and
-' return a pipe-joined list of unique street names. Returns "" with errMsg
-' set if the call failed; "" with errMsg empty if no streets matched.
-Private Function LookupStreetNames(ByVal lat As String, ByVal lon As String, _
-        ByRef errMsg As String) As String
-    Dim json As String, names As Collection, seen As String, out As String, nm As Variant
-    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", "1=1", BufferFeet(), errMsg)
-    If Len(errMsg) > 0 Then Exit Function
-    Set names = ExtractStrings(json, "NAME")
-    For Each nm In names
-        If Len(Trim$(CStr(nm))) > 0 And InStr(seen, "|" & CStr(nm) & "|") = 0 Then
-            seen = seen & "|" & CStr(nm) & "|"
-            out = out & IIf(Len(out) > 0, " | ", "") & CStr(nm)
-        End If
-    Next nm
-    LookupStreetNames = out
+' Insertion-sort a segs Collection (items Array(class, dist)) into a
+' distance-ascending Variant array.
+Private Function SortSegsByDist(ByVal segs As Collection) As Variant()
+    Dim arr() As Variant, i As Long, j As Long, tmp As Variant, s As Variant
+    ReDim arr(0 To segs.Count - 1)
+    i = 0
+    For Each s In segs
+        arr(i) = s: i = i + 1
+    Next s
+    For i = 1 To UBound(arr)
+        tmp = arr(i): j = i - 1
+        Do While j >= 0
+            If CDbl(arr(j)(1)) <= CDbl(tmp(1)) Then Exit Do
+            arr(j + 1) = arr(j): j = j - 1
+        Loop
+        arr(j + 1) = tmp
+    Next i
+    SortSegsByDist = arr
 End Function
 
 Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
@@ -293,20 +503,8 @@ Private Sub ClearLookupCells(ByVal ws As Worksheet, ByVal r As Long)
     ws.Cells(r, COL_ACUBNAME).ClearContents
     ws.Cells(r, COL_ROADNAME).ClearContents
     ws.Cells(r, COL_ELIGIBILITY).ClearContents
+    ws.Cells(r, COL_REVIEWNOTE).ClearContents
 End Sub
-
-' Exact point intersect first; if no hit, retry with the given buffer (§4.2).
-Private Function QueryWithFallback(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
-        ByVal outFields As String, ByVal whereClause As String, ByVal fallbackDistanceFt As Long, _
-        ByRef errMsg As String) As String
-    Dim json As String
-    json = RunQuery(baseUrl, lat, lon, outFields, whereClause, 0, errMsg)
-    If Len(errMsg) > 0 Then Exit Function
-    If FeatureCount(json) = 0 And Not HasArcgisError(json) Then
-        json = RunQuery(baseUrl, lat, lon, outFields, whereClause, fallbackDistanceFt, errMsg)
-    End If
-    QueryWithFallback = json
-End Function
 
 ' Read the search-buffer radius (in feet) from Setup, with a sane default
 ' and clamp. The cell can be anything (blank, text, a number out of range);
@@ -335,93 +533,25 @@ Private Function AcubBufferFeet() As Long
     End If
 End Function
 
+' One ArcGIS query. withGeom adds returnGeometry=true&outSR=4326 so the caller
+' can compute per-feature distances; otherwise geometry is omitted (ACUB
+' point-in-polygon only needs the count + NAME).
 Private Function RunQuery(ByVal baseUrl As String, ByVal lat As String, ByVal lon As String, _
         ByVal outFields As String, ByVal whereClause As String, ByVal distanceFt As Long, _
-        ByRef errMsg As String) As String
-    Dim url As String
+        ByRef errMsg As String, Optional ByVal withGeom As Boolean = False) As String
+    Dim url As String, geomPart As String
+    If withGeom Then geomPart = "&returnGeometry=true&outSR=4326" Else geomPart = "&returnGeometry=false"
     url = baseUrl & "/query?where=" & UrlEncode(whereClause) & _
         "&geometry=" & lon & "," & lat & _
         "&geometryType=esriGeometryPoint&inSR=4326" & _
         "&spatialRel=esriSpatialRelIntersects" & _
-        "&outFields=" & UrlEncode(outFields) & _
-        "&returnGeometry=false&f=json"
+        "&outFields=" & UrlEncode(outFields) & geomPart & "&f=json"
     If distanceFt > 0 Then url = url & "&distance=" & distanceFt & "&units=esriSRUnit_Foot"
     RunQuery = HttpGetText(url, errMsg)
 End Function
 
-Private Function BuildRouteName(ByVal routeJson As String) As String
-    Dim desig As String, num As String, s As String
-    desig = FirstString(routeJson, "RouteDesignation")
-    num = FirstString(routeJson, "RouteNumber")
-    s = Trim$(desig & " " & num)
-    BuildRouteName = s
-End Function
-
-Private Function ClassLabels(ByVal codes As Collection) As String
-    Dim seen As String, c As Variant, label As String, out As String
-    If codes.Count = 0 Then
-        ClassLabels = "No road segment within " & BufferFeet() & " ft"
-        Exit Function
-    End If
-    For Each c In codes
-        label = FunctionalSystemLabel(CLng(c))
-        If InStr(seen, "|" & label & "|") = 0 Then
-            seen = seen & "|" & label & "|"
-            out = out & IIf(Len(out) > 0, " | ", "") & label
-        End If
-    Next c
-    ClassLabels = out
-End Function
-
-' Federal Aid Status verdict per the §4.2 table. The label classifies the
-' road, NOT the project — "Federal aid" means the road IS on the federal-
-' aid system (Urban Minor Collector or higher), "Non-federal aid" means
-' it isn't. The inspector decides what that means for their work order;
-' we don't pre-judge eligibility.
-Private Function FederalAidVerdict(ByVal codes As Collection, ByVal isUrban As Boolean) As String
-    Dim c As Variant, isFederalAid As Boolean, manual As Boolean, hasRuralMinorCollector As Boolean
-    Dim worstCode As Long: worstCode = 99
-
-    If codes.Count = 0 Then
-        FederalAidVerdict = "No road segment within " & BufferFeet() & " ft - review manually"
-        Exit Function
-    End If
-
-    For Each c In codes
-        Select Case CLng(c)
-            Case 7   ' Local - never federal aid
-            Case 6
-                If isUrban Then
-                    isFederalAid = True
-                    If 6 < worstCode Then worstCode = 6
-                Else
-                    hasRuralMinorCollector = True   ' non-federal, but not "Local" either
-                End If
-            Case 1, 2, 3, 4, 5
-                isFederalAid = True
-                If CLng(c) < worstCode Then worstCode = CLng(c)
-            Case Else: manual = True
-        End Select
-    Next c
-
-    If isFederalAid Then
-        FederalAidVerdict = "Federal aid - " & PrefixedClass(worstCode, isUrban)
-    ElseIf manual Then
-        FederalAidVerdict = "Review - non-certified class, check manually"
-    ElseIf hasRuralMinorCollector Then
-        ' Reachable only when every code present is 6 (rural) and/or 7 - if a
-        ' 6 were urban it would have set isFederalAid above instead. Without
-        ' this branch a Rural Minor Collector displayed as "...Rural Local",
-        ' contradicting the FHWA Class column right next to it.
-        FederalAidVerdict = "Non-federal aid - Rural Minor Collector"
-    Else
-        FederalAidVerdict = "Non-federal aid - " & IIf(isUrban, "Urban", "Rural") & " Local"
-    End If
-End Function
-
-' Prefixes a federal-aid FHWA class (1-6; code 7/Local never reaches here)
-' with Urban/Rural, matching the "Federal aid - <Urban/Rural class>" format
-' in CLAUDE.md §4.2's eligibility table for every class, not just 4-6.
+' Prefixes an FHWA class label with Urban/Rural, matching the
+' "Federal aid - <Urban/Rural class>" format in CLAUDE.md §4.2's table.
 Private Function PrefixedClass(ByVal code As Long, ByVal isUrban As Boolean) As String
     PrefixedClass = IIf(isUrban, "Urban ", "Rural ") & FunctionalSystemLabel(code)
 End Function

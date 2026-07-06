@@ -78,6 +78,92 @@ Public Function HasArcgisError(ByVal json As String) As Boolean
     HasArcgisError = (InStr(json, """error""") > 0 And InStr(json, """code""") > 0)
 End Function
 
+' ---- Per-feature parsing + point-to-road distance (§ road distances) ------
+' The scalar extractors above flatten a field across ALL features. To pair
+' each road segment's class/name WITH its geometry (for distances) we split
+' the response into one text block per feature. ArcGIS emits each feature as
+' {"attributes":{...},"geometry":{...}} in that order, so splitting on the
+' "attributes" key yields one chunk per feature that carries that feature's
+' attributes AND the geometry that follows (up to the next feature).
+
+Public Function FeatureBlocks(ByVal json As String) As Collection
+    Dim parts() As String, i As Long, col As New Collection
+    parts = Split(json, """attributes""")
+    For i = 1 To UBound(parts)      ' parts(0) is the response preamble
+        col.Add parts(i)
+    Next i
+    Set FeatureBlocks = col
+End Function
+
+' Minimum distance (in FEET) from the point (lonP,latP, decimal degrees) to
+' the polyline geometry in one feature block. Geometry must be requested with
+' outSR=4326 so vertices are lon/lat. Uses a local equirectangular projection
+' (accurate at the few-hundred-foot scale we care about) and true
+' point-to-segment distance, not just nearest vertex (a long straight segment
+' can pass close to the point between far-apart vertices). Returns a huge
+' number when the block has no geometry.
+Public Function MinDistanceFt(ByVal block As String, ByVal lonP As Double, ByVal latP As Double) As Double
+    Dim geoPos As Long, geom As String
+    geoPos = InStr(block, """geometry""")
+    If geoPos = 0 Then MinDistanceFt = 1E+15: Exit Function
+    geom = Mid$(block, geoPos)
+
+    Dim re As Object, matches As Object, m As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.pattern = "\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]"
+    re.Global = True
+    Set matches = re.Execute(geom)
+    If matches.Count = 0 Then MinDistanceFt = 1E+15: Exit Function
+
+    Const M_PER_DEG As Double = 111320#
+    Const PI As Double = 3.14159265358979
+    Dim mPerLon As Double, mPerLat As Double
+    mPerLat = M_PER_DEG
+    mPerLon = M_PER_DEG * Cos(latP * PI / 180#)
+
+    ' The point sits at the local origin; project each vertex to metres
+    ' relative to it, then take the min point-to-segment distance.
+    Dim n As Long, i As Long
+    n = matches.Count
+    Dim px() As Double, py() As Double
+    ReDim px(0 To n - 1): ReDim py(0 To n - 1)
+    For i = 0 To n - 1
+        Set m = matches(i)
+        px(i) = (CDbl(m.SubMatches(0)) - lonP) * mPerLon
+        py(i) = (CDbl(m.SubMatches(1)) - latP) * mPerLat
+    Next i
+
+    Dim best As Double, d As Double
+    best = 1E+15
+    If n = 1 Then
+        best = Sqr(px(0) * px(0) + py(0) * py(0))
+    Else
+        For i = 0 To n - 2
+            d = PointSegDistM(px(i), py(i), px(i + 1), py(i + 1))
+            If d < best Then best = d
+        Next i
+    End If
+    MinDistanceFt = best * 3.28084          ' metres -> feet
+End Function
+
+' Distance from the origin (0,0) to the segment A(ax,ay)-B(bx,by), all in
+' the same planar units (metres). Standard proj(point onto segment) clamp.
+Private Function PointSegDistM(ByVal ax As Double, ByVal ay As Double, _
+        ByVal bx As Double, ByVal by As Double) As Double
+    Dim dx As Double, dy As Double, l2 As Double, t As Double, cx As Double, cy As Double
+    dx = bx - ax: dy = by - ay
+    l2 = dx * dx + dy * dy
+    If l2 = 0# Then
+        PointSegDistM = Sqr(ax * ax + ay * ay)
+        Exit Function
+    End If
+    t = -(ax * dx + ay * dy) / l2          ' projection of origin onto AB
+    If t < 0# Then t = 0#                  ' single-line If: no ElseIf allowed
+    If t > 1# Then t = 1#
+    cx = ax + t * dx: cy = ay + t * dy
+    PointSegDistM = Sqr(cx * cx + cy * cy)
+End Function
+
 ' `global` is a VBA reserved word (synonym for Public), so use `isGlobal`
 ' for the parameter — using the reserved word as a parameter name has bitten
 ' us with "Sub or Function not defined" errors at JIT-compile time even

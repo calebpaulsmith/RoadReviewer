@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #23"
+Public Const BUILD_REFERENCE As String = "PR #24"
 
 ' ---- Sheet names ----
 Public Const SH_START As String = "Start Here"
@@ -81,30 +81,40 @@ Public Const COL_CATEGORY As Long = 9
 Public Const COL_COSTS As Long = 10
 Public Const COL_WORKCOMP As Long = 11
 Public Const COL_GEOCODE As Long = 12
-Public Const COL_GMAP As Long = 13
-Public Const COL_STREETVIEW As Long = 14
-Public Const COL_BING As Long = 15
-Public Const COL_GEARTH As Long = 16
-Public Const COL_FEMAVIEW As Long = 17
-Public Const COL_FIRMPORTAL As Long = 18
-Public Const COL_NFCMAP As Long = 19
-Public Const COL_CLASS As Long = 20
-Public Const COL_URBANRURAL As Long = 21
-Public Const COL_ACUBNAME As Long = 22
-Public Const COL_ROADNAME As Long = 23
+' NFC Map stays on the LEFT (per-row map link, next to the results). The other
+' imagery/photo links moved to the RIGHT of the classification results (cols
+' 21-26) so the class + status are adjacent to the inputs, not behind six link
+' columns.
+Public Const COL_NFCMAP As Long = 13
+' Classification results (contiguous 14-20; the grey tint + tri-color verdict
+' conditional format both span this range).
+Public Const COL_CLASS As Long = 14
+Public Const COL_URBANRURAL As Long = 15
+Public Const COL_ACUBNAME As Long = 16
+Public Const COL_ROADNAME As Long = 17
 ' Street name(s) from the U.S. Census Bureau's TIGERweb Local Roads layer.
 ' Dense (covers most addresses) where COL_ROADNAME / MDOT 543 only gets
 ' trunkline route designations like "I-94 BL". Pipe-joined when multiple
 ' streets fall inside the search buffer (intersection points).
-Public Const COL_STREET As Long = 24
-Public Const COL_ELIGIBILITY As Long = 25
-Public Const COL_FIRMSTATUS As Long = 26  ' inspector-only (hidden in standard)
-Public Const COL_MAPSTATUS As Long = 27   ' inspector-only (hidden in standard)
+Public Const COL_STREET As Long = 18
+Public Const COL_ELIGIBILITY As Long = 19
+' <=3-word reason a row is yellow ("Review"): Nearby FHWA road / Second road
+' close / Urban boundary edge / etc. Blank for confident red or green rows.
+Public Const COL_REVIEWNOTE As Long = 20
+' Imagery / photo-source links (moved to the right of the results).
+Public Const COL_GMAP As Long = 21
+Public Const COL_STREETVIEW As Long = 22
+Public Const COL_BING As Long = 23
+Public Const COL_GEARTH As Long = 24
+Public Const COL_FEMAVIEW As Long = 25
+Public Const COL_FIRMPORTAL As Long = 26
+Public Const COL_FIRMSTATUS As Long = 27  ' inspector-only (hidden in standard)
+Public Const COL_MAPSTATUS As Long = 28   ' inspector-only (hidden in standard)
 ' Per-row deep-link into the user's own AGOL webmap (Start Here NR_AGOLMAP).
 ' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
 ' nobody has wired up an AGOL map.
-Public Const COL_AGOLMAP As Long = 28
-Public Const COL_LAST As Long = 28
+Public Const COL_AGOLMAP As Long = 29
+Public Const COL_LAST As Long = 29
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
 Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"

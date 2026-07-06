@@ -137,3 +137,20 @@ finally {
   [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
   [GC]::Collect(); [GC]::WaitForPendingFinalizers()
 }
+
+# Post-build compile check. VBA compiles each module lazily, so a syntax error
+# in a module the build never executes (modHttp / modClassify) would otherwise
+# only surface at the user's first Check Roads. compile-check.ps1 force-compiles
+# those modules now (with a timeout so a compile-error modal can't hang us).
+# Only reached on a successful build (a thrown build error skips post-finally).
+foreach ($p in $productsToBuild) {
+  # Clear any Excel instance left over from the previous check's background
+  # job before starting the next - two compile-check Excels racing each other
+  # can make Workbooks.Open transiently block and trip the timeout falsely.
+  Get-Process EXCEL -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Seconds 2
+  $checkPath = Join-Path $OutDir $outNames[$p]
+  Write-Host ("Compile-checking " + $outNames[$p] + " ...")
+  & (Join-Path $PSScriptRoot 'compile-check.ps1') -XlsmPath $checkPath
+  if ($LASTEXITCODE -ne 0) { throw ("Compile check FAILED for " + $outNames[$p] + " - the workbook has a VBA compile error.") }
+}
