@@ -314,6 +314,7 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     AddButton ws, 18, ws.Rows(46).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
     AddButton ws, 218, ws.Rows(46).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
     AddButton ws, 18, ws.Rows(49).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    AddButton ws, 414, ws.Rows(49).Top, 240, 28, "Open Sites on NFC Layer (AGOL)", "OpenSitesOnNfcLayer"
 
     AddButton ws, 18, ws.Rows(52).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
     NoteLine ws, 54, "Build / Reset repairs the layout; your Sites data is preserved."
@@ -430,6 +431,7 @@ Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
         AddToolbarButton ws, "RR_Csv", 361, 95, "Export CSV", "ExportSitesCsv", False
         AddToolbarButton ws, "RR_Kml", 459, 95, "Export KML", "ExportSitesToKML", False
         AddToolbarButton ws, "RR_Agol", 557, 175, "Send to AGOL Map", "SendSitesToAgolMap", False
+        AddToolbarButton ws, "RR_NfcLayer", 735, 200, "NFC Layer + Sites (AGOL)", "OpenSitesOnNfcLayer", False
     End If
 End Sub
 

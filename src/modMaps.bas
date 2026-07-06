@@ -607,6 +607,58 @@ Public Sub SendSitesToAgolMap()
     End If
 End Sub
 
+' Open the state functional-class (NFC) layer in AGOL Map Viewer and drop
+' ALL sites onto it at once, colored by federal-aid verdict. Reuses the
+' colored KML (red = federal aid, green = non-federal, blue = review) and
+' opens the same per-state NFC layer the "AGOL NFC Layer" column uses,
+' centered on the first site so the map lands somewhere relevant. The user
+' then drags the highlighted KML from Explorer onto the map.
+Public Sub OpenSitesOnNfcLayer()
+    Dim file As String, n As Long, dialogTitle As String
+    dialogTitle = "Open Sites on NFC Layer"
+    If Not WriteSitesKml(file, n, dialogTitle) Then Exit Sub
+
+    Dim url As String
+    url = NfcLayerUrlForFirstSite()
+    If Len(url) = 0 Then url = BuildUrl(NfcLayerTemplate(), 0, 0)   ' no sites w/ coords - open layer anyway
+
+    If Not gHeadless Then
+        On Error Resume Next
+        ThisWorkbook.FollowHyperlink Address:=url, NewWindow:=False
+        On Error GoTo 0
+        Dim q As String: q = Chr$(34)
+        Shell "explorer.exe /select," & q & file & q, vbNormalFocus
+        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & vbCrLf & _
+            "The state NFC functional-class layer should now be open in ArcGIS Map Viewer." & vbCrLf & _
+            "Drag the highlighted KML from Explorer onto the map to add all your sites," & vbCrLf & _
+            "colored red (federal aid) / green (non-federal aid) / blue (review).", _
+            vbInformation, dialogTitle
+    End If
+End Sub
+
+' The per-state AGOL NFC-layer URL template (matches the AGOL NFC Layer
+' column - modBuild.SetNfcAgolFormula / modExport.NfcAgolUrlForRow).
+Private Function NfcLayerTemplate() As String
+    Select Case BareStateCode(SetupValue(NR_STATE))
+        Case "IN": NfcLayerTemplate = URL_NFC_MAPVIEW_IN
+        Case "WI": NfcLayerTemplate = URL_NFC_MAPVIEW_WI
+        Case "MI", "": NfcLayerTemplate = URL_NFC_MAPVIEW
+        Case Else: NfcLayerTemplate = URL_FEMAVIEW
+    End Select
+End Function
+
+Private Function NfcLayerUrlForFirstSite() As String
+    Dim ws As Worksheet, last As Long, r As Long
+    Set ws = SitesSheet()
+    last = SitesLastRow()
+    For r = SITES_FIRST_DATA_ROW To last
+        If HasValidCoords(ws, r) Then
+            NfcLayerUrlForFirstSite = BuildUrl(NfcLayerTemplate(), ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
+            Exit Function
+        End If
+    Next r
+End Function
+
 ' Shared KML builder: writes the file to the resolved output folder, sets
 ' filePath + placemarkCount on success, returns False on any failure (with a
 ' MsgBox already shown if gHeadless is False).

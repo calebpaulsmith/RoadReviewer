@@ -86,7 +86,7 @@ try {
 
   # Product button surface: shared actions everywhere; workflow-3 actions
   # inspector-only.
-  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','ExportSitesCsv','ExportSitesToKML','SendSitesToAgolMap','BuildWorkbook')
+  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','ExportSitesCsv','ExportSitesToKML','SendSitesToAgolMap','OpenSitesOnNfcLayer','BuildWorkbook')
   $inspectorActions = @('DownloadFirmettes','ReRunFailedFirmettes','PrepareMapPages','AddMapPage','ExportCombinedMapPdf')
   foreach ($a in $sharedActions) {
     if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }

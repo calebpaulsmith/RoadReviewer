@@ -1614,10 +1614,14 @@ Split the single per-row map link into two, per user direction:
 (Experience-app loading, Map Viewer time slider, side-load rendering). The
 build/skeleton confirm the formulas resolve and the Open column points at the
 Experience-app URL; the actual in-browser behavior (esp. the Michigan time
-slider fix) needs a human click-test. Still open: an "open all sites at once
-on the AGOL NFC layer, colored by verdict" button (the KML export already
-colors pins red/green/blue; `SendSitesToAgolMap` is the closest existing
-hook) - not yet built.
+slider fix) needs a human click-test.
+
+**"Open Sites on NFC Layer (AGOL)" button** (`modMaps.OpenSitesOnNfcLayer`,
+on the Sites toolbar for standard / Start Here for inspector): writes the
+verdict-colored KML (red/green/blue, reusing `WriteSitesKml`) and opens the
+per-state NFC layer in Map Viewer centered on the first site, then pops
+Explorer with the KML for a single drag-drop of all sites onto the layer.
+Same untestable-headless caveat.
 
 ---
 
