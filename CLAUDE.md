@@ -1412,7 +1412,7 @@ the column order changed and the header moved to row 2. Old files keep
 working as-is (their embedded VBA is self-consistent); new work should
 start from the new deliverables.
 
-### Front-page disclaimer, boundary handling, citation page, version stamp (PR #19)
+### Front-page disclaimer, boundary handling, citation page, version stamp (PR #21)
 
 Four additions after the split, per user direction:
 
@@ -1443,7 +1443,7 @@ Four additions after the split, per user direction:
    `web/sources.html` (org, service URL, exact layer, fields read, every
    schema quirk per state).
 4. **Version/PR stamp** — `BUILD_REFERENCE` constant in `modConstants`
-   (`"PR #19"`), shown as a small grey label at the bottom of Start Here
+   (`"PR #21"`), shown as a small grey label at the bottom of Start Here
    (`modBuild.VersionLabel`) and in the Sources footer, so a shared copy
    is traceable to the build/PR it came from. Bump it each release.
    `verify-skeleton.ps1` asserts the disclaimer text, the eligibility
