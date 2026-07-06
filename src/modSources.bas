@@ -1,12 +1,32 @@
 Attribute VB_Name = "modSources"
 Option Explicit
 
-' Sources sheet - per-state data-source citations and every schema quirk a
-' reviewer might need to defend a verdict. Static text written at build
-' time (CLAUDE.md §4.2/§4.2a/§4.2b are the authoritative research notes;
-' keep this sheet in sync with them and with web/sources.html).
+' Sources & Quirks sheet. Two sections, per user direction (PR #22):
+'   1. SOURCES   - for each state, the official public map (verify a point on
+'                  it) and the data service this tool reads, as short
+'                  bluebook-style citations ending "available at: <url>".
+'   2. QUIRKS & CAVEATS - the same schema quirks in plain language.
+' Official-app + unwired-state REST URLs were verified live 2026-07-05
+' (see the research report in the PR). Wired/nationwide services reuse the
+' REST_* constants the classifier actually queries. Keep this sheet in sync
+' with CLAUDE.md §4.2/§4.2a/§4.2b and web/sources.html.
 
 Private mRow As Long   ' running row cursor while writing the sheet
+
+' Official public-facing functional-class maps (verified live 2026-07-05).
+Private Const APP_MI As String = "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"
+Private Const APP_IN As String = "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot"
+Private Const APP_WI As String = "https://wisconsindot.gov/Pages/projects/data-plan/plan-res/function.aspx"
+Private Const APP_MN As String = "https://webgis.dot.state.mn.us/emma/"
+Private Const APP_IL As String = "https://www.gettingaroundillinois.com/MapViewer/?config=RFCconfig.json"
+Private Const APP_OH As String = "https://tims.dot.state.oh.us/tims"
+
+' Reference-only REST services for the not-yet-wired states (we don't query
+' these; they're cited so a future release can wire them and so a reviewer
+' knows where the authoritative data lives).
+Private Const REST_MN_NFC As String = "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11"
+Private Const REST_IL_NFC As String = "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0"
+Private Const REST_OH_NFC As String = "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0"
 
 Public Sub BuildSourcesSheet()
     Dim ws As Worksheet
@@ -16,114 +36,117 @@ Public Sub BuildSourcesSheet()
     mRow = 2
 
     With ws.Cells(mRow, 2)
-        .Value = "Data Sources & Quirks"
+        .Value = "Sources & Quirks"
         .Font.Size = 20
         .Font.Bold = True
     End With
     mRow = mRow + 1
-    Body ws, "Every service this tool queries, with the exact layer, the fields read, and the quirks that shape the results."
+    Body ws, "Where every result comes from. SOURCES (top) lists each state's official public map and the data " & _
+        "service this tool reads; QUIRKS & CAVEATS (bottom) explains, in plain language, the things about that " & _
+        "data that shape the answer. This tool is a screening aid, not an authoritative source - read the " & _
+        "disclaimer on Start Here and verify every point on the official map."
     mRow = mRow + 1
 
-    Section ws, "Read this first - what this tool is (and isn't)"
+    ' ===================== SECTION 1: SOURCES =====================
+    Section ws, "1.  SOURCES"
+    Body ws, "For each state: the OFFICIAL PUBLIC MAP (open it to confirm a point yourself) and the DATA SERVICE " & _
+        "this tool reads. Michigan, Indiana and Wisconsin are wired for road classification. Minnesota, Illinois " & _
+        "and Ohio are reference-only for now - the tool runs the urban-boundary check on them but does not yet " & _
+        "read their class layer; their sources are listed so the data can be wired in later."
+    mRow = mRow + 1
+
+    StateHeader ws, "Michigan (MDOT) - WIRED"
+    Cite ws, "Michigan Department of Transportation, National Functional Classification, NHS & ACUB (interactive map),", APP_MI
+    Cite ws, "Michigan Department of Transportation, Functional System, ArcGIS REST feature service layer 353 " & _
+        "(NextGen PR Finder; road names from companion layer 543) - queried by this tool,", REST_MDOT_NFC
+
+    StateHeader ws, "Indiana (INDOT) - WIRED"
+    Cite ws, "Indiana Department of Transportation, INDOT Functional Class Map (Functional Classification & Urban " & _
+        "Area Boundary),", APP_IN
+    Cite ws, "Indiana Department of Transportation, LRSE_Functional_Class, ArcGIS REST feature service layer 22 " & _
+        "(road names from the 2021 centerlines layer) - queried by this tool,", REST_IN_NFC
+
+    StateHeader ws, "Wisconsin (WisDOT) - WIRED"
+    Cite ws, "Wisconsin Department of Transportation, Functional Classification (official page; static county and " & _
+        "urban-area PDF maps - WisDOT publishes no statewide interactive map),", APP_WI
+    Cite ws, "Wisconsin Department of Transportation, Functional Class - State Trunk Network, ArcGIS REST feature " & _
+        "service layer 3 (local roads from the Flood Damage Assessment snapshot, layer 1) - queried by this tool,", REST_WI_STATE_TRUNK
+
+    StateHeader ws, "Minnesota (MnDOT) - reference only, not yet wired"
+    Cite ws, "Minnesota Department of Transportation, Enterprise MnDOT Mapping Application (EMMA) - Functional " & _
+        "Class layer,", APP_MN
+    Cite ws, "Minnesota Department of Transportation, Functional Class, ArcGIS REST map service layer 11 " & _
+        "(mndot_commonlayers2),", REST_MN_NFC
+
+    StateHeader ws, "Illinois (IDOT) - reference only, not yet wired"
+    Cite ws, "Illinois Department of Transportation, Roadway Functional Class (Getting Around Illinois map viewer),", APP_IL
+    Cite ws, "Illinois Department of Transportation, Functional Class, ArcGIS REST map service layer 0,", REST_IL_NFC
+
+    StateHeader ws, "Ohio (ODOT) - reference only, not yet wired"
+    Cite ws, "Ohio Department of Transportation, Transportation Information Mapping System (TIMS),", APP_OH
+    Cite ws, "Ohio Department of Transportation, Functional Class, ArcGIS REST map service layer 0,", REST_OH_NFC
+
+    StateHeader ws, "All states - urban boundary, street names, geocoding, flood maps"
+    Cite ws, "U.S. Department of Transportation, Bureau of Transportation Statistics, 2020 Adjusted Urban Area " & _
+        "Boundaries (National Transportation Atlas Database) - the urban/rural source for every state,", REST_ACUB
+    Cite ws, "U.S. Census Bureau, TIGERweb Transportation - Local Roads, ArcGIS REST map service layer 8 " & _
+        "(street names, all states),", REST_TIGER_ROADS
+    Cite ws, "U.S. Census Bureau, Census Geocoder - one-line address service (fills coordinates from an address),", REST_CENSUS_GEOCODE
+    Cite ws, "Federal Emergency Management Agency, Map Service Center - Print FIRMette service (flood-map extracts),", REST_FIRMETTE
+    mRow = mRow + 1
+
+    ' ===================== SECTION 2: QUIRKS & CAVEATS =====================
+    Section ws, "2.  QUIRKS & CAVEATS (plain language)"
+
+    Sub2 ws, "This is a screening aid, not a determination"
     Body ws, "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
-        "candidates for a person to review, and can miss or mis-tag a road. It is not an authoritative source for " & _
-        "FHWA functional classification."
-    Body ws, "Every coordinate must be verified by a human against the official source map before it is relied on - " & _
-        "use each Sites row's NFC Map link and the citations below. Results are informational only and do NOT " & _
+        "candidates for a person to review, and can miss or mis-tag a road. Every coordinate must be verified by " & _
+        "a human on the official map above before it is relied on. Results are informational only and do NOT " & _
         "constitute a federal-aid, funding, or eligibility determination."
+
+    Sub2 ws, "How the answer is built"
+    Body ws, "For each point the tool reads the road's functional class from the state's own data, and separately " & _
+        "checks whether the point falls inside a Census-adjusted urban area. A road that is Urban Minor Collector " & _
+        "or higher is tagged 'federal aid'; Rural Local, Urban Local and Rural Minor Collector are 'non-federal " & _
+        "aid'. It tags the road, not the project - what that means for a work order is the reviewer's call."
+
+    Sub2 ws, "BOUNDARY ROADS (urban vs rural on the edge)"
+    Body ws, "Urban vs rural comes only from the urban-boundary layer, never from the state's own data, so every " & _
+        "state is judged the same way. When a GPS point sits ON or just OUTSIDE an urban boundary - e.g. on a " & _
+        "road that forms the boundary, or a few feet onto the rural side - the point is deliberately treated as " & _
+        "URBAN (the boundary check always searches at least 200 ft). This leans toward flagging a boundary road " & _
+        "for review rather than silently dropping it. Always confirm boundary cases manually on the source map."
+
+    Sub2 ws, "Michigan"
+    Body ws, "Michigan's road data includes retired (historical) segments; the tool skips those so it never reads " & _
+        "an out-of-date classification. Road names exist only for numbered state routes (like 'I-94'), so local " & _
+        "street names are filled in from the Census street layer instead."
+
+    Sub2 ws, "Indiana"
+    Body ws, "Indiana marks each record's status; the tool uses only Active records. Indiana's class data carries " & _
+        "no road name at all, so names come from a separate centerline layer and the Census - expect the Road " & _
+        "Name column to be blank more often for Indiana."
+
+    Sub2 ws, "Wisconsin"
+    Body ws, "Wisconsin data comes in two layers: state highways are checked first, then local (county/city/town) " & _
+        "roads. The local-roads layer bakes urban/rural into its own class number, which the tool translates back " & _
+        "to a plain federal class before deciding. One local code ('Urban Collector') doesn't separate major from " & _
+        "minor collector - it's treated as major, which never changes the answer because every urban collector is " & _
+        "federal aid regardless."
+
+    Sub2 ws, "Minnesota, Illinois, Ohio (not yet wired)"
+    Body ws, "Road-class lookup is not wired for these states yet, so the tool runs only the urban-boundary check " & _
+        "and the Federal Aid Status column says 'ACUB only - class lookup not wired for this state' rather than " & _
+        "guessing. The sources listed above are where each state's class data lives when it is added."
+
+    Sub2 ws, "Street names and addresses (all states)"
+    Body ws, "Street names are backfilled from the U.S. Census street layer wherever the state data only knows " & _
+        "numbered routes. If a row has an address but no coordinates, Check Roads geocodes it with the free Census " & _
+        "address service first (it never overwrites coordinates you typed in)."
     mRow = mRow + 1
 
-    Section ws, "How the federal-aid check works"
-    Body ws, "The FHWA functional class comes from each state's own roads layer. Urban vs Rural comes from the " & _
-        "nationwide 2020 Adjusted Urban Boundary (ACUB) polygons - never from the state layer, even when it " & _
-        "carries its own urban flag, so every state is judged the same way."
-    Body ws, "A road is tagged FEDERAL AID when any segment at the point (or within the search buffer) is Urban " & _
-        "Minor Collector or greater. Non-federal-aid classes: Rural Local, Urban Local, Rural Minor Collector. " & _
-        "The tool classifies the road, never the project - the reviewer decides what federal-aid status means " & _
-        "for a given work order."
-    Body ws, "Every lookup tries the exact point first, then retries with a fallback radius (the Search buffer, " & _
-        "default 200 ft)."
-    Body ws, "BOUNDARY ROADS: the urban-boundary check always uses a radius of at least 200 ft. So when a GPS point " & _
-        "sits ON or just OUTSIDE an urban boundary - e.g. on a road that itself forms the boundary, or a few feet " & _
-        "onto the rural side - the point is deliberately treated as URBAN (which leans toward a federal-aid flag " & _
-        "for review) rather than being missed. This is intentional: it is safer to over-flag a boundary road for " & _
-        "human review than to silently drop it. Always confirm boundary cases manually on the source map."
-    mRow = mRow + 1
-
-    Section ws, "Michigan - MDOT"
-    Body ws, "Functional class: NextGen PR Finder, layer 353 ""Functional System"" - field FunctionalSystem " & _
-        "(FHWA codes 1-7), filtered to RHRetireDate IS NULL so retired historical segments are excluded."
-    LinkLine ws, "MDOT layer 353 (Functional System)", REST_MDOT_NFC
-    Body ws, "Route names: companion layer 543 ""Route System"" (RouteDesignation + RouteNumber). Only designated " & _
-        "trunkline routes (I-, US-, M-) are populated - local street names come from the Census TIGER layer below."
-    LinkLine ws, "MDOT layer 543 (Route System)", REST_MDOT_ROUTE
-    Body ws, "Quirk: MDOT's server returns HTTP 403 to requests without a browser User-Agent; this tool sends a " & _
-        "browser-style UA on every request."
-    mRow = mRow + 1
-
-    Section ws, "Indiana - INDOT / IndianaMap"
-    Body ws, "Functional class: LRSE_Functional_Class, layer 22 - field functional_class (FHWA codes 1-7), " & _
-        "filtered to record_status = 5 (Active), Indiana's analog to Michigan's retire-date filter."
-    LinkLine ws, "INDOT LRSE_Functional_Class layer 22", REST_IN_NFC
-    Body ws, "Road name: Road Centerlines of Indiana 2021, layer 15 - field st_full. This layer shares no join key " & _
-        "with the class layer, so it is a separate point query; the name is blank more often than Michigan's, " & _
-        "and the Census TIGER street-name column backs it up."
-    LinkLine ws, "Indiana road centerlines layer 15", REST_IN_ROADNAME
-    mRow = mRow + 1
-
-    Section ws, "Wisconsin - WisDOT"
-    Body ws, "Two layers, queried in sequence. First the State Trunk Network extract (interstates / US and state " & _
-        "highways) - field FED_FC_CD is already a bare FHWA 1-7 code; road name is built from HWYTYPE + HWYNUM + " & _
-        "HWYDIR (e.g. ""STH 32 S"")."
-    LinkLine ws, "WisDOT State Trunk Network (FFCL_gdb layer 3)", REST_WI_STATE_TRUNK
-    Body ws, "Only when no state-trunk segment intersects: the Local Road Network flood-damage snapshot - field " & _
-        "FNCT_CLS_CTGY_TYCD, WisDOT's own code that embeds Urban/Rural into the number (45 = Rural Local, 97 = " & _
-        "Urban Local, ...). The tool strips that back to a bare FHWA code; ACUB stays the urban/rural source of truth."
-    LinkLine ws, "WisDOT Local Road Network snapshot (layer 1)", REST_WI_LOCAL_ROADS
-    Body ws, "Quirk: local-roads code 96 ""Urban Collector Other"" doesn't distinguish Major from Minor Collector. " & _
-        "It is mapped to Major Collector, which can never change the verdict - every URBAN collector is federal " & _
-        "aid regardless of the major/minor split."
-    mRow = mRow + 1
-
-    Section ws, "Urban / Rural - ACUB (all states)"
-    Body ws, "USDOT BTS National Transportation Atlas Database, ""2020 Adjusted Urban Area Boundaries"" (nationwide " & _
-        "polygon layer; fields NAME and UACE). A point inside any polygon is Urban; otherwise Rural. This is the " & _
-        "single urban/rural source of truth for every state."
-    LinkLine ws, "NTAD 2020 Adjusted Urban Areas", REST_ACUB
-    mRow = mRow + 1
-
-    Section ws, "Street names - U.S. Census Bureau TIGERweb (all states)"
-    Body ws, "Local Roads layer (Transportation MapServer, layer 8), field NAME. Fills the Street Name column for " & _
-        "every state, covering the local streets the state layers name poorly or not at all. Multiple streets " & _
-        "inside the search buffer (intersections) are pipe-joined."
-    LinkLine ws, "TIGERweb Local Roads layer 8", REST_TIGER_ROADS
-    mRow = mRow + 1
-
-    Section ws, "Address geocoding - U.S. Census Bureau (all states)"
-    Body ws, "The Census one-line address geocoder runs automatically during Check Roads for any row that has an " & _
-        "Address but no coordinates. Coordinates already typed into a row are never overwritten. Free, no " & _
-        "account, US addresses only."
-    LinkLine ws, "Census one-line address geocoder", REST_CENSUS_GEOCODE
-    mRow = mRow + 1
-
-    Section ws, "Flood maps - FEMA Map Service Center"
-    Body ws, "Each row's FIRMette Portal link opens FEMA's Map Service Center FIRMette page at the point."
-    If ProductIsInspector() Then
-        Body ws, "The Download FIRMettes button drives FEMA's Print FIRMette geoprocessing service (submit job, " & _
-            "poll status, download the rendered PDF) for every row."
-        LinkLine ws, "FEMA Print FIRMette GP service", REST_FIRMETTE
-    End If
-    mRow = mRow + 1
-
-    Section ws, "States not yet wired (MN / IL / OH)"
-    Body ws, "No functional-class layer is wired for these states yet. The ACUB urban/rural check still runs on " & _
-        "every row; the Federal Aid Status column reads ""ACUB only - class lookup not wired for this state"" " & _
-        "so nothing silently pretends to be classified."
-    mRow = mRow + 1
-
-    Body ws, "All layer names, fields and quirks were confirmed against each service's live REST metadata " & _
-        "(?f=json), 2026-07-01 through 2026-07-05. This tool classifies the road, never the project. " & _
-        ProductTitle() & " - " & BUILD_REFERENCE & "."
+    Body ws, "Sources verified 2026-07-05 against each service's live metadata. This tool classifies the road, " & _
+        "never the project.  " & ProductTitle() & " - " & BUILD_REFERENCE & "."
 
     HideGridlines ws
     ws.Tab.Color = RGB(120, 120, 120)
@@ -133,7 +156,26 @@ Private Sub Section(ByVal ws As Worksheet, ByVal txt As String)
     With ws.Cells(mRow, 2)
         .Value = txt
         .Font.Bold = True
-        .Font.Size = 13
+        .Font.Size = 15
+        .Font.Color = RGB(47, 79, 79)
+    End With
+    mRow = mRow + 1
+End Sub
+
+Private Sub StateHeader(ByVal ws As Worksheet, ByVal txt As String)
+    With ws.Cells(mRow, 2)
+        .Value = txt
+        .Font.Bold = True
+        .Font.Size = 12
+    End With
+    mRow = mRow + 1
+End Sub
+
+Private Sub Sub2(ByVal ws As Worksheet, ByVal txt As String)
+    With ws.Cells(mRow, 2)
+        .Value = txt
+        .Font.Bold = True
+        .Font.Size = 12
     End With
     mRow = mRow + 1
 End Sub
@@ -149,10 +191,15 @@ Private Sub Body(ByVal ws As Worksheet, ByVal txt As String)
     mRow = mRow + 1
 End Sub
 
-Private Sub LinkLine(ByVal ws As Worksheet, ByVal label As String, ByVal url As String)
+' One bluebook-style citation: the source sentence, then "available at: <url>",
+' with the whole line hyperlinked to the URL so it's one click to the source.
+Private Sub Cite(ByVal ws As Worksheet, ByVal citation As String, ByVal url As String)
     Dim cell As Range
     Set cell = ws.Cells(mRow, 2)
-    ws.Hyperlinks.Add Anchor:=cell, Address:=url, TextToDisplay:="    " & label & "  ->  " & url
+    ws.Hyperlinks.Add Anchor:=cell, Address:=url, TextToDisplay:="    " & citation & " available at: " & url
+    cell.WrapText = True
+    cell.VerticalAlignment = xlTop
     cell.Font.Size = 10
+    ws.Rows(mRow).AutoFit
     mRow = mRow + 1
 End Sub

@@ -188,6 +188,22 @@ Public Function SetupValue(ByVal namedRange As String) As String
     End If
 End Function
 
+' Normalize a State dropdown value to its bare 2-letter code. The dropdown
+' annotates unwired states ("MN (not wired)"), so take the text before the
+' first space and upper-case it: "MI" -> "MI", "MN (not wired)" -> "MN".
+' NOT named StateCode: callers use a local variable `stateCode`, and VBA
+' identifiers are case-insensitive, so a same-named function is shadowed by
+' the local and `stateCode = StateCode(...)` compiles as array-indexing the
+' local ("Expected array") - the exact NfcWired/nfcWired trap noted in
+' modClassify. Hence BareStateCode.
+Public Function BareStateCode(ByVal raw As String) As String
+    Dim s As String, p As Long
+    s = Trim$(raw)
+    p = InStr(s, " ")
+    If p > 0 Then s = Left$(s, p - 1)
+    BareStateCode = UCase$(Trim$(s))
+End Function
+
 ' Convert a 1-based column index to its letter(s): 1->A, 27->AA.
 Public Function ColLetter(ByVal n As Long) As String
     Dim r As String, m As Long

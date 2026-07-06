@@ -49,7 +49,7 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         Exit Sub
     End If
 
-    stateCode = UCase$(SetupValue(NR_STATE))
+    stateCode = BareStateCode(SetupValue(NR_STATE))
     If Len(stateCode) = 0 Then stateCode = "MI"
     ' Local var deliberately NOT named NfcWired - VBA identifiers are
     ' case-insensitive, so a local variable with the same name as the

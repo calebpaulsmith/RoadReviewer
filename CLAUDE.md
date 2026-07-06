@@ -878,6 +878,22 @@ These came up reading the prototypes; capturing them so they aren't lost.
 - **Route-optimization integration.** The user has a separate route
   planner. Easiest hand-off: export the Sites table as a CSV / KML / GPX
   that the planner already accepts. Avoid tight coupling for now.
+
+- **Rapid site-by-site review on the authoritative map (idea, PR #22).**
+  The tool already exports a KML of all sites (`ExportSitesToKML`) and can
+  drop it onto the user's AGOL webmap (`SendSitesToAgolMap`). Now that the
+  official public functional-class app URL is known for MI/IN (and MN/IL/OH
+  — see §7c / `modSources`), two follow-ons are feasible: (a) a per-row
+  deep-link that opens *that state's official app* centered on the site
+  (today the NFC Map column opens the FEMA Map Viewer webmap, not the DOT's
+  own Experience app — the Experience Builder coordinate deep-link was
+  rolled back once for mis-navigating, PR #18, so this needs care); and
+  (b) publishing the Sites KML as a hosted feature layer and building an
+  ArcGIS **Instant App** (e.g. Attachment Viewer / Media Map / Nearby) to
+  step through each site over the authoritative class + ACUB layers. Both
+  need an AGOL org + auth, so they're out of the no-auth V1 scope, but the
+  verified per-state app/REST URLs are the missing piece and are now on
+  file.
 - **AGOL Experience Builder front-end.** For features that are awkward in
   Excel — drawing a polygon search area, side-by-side historical imagery,
   collaborative editing — we can publish the Sites table as a hosted
@@ -1448,6 +1464,52 @@ Four additions after the split, per user direction:
    is traceable to the build/PR it came from. Bump it each release.
    `verify-skeleton.ps1` asserts the disclaimer text, the eligibility
    clause, the `PR #` label, and the `BOUNDARY ROADS` caveat.
+
+### State-selector labels, output-folder display, two-section Sources (PR #22)
+
+1. **State dropdown labels the unwired states.** `STATE_LIST` is now
+   `"WI,IN,MI,MN (not wired),IL (not wired),OH (not wired)"` so a user sees
+   at a glance which states classify roads. `modUtil.BareStateCode()` strips
+   the `" (not wired)"` suffix back to the bare 2-letter code; `ClassifyRows`
+   and `modExport.NfcMapUrlForRow` both call it instead of `UCase$` on the
+   raw cell. (It is named `BareStateCode`, not `StateCode`, on purpose: the
+   callers' local variable is `stateCode`, and a same-named function is
+   shadowed by the case-insensitive local, compiling `stateCode =
+   StateCode(...)` as an "Expected array" error — the NfcWired/nfcWired
+   trap. §9.3.) The wired states stay bare (`"MI"`/`"IN"`/`"WI"`), so
+   `SetNfcMapFormula`'s Excel-side `=IF(state="MI",…)` comparisons are
+   unchanged. `verify-rerun-and-state.ps1` now sets `"MN (not wired)"` to
+   exercise the normalizer end-to-end.
+2. **Standard product's Output Folder shows its own directory.** The two
+   explanatory notes under the inputs were deleted; instead the Output
+   Folder cell carries a live `CELL("filename")` formula
+   (`modBuild.SetOutputFolderDefault`) that displays the workbook's folder
+   (or blanks for an unsaved / `http` SharePoint path — the exact case
+   `ResolveOutputFolder` already falls back on, so behavior is unchanged).
+   Standard only; the inspector keeps its blank cell + OneDrive-FEMA
+   default. Browse/typing overwrites the formula.
+3. **Sources sheet split into two sections** (`modSources.bas`):
+   **(1) SOURCES** — per state, the official public map + the data service,
+   as short bluebook citations ending "available at: <url>" (whole line
+   hyperlinked); **(2) QUIRKS & CAVEATS** — the same schema quirks in plain
+   language. Official public functional-class maps + reference REST layers
+   for all six states were verified live 2026-07-05:
+
+   | State | Official public map | Class REST layer |
+   |---|---|---|
+   | MI | MDOT "NFC, NHS & ACUB" Experience | mdotgis…/FeatureServer/353 (wired) |
+   | IN | INDOT "Functional Class Map" Experience | gisdata.in.gov…/FeatureServer/22 (wired) |
+   | WI | WisDOT function.aspx (static county/urban PDFs; **no statewide interactive map**) | services5.arcgis.com FFCL_gdb/FeatureServer/3 (wired) |
+   | MN | MnDOT EMMA (`webgis.dot.state.mn.us/emma/`) | dotapp9…/mndot_commonlayers2/MapServer/11 (ref only) |
+   | IL | IDOT "Getting Around Illinois" RFC viewer | gis1.dot.illinois.gov…/FunctionalClass/MapServer/0 (ref only) |
+   | OH | ODOT TIMS (`tims.dot.state.oh.us/tims`) | tims…/Functional_Class/MapServer/0 (ref only) |
+
+   MN/IL/OH all expose a **bare FHWA 1-7** class field
+   (`FUNCTIONAL_CLASS` / `FC` / `FUNCTION_CLASS_CD`), so wiring them later
+   is the same shape as IN — the URLs live as `APP_*`/`REST_*_NFC`
+   constants in `modSources.bas`. MnDOT's same service also has a
+   "Federal Adjusted Urban Area" layer (an ACUB analog) if a state-native
+   urban-boundary source is ever wanted.
 
 ---
 
