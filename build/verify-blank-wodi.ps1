@@ -36,7 +36,7 @@ try {
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
   # Row 1 toolbar, row 2 header, data from row 3; Lat=5, Lon=6, Category=9.
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,29)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(3, 3).Value2 = 1
   $sites.Cells(3, 4).Value2 = 'BlankIDs site'
@@ -110,7 +110,7 @@ try {
 
   # Cleanup
   $wb.Worksheets('MapPages').Delete()
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,29)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobWO').RefersToRange.Value2 = ''
   $wb.Names('JobDI').RefersToRange.Value2 = ''

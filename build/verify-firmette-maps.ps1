@@ -38,7 +38,7 @@ try {
 
   # Clear and write one Sites row (row 1 toolbar, row 2 header, data from 3;
   # Lat=5, Lon=6, Description=7, Category=9)
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,29)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(3, 3).Value2 = 1                     # Site #
   $sites.Cells(3, 4).Value2 = 'Kalamazoo test'      # Site Name
@@ -93,7 +93,7 @@ try {
   # ---- Cleanup workbook state ----
   $excel.Run('SetHeadless', $false) | Out-Null
   $excel.Run('SetTrace', '') | Out-Null
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,29)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   # Reset Setup so the user's saved workbook doesn't carry test values
   $wb.Names('JobWO').RefersToRange.Value2 = ''

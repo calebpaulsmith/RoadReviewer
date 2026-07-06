@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #24"
+Public Const BUILD_REFERENCE As String = "PR #25"
 
 ' ---- Sheet names ----
 Public Const SH_START As String = "Start Here"
@@ -114,7 +114,13 @@ Public Const COL_MAPSTATUS As Long = 28   ' inspector-only (hidden in standard)
 ' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
 ' nobody has wired up an AGOL map.
 Public Const COL_AGOLMAP As Long = 29
-Public Const COL_LAST As Long = 29
+' "AGOL NFC Layer" - per-row link that opens the state functional-class layer
+' in ArcGIS Map Viewer, centered on the point. Distinct from COL_NFCMAP (the
+' official public app) and COL_AGOLMAP (the user's own pasted webmap). Placed
+' at the end to avoid reshuffling every column; drag it next to NFC Map if
+' you want them adjacent.
+Public Const COL_NFCAGOL As Long = 30
+Public Const COL_LAST As Long = 30
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----
 Public Const URL_GMAP As String = "https://www.google.com/maps?q={LAT},{LON}"
@@ -130,13 +136,18 @@ Public Const URL_FIRMPORTAL As String = "https://msc.fema.gov/portal/firmette?la
 ' the same pattern as the Indiana/Wisconsin links below.
 ' History: this used to open MDOT's curated NFC/NHS/ACUB webmap
 ' (item 6a1702b9...), but that webmap carries a "Metropolitan Planning
-' Organizations" layer whose large region labels (e.g. "...Transportation
-' Coordinating Initiative") print right over the marker and read as if they
-' were the site's own name. Side-loading only the NFC layer drops a plain
-' pin with no MPO label. Trade-off: the curated ACUB overlay isn't shown
-' here anymore (urban/rural already comes from the classification), and if a
-' Map Viewer version can't render the url= layer the pin+zoom still resolve.
-Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fmdotgis.state.mi.us%2Farcgis%2Frest%2Fservices%2FWidget%2FNextGenPrFinderPub%2FFeatureServer%2F353&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+' Organizations" layer whose region labels read as the site name.
+'
+' Michigan's "AGOL NFC Layer" column (COL_NFCAGOL) uses THIS webmap
+' (item 6a1702b9...), centered + markered on the point. It shows functional
+' class + adjusted urban boundary in ArcGIS Map Viewer and - unlike a raw
+' side-load of the time-enabled layer 353 - does NOT surface a time slider
+' (the webmap is preconfigured), which fixes the "timeline filter hides the
+' roads" problem (PR #25). The MPO-region label can still appear here, but
+' that's tolerable on this secondary column now that the main "Open" column
+' (COL_NFCMAP) goes to the official public app instead. [NEEDS a browser
+' click-test - ArcGIS Map Viewer time behavior can't be verified headless.]
+Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}"
 
 ' Indiana and Wisconsin don't have a curated combined NFC+ACUB webmap the
 ' way MI does, so these side-load the state's own live NFC FeatureServer
@@ -148,6 +159,22 @@ Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapv
 ' the pin+zoom still resolves correctly either way.
 Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_NFC_MAPVIEW_WI As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+
+' Official public-facing functional-class apps per state (verified live
+' 2026-07-05, §7c). These drive the "NFC Map" / Open column (COL_NFCMAP) -
+' the authoritative public app, distinct from the ArcGIS Map Viewer layer
+' links above. They are plain app URLs with NO {LAT}/{LON}: the state
+' Experience apps can't be reliably centered on a point via URL (the
+' coordinate deep-link mis-navigates, PR #17/#18), so a row's Open link
+' opens the app at its default extent and the AGOL NFC Layer column is what
+' centers on the exact point. WI has no statewide interactive app, so its
+' Open link falls back to WisDOT's official functional-class page.
+Public Const APP_MI As String = "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"
+Public Const APP_IN As String = "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot"
+Public Const APP_WI As String = "https://wisconsindot.gov/Pages/projects/data-plan/plan-res/function.aspx"
+Public Const APP_MN As String = "https://webgis.dot.state.mn.us/emma/"
+Public Const APP_IL As String = "https://www.gettingaroundillinois.com/MapViewer/?config=RFCconfig.json"
+Public Const APP_OH As String = "https://tims.dot.state.oh.us/tims"
 
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"

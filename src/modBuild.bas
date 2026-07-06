@@ -262,7 +262,6 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
     AddBufferValidation ws.Cells(20, 3)
 
-    NoteLine ws, 22, "The action buttons (Check Roads, Re-run, Photo Links, Export CSV/KML, Send to AGOL) are on the Sites tab's top row."
     NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses. 250 ft is a good default."
 
     AddButton ws, 18, ws.Rows(26).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
@@ -315,6 +314,7 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     AddButton ws, 18, ws.Rows(46).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
     AddButton ws, 218, ws.Rows(46).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
     AddButton ws, 18, ws.Rows(49).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    AddButton ws, 414, ws.Rows(49).Top, 240, 28, "Open Sites on NFC Layer (AGOL)", "OpenSitesOnNfcLayer"
 
     AddButton ws, 18, ws.Rows(52).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
     NoteLine ws, 54, "Build / Reset repairs the layout; your Sites data is preserved."
@@ -431,6 +431,7 @@ Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
         AddToolbarButton ws, "RR_Csv", 361, 95, "Export CSV", "ExportSitesCsv", False
         AddToolbarButton ws, "RR_Kml", 459, 95, "Export KML", "ExportSitesToKML", False
         AddToolbarButton ws, "RR_Agol", 557, 175, "Send to AGOL Map", "SendSitesToAgolMap", False
+        AddToolbarButton ws, "RR_NfcLayer", 735, 200, "NFC Layer + Sites (AGOL)", "OpenSitesOnNfcLayer", False
     End If
 End Sub
 
@@ -474,6 +475,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
     h(COL_AGOLMAP) = "AGOL Map"
+    h(COL_NFCAGOL) = "AGOL NFC Layer"
 
     Dim c As Long
     For c = 1 To COL_LAST
@@ -513,7 +515,17 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     ' missing coords) and stitches center/level/marker query params onto
     ' whatever URL was pasted.
     SetAgolMapFormula ws, r1, r2, latC, lonC
+    ' AGOL NFC Layer column: the state functional-class layer in ArcGIS Map
+    ' Viewer, centered on the point (MI = curated webmap to avoid the time
+    ' slider; IN/WI = live side-load; others = plain FEMA pin).
+    SetNfcAgolFormula ws, r1, r2, latC, lonC
 End Sub
+
+' An Excel string literal "s" - used when a full URL (not a {LAT}/{LON}
+' template) is dropped into a formula, so the quoting stays legible.
+Private Function ExcelStr(ByVal s As String) As String
+    ExcelStr = Chr$(34) & s & Chr$(34)
+End Function
 
 ' The AGOL formula is bespoke enough (depends on the dynamic Start Here URL,
 ' picks ? vs & based on whether the URL already has query params) that
@@ -552,12 +564,29 @@ Private Function UrlExprFromTemplate(ByVal urlTemplate As String, ByVal latC As 
     UrlExprFromTemplate = """" & Replace(Replace(urlTemplate, "{LAT}", """&" & latC & "&"""), "{LON}", """&" & lonC & "&""") & """"
 End Function
 
-' Per-row "Open in map" (F11), keyed off Start Here's State dropdown (F8)
-' since MI/IN/WI each need a different URL (§4.2/§4.2a/§4.2b) - the only
-' wired states get their own map link; anything else (MN/IL/OH, or blank)
-' falls back to the plain FEMA Map Viewer pin so the column is never broken,
-' just generic.
+' NFC Map / "Open" column (COL_NFCMAP): the state's official PUBLIC APP,
+' keyed off the State dropdown. App URLs carry no coordinates (the Experience
+' apps can't be reliably centered via URL - PR #17/#18), so a row just opens
+' the authoritative app; the AGOL NFC Layer column is the one that centers on
+' the exact point. Blank State defaults to MI (matches ClassifyRows).
 Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
+        ByVal latC As String, ByVal lonC As String)
+    Dim urlExpr As String, f As String
+    urlExpr = "IF(OR(" & NR_STATE & "=" & ExcelStr("MI") & "," & NR_STATE & "=" & ExcelStr("") & ")," & ExcelStr(APP_MI) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("IN") & "," & ExcelStr(APP_IN) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("WI") & "," & ExcelStr(APP_WI) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("MN") & "," & ExcelStr(APP_MN) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("IL") & "," & ExcelStr(APP_IL) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("OH") & "," & ExcelStr(APP_OH) & "," & ExcelStr(APP_MI) & "))))))"
+    f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""Open""))"
+    ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
+End Sub
+
+' AGOL NFC Layer column (COL_NFCAGOL): the state functional-class layer in
+' ArcGIS Map Viewer, centered + markered on the row's point. This is the old
+' per-state Map Viewer link (MI now uses the curated webmap so no time slider;
+' IN/WI side-load their live layer; others get the plain FEMA pin).
+Private Sub SetNfcAgolFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
     Dim miExpr As String, inExpr As String, wiExpr As String, fallbackExpr As String
     Dim urlExpr As String, f As String
@@ -565,14 +594,11 @@ Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 A
     inExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IN, latC, lonC)
     wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC)
     fallbackExpr = UrlExprFromTemplate(URL_FEMAVIEW, latC, lonC)
-    ' Blank State (never happens once Start Here is built - the State cell
-    ' defaults to "MI" - but cheap to guard) matches ClassifyRows's
-    ' default-to-MI behavior.
     urlExpr = "IF(OR(" & NR_STATE & "=""MI""," & NR_STATE & "="""")," & miExpr & _
         ",IF(" & NR_STATE & "=""IN""," & inExpr & _
         ",IF(" & NR_STATE & "=""WI""," & wiExpr & "," & fallbackExpr & ")))"
     f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""Open""))"
-    ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
+    ws.Range(ws.Cells(r1, COL_NFCAGOL), ws.Cells(r2, COL_NFCAGOL)).Formula = f
 End Sub
 
 Private Sub ApplySitesValidation(ByVal ws As Worksheet)
@@ -622,6 +648,7 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_FIRMSTATUS).ColumnWidth = 18
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
     ws.Columns(COL_AGOLMAP).ColumnWidth = 10
+    ws.Columns(COL_NFCAGOL).ColumnWidth = 14
 
     ' Guidance tints (friction fix: nothing used to tell the user which
     ' columns are theirs). Yellow = type here; grey = a workflow writes it.
@@ -631,6 +658,17 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_GEOCODE), ws.Cells(r2, COL_GEOCODE)).Interior.Color = CLR_RESULT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_REVIEWNOTE)).Interior.Color = CLR_RESULT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_FIRMSTATUS), ws.Cells(r2, COL_MAPSTATUS)).Interior.Color = CLR_RESULT
+
+    ' Make the HYPERLINK()-formula columns LOOK like links (blue + underline);
+    ' Excel doesn't auto-style formula-driven hyperlinks the way it does
+    ' clicked-in ones. Empty cells just carry the style with no visible text.
+    Dim lc As Variant
+    For Each lc In Array(COL_NFCMAP, COL_GMAP, COL_STREETVIEW, COL_BING, COL_GEARTH, COL_FEMAVIEW, COL_FIRMPORTAL, COL_AGOLMAP, COL_NFCAGOL)
+        With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, CLng(lc)), ws.Cells(r2, CLng(lc))).Font
+            .Color = RGB(5, 99, 193)
+            .Underline = xlUnderlineStyleSingle
+        End With
+    Next lc
 
     ' Tri-state highlight on the Federal Aid Status column:
     '   red    — cell starts with "Federal aid"  (federal-aid road)

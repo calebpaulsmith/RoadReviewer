@@ -62,7 +62,7 @@ try {
   $excel.Run('SetHeadless', $true) | Out-Null
 
   Write-Host "Clearing any prior test rows ($FirstRow..$LastTestRow)..."
-  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 29)).ClearContents()
+  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
 
   $failures = @()
@@ -146,7 +146,7 @@ try {
   }
 
   # Cleanup the test data so the saved file stays empty for the user.
-  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 29)).ClearContents()
+  $sites.Range($sites.Cells($FirstRow, 1), $sites.Cells($LastTestRow, 30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null

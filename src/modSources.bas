@@ -13,13 +13,8 @@ Option Explicit
 
 Private mRow As Long   ' running row cursor while writing the sheet
 
-' Official public-facing functional-class maps (verified live 2026-07-05).
-Private Const APP_MI As String = "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"
-Private Const APP_IN As String = "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot"
-Private Const APP_WI As String = "https://wisconsindot.gov/Pages/projects/data-plan/plan-res/function.aspx"
-Private Const APP_MN As String = "https://webgis.dot.state.mn.us/emma/"
-Private Const APP_IL As String = "https://www.gettingaroundillinois.com/MapViewer/?config=RFCconfig.json"
-Private Const APP_OH As String = "https://tims.dot.state.oh.us/tims"
+' Official public functional-class app URLs (APP_MI..APP_OH) now live in
+' modConstants (they also drive the Open column); used below in the citations.
 
 ' Reference-only REST services for the not-yet-wired states (we don't query
 ' these; they're cited so a future release can wire them and so a reviewer
