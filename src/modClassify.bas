@@ -22,7 +22,7 @@ Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 ' the edge of the urban boundary gets flagged Rural" bug this exists to
 ' prevent - a site sitting a few feet on the wrong side of a road that
 ' itself touches the boundary should still resolve Urban.
-Private Const ACUB_MIN_BUFFER_FEET As Long = 200
+Private Const ACUB_MIN_BUFFER_FEET As Long = 250
 
 ' The one primary action (friction fix: the old separate Geocode ->
 ' Classify ordering trap is gone). Check Roads geocodes any row that has

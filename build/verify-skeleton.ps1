@@ -98,8 +98,8 @@ try {
   Write-Host "  product button surface correct" -ForegroundColor Green
 
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
-  $sharedNames = @('JobState','JobOutputFolder','JobAgolMap')
-  $inspectorNames = @('JobWO','JobDI','JobDisaster','JobApplicant','JobBufferFeet')
+  $sharedNames = @('JobState','JobOutputFolder','JobAgolMap','JobBufferFeet')
+  $inspectorNames = @('JobWO','JobDI','JobDisaster','JobApplicant')
   foreach ($n in $sharedNames) {
     try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
   }
