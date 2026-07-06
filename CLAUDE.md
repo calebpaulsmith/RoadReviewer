@@ -1589,6 +1589,36 @@ can't hang) and `build.ps1` runs it after every build. Two VBA rules to keep
 in mind (both in §9.3): module-level declarations must precede all procedures,
 and a single-line `If` may use `Else` but **not** `ElseIf`.
 
+### Open column -> public app, new AGOL NFC Layer column, hyperlink styling (PR #25)
+
+Split the single per-row map link into two, per user direction:
+- **NFC Map / "Open" column** (`COL_NFCMAP`, 13) now opens the state's
+  **official public app** (`APP_MI`..`APP_OH` in modConstants - MDOT/INDOT
+  Experience apps, MnDOT EMMA, IL Getting Around, OH TIMS; WI's functional-
+  class page). App URLs carry NO coordinates (the Experience coordinate
+  deep-link mis-navigates, PR #17/#18), so a row opens the app at its default
+  extent. PR #23 had wrongly pointed this at a raw Map Viewer side-load - the
+  "broke the most important feature" report.
+- **New "AGOL NFC Layer" column** (`COL_NFCAGOL`, 30 - appended at the end to
+  avoid a 5th full reshuffle) opens the functional-class layer in ArcGIS Map
+  Viewer, centered on the point. Michigan uses the curated webmap
+  (`URL_NFC_MAPVIEW`, reverted from the 353 side-load) specifically because a
+  raw side-load of the time-enabled layer 353 showed a **time slider that hid
+  the roads**; the webmap is preconfigured and shouldn't. IN/WI side-load
+  their live layer; others get the plain FEMA pin.
+- **Link cells now look like links** (blue + underline font on every
+  HYPERLINK()-formula column) - Excel doesn't auto-style formula hyperlinks.
+- Deleted the "action buttons are on the Sites tab" note (B22) on Start Here.
+
+**Cannot be verified headless:** all of the above are browser behaviors
+(Experience-app loading, Map Viewer time slider, side-load rendering). The
+build/skeleton confirm the formulas resolve and the Open column points at the
+Experience-app URL; the actual in-browser behavior (esp. the Michigan time
+slider fix) needs a human click-test. Still open: an "open all sites at once
+on the AGOL NFC layer, colored by verdict" button (the KML export already
+colors pins red/green/blue; `SendSitesToAgolMap` is the closest existing
+hook) - not yet built.
+
 ---
 
 ## 8. Design decisions (resolved) and remaining open questions

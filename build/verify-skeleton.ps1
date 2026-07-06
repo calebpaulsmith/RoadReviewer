@@ -18,7 +18,7 @@ $expectedSheets = @('Start Here', 'Sites', 'Sources')
 # New canonical Sites layout: row 1 toolbar, row 2 header, data from row 3.
 $HeaderRow = 2
 $FirstDataRow = 3
-$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status','AGOL Map')
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status','AGOL Map','AGOL NFC Layer')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -151,7 +151,7 @@ try {
   $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon
   $excel.Calculate()
   # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 13='NFC Map'; 21='Google Maps'; 22='Street View'; 23='Bing'; 24='Google Earth'; 25='FEMA Viewer'; 26='FIRMette Portal' }
+  $linkCols = @{ 13='NFC Map'; 21='Google Maps'; 22='Street View'; 23='Bing'; 24='Google Earth'; 25='FEMA Viewer'; 26='FIRMette Portal'; 30='AGOL NFC Layer' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells($FirstDataRow, $k)
     $f = [string]$cell.Formula
