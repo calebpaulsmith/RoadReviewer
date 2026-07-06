@@ -1,62 +1,38 @@
 Attribute VB_Name = "modGeocode"
 Option Explicit
 
-' RoadReviewer V1 - address geocoding (F4).
-' For rows that have an Address but no coordinates, calls the US Census Bureau
-' one-line geocoder (free, no auth) and fills Latitude/Longitude. Coordinates
-' already present are NEVER overwritten.
+' Address geocoding (F4). No standalone button anymore - Check Roads
+' (modClassify.ClassifyOneRow) calls GeocodeRow for any row that has an
+' Address but no coordinates, so there is no geocode-then-classify ordering
+' for the user to get wrong. Coordinates already present are NEVER
+' overwritten (the caller only invokes this when HasValidCoords is False,
+' and the function re-checks).
 
-Public Sub GeocodeAddresses()
-    Dim ws As Worksheet, last As Long, r As Long
-    Dim total As Long, done As Long, ok As Long
-
-    Set ws = SitesSheet()
-    last = SitesLastRow()
-    If last < SITES_FIRST_DATA_ROW Then
-        MsgBox "No site rows found. Add addresses on the Sites sheet first.", vbInformation, "Geocode"
-        Exit Sub
+' Geocode one row's Address into Latitude/Longitude via the US Census
+' Bureau one-line geocoder (free, no auth). Returns True on success;
+' False with errMsg set (and a Failed marker in the Geocode Status
+' column) otherwise.
+Public Function GeocodeRow(ByVal ws As Worksheet, ByVal r As Long, _
+        ByRef errMsg As String) As Boolean
+    If HasValidCoords(ws, r) Then
+        GeocodeRow = True   ' nothing to do; never overwrite typed coords
+        Exit Function
     End If
 
-    For r = SITES_FIRST_DATA_ROW To last
-        If NeedsGeocode(ws, r) Then total = total + 1
-    Next r
-    If total = 0 Then
-        MsgBox "No rows need geocoding (every row either has coordinates already or has no address).", _
-            vbInformation, "Geocode"
-        Exit Sub
-    End If
-
-    ' Leave ScreenUpdating on and stay on Sites so the inspector watches
-    ' Latitude/Longitude fill in row by row - each row is one Census
-    ' geocoder round trip, so redraw cost here is negligible.
-    ws.Activate
-    For r = SITES_FIRST_DATA_ROW To last
-        If NeedsGeocode(ws, r) Then
-            done = done + 1
-            SetStatus "Geocoding " & done & " of " & total & " - " & CStr(ws.Cells(r, COL_ADDRESS).Value)
-            ws.Cells(r, COL_ADDRESS).Select
-            If GeocodeOneRow(ws, r) Then ok = ok + 1
-            DoEvents
-        End If
-    Next r
-    ClearStatus
-    MsgBox "Geocoded " & ok & " of " & total & " address(es).", vbInformation, "Geocode"
-End Sub
-
-' A row needs geocoding when it has an address but no valid coordinates.
-Private Function NeedsGeocode(ByVal ws As Worksheet, ByVal r As Long) As Boolean
-    If RowIsEmpty(ws, r) Then Exit Function
-    If HasValidCoords(ws, r) Then Exit Function
-    NeedsGeocode = Not IsBlank(ws.Cells(r, COL_ADDRESS).Value)
-End Function
-
-Private Function GeocodeOneRow(ByVal ws As Worksheet, ByVal r As Long) As Boolean
-    Dim addr As String, url As String, json As String, errMsg As String
+    Dim addr As String, url As String, json As String, httpErr As String
     addr = Trim$(CStr(ws.Cells(r, COL_ADDRESS).Value))
+    If Len(addr) = 0 Then
+        errMsg = "no address"
+        ws.Cells(r, COL_GEOCODE).Value = STATUS_FAILED_PREFIX & errMsg
+        Exit Function
+    End If
+
+    TraceLine "GeocodeRow row=" & r & " addr=" & addr
     url = REST_CENSUS_GEOCODE & "?address=" & UrlEncode(addr) & _
         "&benchmark=Public_AR_Current&format=json"
-    json = HttpGetText(url, errMsg)
-    If Len(errMsg) > 0 Then
+    json = HttpGetText(url, httpErr)
+    If Len(httpErr) > 0 Then
+        errMsg = httpErr
         ws.Cells(r, COL_GEOCODE).Value = STATUS_FAILED_PREFIX & errMsg
         Exit Function
     End If
@@ -66,14 +42,15 @@ Private Function GeocodeOneRow(ByVal ws As Worksheet, ByVal r As Long) As Boolea
     lon = FirstNumberAfter(json, """x""")
     lat = FirstNumberAfter(json, """y""")
     If Len(lat) = 0 Or Len(lon) = 0 Then
-        ws.Cells(r, COL_GEOCODE).Value = STATUS_FAILED_PREFIX & "no match"
+        errMsg = "no match for address"
+        ws.Cells(r, COL_GEOCODE).Value = STATUS_FAILED_PREFIX & errMsg
         Exit Function
     End If
 
     ws.Cells(r, COL_LAT).Value = CDbl(lat)
     ws.Cells(r, COL_LON).Value = CDbl(lon)
     ws.Cells(r, COL_GEOCODE).Value = "Geocoded"
-    GeocodeOneRow = True
+    GeocodeRow = True
 End Function
 
 ' Pull the first JSON number that follows a key like "x" or "y".

@@ -3,7 +3,9 @@
 # inspector leaves WO and/or DI blank. No dangling "WO ", trailing
 # " DI", "\WO-DI\" folder, or empty "WO # DI #" line in the stamp.
 
-param([string]$XlsmPath = (Join-Path $env:TEMP 'RoadReviewer.xlsm'))
+# Inspector product only - the standard RoadReviewer.xlsm has no FIRMette /
+# MapPages buttons or WO/DI named ranges.
+param([string]$XlsmPath = (Join-Path $env:TEMP 'Site Inspector Review Tool.xlsm'))
 
 $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
@@ -33,19 +35,20 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = 'Test Applicant'
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
+  # Row 1 toolbar, row 2 header, data from row 3; Lat=5, Lon=6, Category=9.
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,28)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
-  $sites.Cells(2, 3).Value2 = 1
-  $sites.Cells(2, 4).Value2 = 'BlankIDs site'
-  $sites.Cells(2, 6).Value2 = [double]42.28536
-  $sites.Cells(2, 7).Value2 = [double]-85.57025
-  $sites.Cells(2, 8).Value2 = 'C'
+  $sites.Cells(3, 3).Value2 = 1
+  $sites.Cells(3, 4).Value2 = 'BlankIDs site'
+  $sites.Cells(3, 5).Value2 = [double]42.28536
+  $sites.Cells(3, 6).Value2 = [double]-85.57025
+  $sites.Cells(3, 9).Value2 = 'C'
 
   $excel.Run('SetHeadless', $true) | Out-Null
 
   Write-Host "=== Case A: WO and DI BOTH blank ===" -ForegroundColor Cyan
   $excel.Run('DownloadFirmettes') | Out-Null
-  $statusA = [string]$sites.Cells(2, 25).Value2   # FIRMette Status (col 25 after Costs/Work + Street Name shifts)
+  $statusA = [string]$sites.Cells(3, 26).Value2   # FIRMette Status (col 26 in the two-product layout)
   Write-Host ("  FIRMette Status: " + $statusA)
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')
   Write-Host ("  PDFs: " + $pdfs.Count)
@@ -85,8 +88,8 @@ try {
   Get-ChildItem -LiteralPath $outFolder | Remove-Item -Force
   $wb.Worksheets('MapPages').Delete()
   $wb.Names('JobWO').RefersToRange.Value2 = '123'
-  $sites.Cells(2, 25).Value2 = ''   # FIRMette Status (col 25 now)
-  $sites.Cells(2, 26).Value2 = ''   # Map Status      (col 26 now)
+  $sites.Cells(3, 26).Value2 = ''   # FIRMette Status
+  $sites.Cells(3, 27).Value2 = ''   # Map Status
 
   $excel.Run('DownloadFirmettes') | Out-Null
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')
@@ -107,7 +110,7 @@ try {
 
   # Cleanup
   $wb.Worksheets('MapPages').Delete()
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,28)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobWO').RefersToRange.Value2 = ''
   $wb.Names('JobDI').RefersToRange.Value2 = ''

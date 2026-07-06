@@ -23,16 +23,28 @@ Public Sub SelectOutputFolder()
     End If
 End Sub
 
-' Effective output folder: the Setup value if set, else the default pattern.
+' Effective output folder: the Start Here value if set, else a per-product
+' default. Standard product: the folder this workbook lives in (zero
+' configuration - "exports save next to the file"). Inspector product:
+' the OneDrive-FEMA job-folder pattern (§8.9). Both fall through to the
+' §8.9 probe when the workbook path is unusable (unsaved workbook, or a
+' SharePoint https:// path a local file can't be written next to).
 Public Function ResolveOutputFolder() As String
     Dim v As String
     v = SetupValue(NR_OUTFOLDER)
-    If Len(v) > 0 Then
-        If Right$(v, 1) <> "\" Then v = v & "\"
-        ResolveOutputFolder = v
-    Else
-        ResolveOutputFolder = DefaultOutputFolder()
-    End If
+    If Len(v) = 0 And Not ProductIsInspector() Then v = WorkbookFolder()
+    If Len(v) = 0 Then v = DefaultOutputFolder()
+    If Right$(v, 1) <> "\" Then v = v & "\"
+    ResolveOutputFolder = v
+End Function
+
+' The folder this .xlsm lives in, or "" when there isn't a usable one.
+Private Function WorkbookFolder() As String
+    Dim p As String
+    p = ThisWorkbook.Path
+    If Len(p) = 0 Then Exit Function                     ' never saved
+    If LCase$(Left$(p, 4)) = "http" Then Exit Function   ' SharePoint/OneDrive URL path
+    WorkbookFolder = p
 End Function
 
 ' {base}\Desktop\Script\RoadReviewer\{Disaster}\{WO-DI}\  (§8.9)
@@ -569,7 +581,7 @@ Public Sub SendSitesToAgolMap()
     Dim agol As String: agol = SetupValue(NR_AGOLMAP)
     If Len(agol) = 0 Then
         If Not gHeadless Then MsgBox _
-            "No AGOL Webmap URL set. Paste your map's URL on the Setup sheet " & _
+            "No AGOL Webmap URL set. Paste your map's URL on the Start Here sheet " & _
             "first, then click this again.", vbExclamation, "Send to AGOL Map"
         Exit Sub
     End If
@@ -614,7 +626,7 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef placemarkCount As
 
     kml = "<?xml version=""1.0"" encoding=""UTF-8""?>" & vbCrLf & _
         "<kml xmlns=""http://www.opengis.net/kml/2.2""><Document>" & vbCrLf & _
-        "<name>RoadReviewer Sites</name>" & vbCrLf & _
+        "<name>" & XmlEscape(ProductTitle() & " Sites") & "</name>" & vbCrLf & _
         "<open>1</open>" & vbCrLf & _
         KmlPinStyles()
     ' Bucket rows by Category into <Folder> elements so the inspector can
@@ -634,7 +646,7 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef placemarkCount As
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, dialogTitle
         Exit Function
     End If
-    file = folder & "RoadReviewer Sites.kml"
+    file = folder & ProductTitle() & " Sites.kml"
 
     If Not WriteTextFile(file, kml) Then
         If Not gHeadless Then MsgBox "Could not write the KML file.", vbExclamation, dialogTitle

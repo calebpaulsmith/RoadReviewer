@@ -4,8 +4,11 @@
 #
 # Uses a SINGLE Kalamazoo test row to keep the network round-trip short.
 # A FEMA GP job typically takes 5-30s; allow up to 3 min before failing.
+#
+# Inspector product only - the standard RoadReviewer.xlsm has no FIRMette /
+# MapPages buttons or WO/DI named ranges.
 
-param([string]$XlsmPath = (Join-Path $env:TEMP 'RoadReviewer.xlsm'))
+param([string]$XlsmPath = (Join-Path $env:TEMP 'Site Inspector Review Tool.xlsm'))
 
 $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
@@ -33,15 +36,16 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = 'Test Applicant'
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
-  # Clear and write one Sites row
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
+  # Clear and write one Sites row (row 1 toolbar, row 2 header, data from 3;
+  # Lat=5, Lon=6, Description=7, Category=9)
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,28)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
-  $sites.Cells(2, 3).Value2 = 1                     # Site #
-  $sites.Cells(2, 4).Value2 = 'Kalamazoo test'      # Site Name
-  $sites.Cells(2, 6).Value2 = [double]42.28536
-  $sites.Cells(2, 7).Value2 = [double]-85.57025
-  $sites.Cells(2, 8).Value2 = 'C'                    # Category
-  $sites.Cells(2, 9).Value2 = 'pothole'              # Description
+  $sites.Cells(3, 3).Value2 = 1                     # Site #
+  $sites.Cells(3, 4).Value2 = 'Kalamazoo test'      # Site Name
+  $sites.Cells(3, 5).Value2 = [double]42.28536
+  $sites.Cells(3, 6).Value2 = [double]-85.57025
+  $sites.Cells(3, 7).Value2 = 'pothole'              # Description
+  $sites.Cells(3, 9).Value2 = 'C'                    # Category
 
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_w3_trace.txt')) | Out-Null
@@ -52,7 +56,7 @@ try {
   $excel.Run('DownloadFirmettes') | Out-Null
   $sw.Stop()
   Write-Host ("  finished in " + $sw.Elapsed.TotalSeconds + "s")
-  $firmStatus = [string]$sites.Cells(2, 25).Value2   # FIRMette Status (col 25 after Costs/Work + Street Name shifts)
+  $firmStatus = [string]$sites.Cells(3, 26).Value2   # FIRMette Status (col 26 in the two-product layout)
   Write-Host ("  FIRMette Status: " + $firmStatus)
 
   $pdfFiles = Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf'
@@ -89,7 +93,7 @@ try {
   # ---- Cleanup workbook state ----
   $excel.Run('SetHeadless', $false) | Out-Null
   $excel.Run('SetTrace', '') | Out-Null
-  $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
+  $sites.Range($sites.Cells(3,1), $sites.Cells(11,28)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   # Reset Setup so the user's saved workbook doesn't carry test values
   $wb.Names('JobWO').RefersToRange.Value2 = ''

@@ -1,11 +1,19 @@
 Attribute VB_Name = "modBuild"
 Option Explicit
 
-' RoadReviewer V1 - workbook builder (verification step 5.2).
-' Run BuildWorkbook once on a fresh workbook, then save as RoadReviewer.xlsm.
-' Re-running is safe: layout/control sheets are rebuilt and the Sites table's
-' derived columns (hyperlinks/validation/formatting) are re-applied, but data
-' the inspector typed into the Sites table is preserved.
+' RoadReviewer / Site Inspector Review Tool - workbook builder.
+' Run BuildWorkbook once on a fresh workbook (build.ps1 does this after
+' calling SetProduct), then save as .xlsm. Re-running is safe: layout/control
+' sheets are rebuilt and the Sites table's derived columns (hyperlinks/
+' validation/formatting) are re-applied, but data typed into the Sites table
+' is preserved.
+'
+' Both products share the same three-sheet shape:
+'   Start Here - job inputs + every action button (no nav-only buttons)
+'   Sites      - the shared table (toolbar row + header + 500 formula rows)
+'   Sources    - per-state data-source citations + quirks (modSources)
+' The standard product simply builds fewer inputs/buttons and hides the
+' inspector-only Sites columns.
 
 Private Const CLR_HEADER As Long = 5197615      ' dark slate (RGB 47,79,79-ish)
 Private Const CLR_BTN As Long = 12419407         ' steel blue
@@ -15,6 +23,10 @@ Private Const CLR_BTN_GO As Long = 4563272        ' green
 Private Const CLR_FEDAID As Long = 13551615      ' RGB(255,199,206) — "Federal aid" rows
 Private Const CLR_NONFEDAID As Long = 13561798   ' RGB(198,239,206) — "Non-federal aid" rows
 Private Const CLR_REVIEW As Long = 10284031      ' RGB(255,235,156) — "Review" rows
+' Sites column guidance tints: yellow = the user types here, grey = a
+' workflow writes here. Link columns stay white (they're formulas).
+Private Const CLR_INPUT As Long = 13434879       ' RGB(255,255,204) light yellow
+Private Const CLR_RESULT As Long = 15921906      ' RGB(242,242,242) light grey
 
 Public Sub BuildWorkbook()
     Dim hadSites As Boolean
@@ -25,27 +37,25 @@ Public Sub BuildWorkbook()
     On Error GoTo Fail
 
     BuildSites                ' first - preserves data if present
-    BuildSetup
-    BuildClassifySheet
-    BuildImagerySheet
-    BuildMapsSheet
-    BuildHome                 ' built last, then activated
+    BuildSourcesSheet         ' modSources
+    BuildStartHere            ' built last, then activated
 
     RemoveStrayDefaultSheets
     OrderSheets
 
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    SheetByName(SH_HOME).Activate
+    SheetByName(SH_START).Activate
 
     ' Skip the confirmation MsgBox when driven headlessly by the build script
     ' (which sets gHeadless before calling). The in-Excel "Build / Reset
     ' Workbook" button leaves gHeadless=False and still shows the dialog.
     If Not gHeadless Then
-        MsgBox "RoadReviewer workbook built." & vbCrLf & vbCrLf & _
-            IIf(hadSites, "Existing Sites data was preserved.", "Start by filling in the Setup sheet, then add points on the Sites sheet.") & vbCrLf & _
+        MsgBox ProductTitle() & " workbook built." & vbCrLf & vbCrLf & _
+            IIf(hadSites, "Existing Sites data was preserved.", _
+                "Pick your state on the Start Here sheet, then add points on the Sites sheet.") & vbCrLf & _
             "Remember to save as a macro-enabled workbook (.xlsm).", _
-            vbInformation, "RoadReviewer"
+            vbInformation, ProductTitle()
     End If
     Exit Sub
 Fail:
@@ -55,14 +65,15 @@ Fail:
         ' Re-raise so the automation host sees the failure.
         Err.Raise Err.Number, "BuildWorkbook", Err.Description
     Else
-        MsgBox "Build failed: " & Err.Description, vbCritical, "RoadReviewer"
+        MsgBox "Build failed: " & Err.Description, vbCritical, ProductTitle()
     End If
 End Sub
 
 ' ---- sheet plumbing -------------------------------------------------------
 
 ' Delete-and-recreate a control sheet (no user data lives on these).
-Private Function FreshSheet(ByVal sheetName As String) As Worksheet
+' Public because modSources uses it for the Sources sheet.
+Public Function FreshSheet(ByVal sheetName As String) As Worksheet
     Dim ws As Worksheet
     Set ws = SheetByName(sheetName)
     If Not ws Is Nothing Then ws.Delete
@@ -77,7 +88,7 @@ Private Sub RemoveStrayDefaultSheets()
     For i = ThisWorkbook.Worksheets.Count To 1 Step -1
         Set ws = ThisWorkbook.Worksheets(i)
         Select Case ws.Name
-            Case SH_HOME, SH_SETUP, SH_SITES, SH_CLASSIFY, SH_IMAGERY, SH_MAPS
+            Case SH_START, SH_SITES, SH_SOURCES, SH_MAPPAGES
                 ' keep
             Case Else
                 If ThisWorkbook.Worksheets.Count > 1 Then
@@ -88,12 +99,9 @@ Private Sub RemoveStrayDefaultSheets()
 End Sub
 
 Private Sub OrderSheets()
-    MoveSheet SH_HOME, 1
-    MoveSheet SH_SETUP, 2
-    MoveSheet SH_SITES, 3
-    MoveSheet SH_CLASSIFY, 4
-    MoveSheet SH_IMAGERY, 5
-    MoveSheet SH_MAPS, 6
+    MoveSheet SH_START, 1
+    MoveSheet SH_SITES, 2
+    MoveSheet SH_SOURCES, 3
 End Sub
 
 Private Sub MoveSheet(ByVal sheetName As String, ByVal pos As Long)
@@ -133,7 +141,8 @@ End Function
 ' specific sheet we activate it first, then flip the Window property.
 ' On Error Resume Next handles the rare COM case where ActiveWindow is Nothing
 ' (Excel driven by an automation host with no visible workbook window).
-Private Sub HideGridlines(ByVal ws As Worksheet)
+' Public because modSources uses it for the Sources sheet.
+Public Sub HideGridlines(ByVal ws As Worksheet)
     ws.Activate
     On Error Resume Next
     ActiveWindow.DisplayGridlines = False
@@ -154,77 +163,141 @@ Private Sub TitleBlock(ByVal ws As Worksheet, ByVal title As String, ByVal subti
     End With
 End Sub
 
-' ---- Home -----------------------------------------------------------------
+Private Sub NoteLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    ws.Cells(r, 2).Value = txt
+    ws.Cells(r, 2).Font.Italic = True
+    ws.Cells(r, 2).Font.Color = RGB(90, 90, 90)
+End Sub
 
-Private Sub BuildHome()
+Private Sub StepLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    ws.Cells(r, 2).Value = txt
+    ws.Cells(r, 2).Font.Color = RGB(70, 70, 70)
+End Sub
+
+Private Sub SectionLabel(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    ws.Cells(r, 2).Value = txt
+    ws.Cells(r, 2).Font.Bold = True
+    ws.Cells(r, 2).Font.Size = 12
+End Sub
+
+' Prominent red-bordered disclaimer box spanning B:C over `rowCount` rows.
+' Same wording on both products - this is the "not authoritative" contract
+' the user asked to have front and center. Kept in sync with modSources'
+' echo of it and with web/index.html's on-page disclaimer.
+Private Sub DisclaimerBlock(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal rowCount As Long)
+    Dim rng As Range, r As Long, hdr As String, body As String
+    hdr = "IMPORTANT - NOT AN AUTHORITATIVE FHWA OR ELIGIBILITY DETERMINATION"
+    body = "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
+        "candidates for a person to review, and may miss or mis-tag roads. It is not an authoritative source " & _
+        "for FHWA functional classification. EVERY coordinate must be verified by a human against the official " & _
+        "source map - use each row's NFC Map link and the Sources tab. Results are informational only and do " & _
+        "NOT constitute a federal-aid, funding, or eligibility determination. A point on or near an urban/rural " & _
+        "boundary is deliberately treated as Urban (within the search buffer; see the Sources tab) so boundary " & _
+        "roads are not missed - always confirm these manually."
+    Set rng = ws.Range(ws.Cells(firstRow, 2), ws.Cells(firstRow + rowCount - 1, 3))
+    rng.Merge
+    rng.Value = hdr & vbLf & body
+    rng.WrapText = True
+    rng.HorizontalAlignment = xlLeft
+    rng.VerticalAlignment = xlTop
+    rng.Font.Color = RGB(150, 0, 0)
+    rng.Interior.Color = RGB(255, 238, 238)
+    With rng.Borders
+        .LineStyle = xlContinuous
+        .Color = RGB(192, 0, 0)
+        .Weight = xlMedium
+    End With
+    ' Bold just the header line (merged text lives in the top-left cell).
+    ws.Cells(firstRow, 2).Characters(1, Len(hdr)).Font.Bold = True
+    For r = firstRow To firstRow + rowCount - 1
+        ws.Rows(r).RowHeight = 21
+    Next r
+End Sub
+
+' Small grey build/version stamp so a shared copy is traceable to its PR.
+Private Sub VersionLabel(ByVal ws As Worksheet, ByVal r As Long)
+    With ws.Cells(r, 2)
+        .Value = ProductTitle() & "  -  " & BUILD_REFERENCE
+        .Font.Size = 9
+        .Font.Color = RGB(130, 130, 130)
+    End With
+End Sub
+
+' ---- Start Here -----------------------------------------------------------
+
+Private Sub BuildStartHere()
     Dim ws As Worksheet
-    Set ws = FreshSheet(SH_HOME)
+    Set ws = FreshSheet(SH_START)
     ws.Cells.Interior.Color = RGB(245, 247, 249)
     ws.Columns("A").ColumnWidth = 2
-    TitleBlock ws, "RoadReviewer", "FEMA Public Assistance Site Inspector toolkit"
-
-    ws.Range("B5").Value = "Workflow - run top to bottom:"
-    ws.Range("B5").Font.Bold = True
-
-    AddButton ws, 18, 110, 230, 34, "Set Up Job (WO / DI / State / Folder)", "GoSetup", CLR_BTN
-    AddButton ws, 18, 150, 230, 34, "Enter Sites (addresses or lat/lon)", "GoSites", CLR_BTN
-    AddButton ws, 320, 150, 210, 34, "Geocode Addresses -> lat/lon", "GeocodeAddresses", RGB(110, 110, 110)
-    AddButton ws, 18, 200, 230, 40, "1.  Classify Roads", "GoClassify", CLR_BTN_GO
-    AddButton ws, 18, 246, 230, 40, "2.  Review Imagery", "GoImagery", CLR_BTN_GO
-    AddButton ws, 18, 292, 230, 40, "3.  Maps & FIRMettes", "GoMaps", CLR_BTN_GO
-
-    ws.Range("E11").Value = "Each workflow reads from the shared Sites table. " & _
-        "Enter every point once on the Sites sheet; the workflows fill in the rest."
-    ws.Range("E11").Font.Color = RGB(70, 70, 70)
-    ws.Range("E13").Value = "Need to rebuild the layout? (Sites data is preserved.)"
-    AddButton ws, 320, 200, 180, 28, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-
-    ws.Range("E16").Value = "Road classification is wired for Michigan, Indiana and Wisconsin in V1. " & _
-        "ACUB (urban-boundary) lookup is nationwide."
-    ws.Range("E16").Font.Italic = True
-    ws.Range("E16").Font.Color = RGB(70, 70, 70)
-
+    ws.Columns("B").ColumnWidth = 26
+    ws.Columns("C").ColumnWidth = 62
     HideGridlines ws
+    If ProductIsInspector() Then
+        BuildStartHereInspector ws
+    Else
+        BuildStartHereStandard ws
+    End If
     ws.Tab.Color = RGB(47, 79, 79)
 End Sub
 
-Public Sub GoSetup(): SheetByName(SH_SETUP).Activate: End Sub
-Public Sub GoSites(): SheetByName(SH_SITES).Activate: End Sub
-Public Sub GoClassify(): SheetByName(SH_CLASSIFY).Activate: End Sub
-Public Sub GoImagery(): SheetByName(SH_IMAGERY).Activate: End Sub
-Public Sub GoMaps(): SheetByName(SH_MAPS).Activate: End Sub
+Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
+    TitleBlock ws, "RoadReviewer", _
+        "Is it a federal-aid road? FHWA functional class + adjusted urban boundary checker."
 
-' ---- Setup ----------------------------------------------------------------
+    DisclaimerBlock ws, 5, 6
 
-Private Sub BuildSetup()
-    Dim ws As Worksheet
-    Set ws = FreshSheet(SH_SETUP)
-    HideGridlines ws
-    ws.Columns("A").ColumnWidth = 28
-    ws.Columns("B").ColumnWidth = 60
-    TitleBlock ws, "Setup", "Job-wide values. WO/DI default onto every Sites row; override per row if needed."
+    ws.Range("B12").Value = "How to use:"
+    ws.Range("B12").Font.Bold = True
+    StepLine ws, 13, "1.  Pick your state below."
+    StepLine ws, 14, "2.  Paste your points on the Sites tab - the yellow columns (Latitude, Longitude, Description)."
+    StepLine ws, 15, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
-    LabelValue ws, 5, "Work Order (WO #)", NR_WO, ""
-    LabelValue ws, 6, "Impact (DI #)", NR_DI, ""
-    LabelValue ws, 7, "Disaster Number", NR_DISASTER, ""
-    LabelValue ws, 8, "Applicant", NR_APPLICANT, ""
-    LabelValue ws, 9, "State", NR_STATE, "MI"
-    LabelValue ws, 10, "Output Folder", NR_OUTFOLDER, ""
-    LabelValue ws, 11, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 12, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
+    LabelValue ws, 17, "State", NR_STATE, "MI"
+    LabelValue ws, 18, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 19, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    AddStateValidation ws.Cells(17, 3)
+    AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
 
-    ' State dropdown (F8).
-    With ws.Range("B9").Validation
-        .Delete
-        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=STATE_LIST
-        .IgnoreBlank = True
-        .InCellDropdown = True
-    End With
+    NoteLine ws, 21, "Output Folder can stay blank - exports save next to this workbook. " & _
+        "AGOL Webmap URL is only needed for the AGOL Map column / Send-to-AGOL button."
+    NoteLine ws, 22, "Michigan, Indiana and Wisconsin road-class lookups are wired. Other states still get the " & _
+        "urban-boundary (ACUB) check. Every service, layer and caveat is documented on the Sources tab."
+
+    AddButton ws, 18, ws.Rows(24).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 250, ws.Rows(24).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
+    AddButton ws, 18, ws.Rows(27).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
+    AddButton ws, 18, ws.Rows(30).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
+    AddButton ws, 215, ws.Rows(30).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
+    AddButton ws, 18, ws.Rows(33).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    AddButton ws, 18, ws.Rows(37).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 39, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 41
+End Sub
+
+Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
+    TitleBlock ws, "Site Inspector Review Tool", _
+        "FEMA Public Assistance site inspection toolkit - classification, photos, FIRMettes and map pages."
+
+    DisclaimerBlock ws, 5, 6
+
+    StepLine ws, 12, "Fill in the job info, add points on the Sites tab, then run the numbered steps top to bottom."
+
+    LabelValue ws, 14, "Work Order (WO #)", NR_WO, ""
+    LabelValue ws, 15, "Impact (DI #)", NR_DI, ""
+    LabelValue ws, 16, "Disaster Number", NR_DISASTER, ""
+    LabelValue ws, 17, "Applicant", NR_APPLICANT, ""
+    LabelValue ws, 18, "State", NR_STATE, "MI"
+    LabelValue ws, 19, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 20, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 21, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
+    AddStateValidation ws.Cells(18, 3)
+    AddButton ws, ws.Cells(19, 4).Left + 6, ws.Cells(19, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
 
     ' Buffer must be a whole number between 1 and 1000 ft. Out-of-range
     ' values fall back to DEFAULT_BUFFER_FEET via modClassify.BufferFeet,
     ' but the validation catches mistakes at entry time.
-    With ws.Range("B12").Validation
+    With ws.Cells(21, 3).Validation
         .Delete
         .Add Type:=xlValidateWholeNumber, AlertStyle:=xlValidAlertStop, _
             Operator:=xlBetween, Formula1:="1", Formula2:="1000"
@@ -233,32 +306,56 @@ Private Sub BuildSetup()
         .ShowError = True
     End With
 
-    AddButton ws, ws.Range("D10").Left, ws.Range("B10").Top - 2, 150, 22, "Browse for folder...", "SelectOutputFolder"
+    NoteLine ws, 23, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
+        "Output Folder can stay blank - a OneDrive default is used and shown after each export."
+    NoteLine ws, 24, "Search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
+        "urban-boundary check, min 200 ft). 200 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
+    NoteLine ws, 25, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab for every layer + caveat."
 
-    ws.Range("A14").Value = "Michigan, Indiana and Wisconsin road-class layers are wired in V1. Other states still run the ACUB check."
-    ws.Range("A14").Font.Italic = True
-    ws.Range("A14").Font.Color = RGB(90, 90, 90)
-    ws.Range("A15").Value = "AGOL Webmap URL is optional. Paste a https://www.arcgis.com/apps/mapviewer/...?webmap=<id> URL " & _
-        "(or your org's equivalent) to enable the AGOL Map column and the Send-to-AGOL button."
-    ws.Range("A15").Font.Italic = True
-    ws.Range("A15").Font.Color = RGB(90, 90, 90)
-    ws.Range("A16").Value = "Search buffer is the radius used when no road segment intersects the exact point. 200 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
-    ws.Range("A16").Font.Italic = True
-    ws.Range("A16").Font.Color = RGB(90, 90, 90)
-    ws.Tab.Color = RGB(70, 130, 180)
+    SectionLabel ws, 27, "1.  Classify Roads"
+    AddButton ws, 18, ws.Rows(28).Top, 200, 32, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 228, ws.Rows(28).Top, 170, 32, "Re-run Failed Rows", "ReRunFailedRows"
+
+    SectionLabel ws, 31, "2.  Review Photos"
+    AddButton ws, 18, ws.Rows(32).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
+
+    SectionLabel ws, 35, "3.  Maps & FIRMettes"
+    AddButton ws, 18, ws.Rows(36).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(36).Top, 190, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
+    AddButton ws, 18, ws.Rows(39).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages"
+    AddButton ws, 218, ws.Rows(39).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
+    AddButton ws, 18, ws.Rows(42).Top, 250, 30, "Export Combined Map PDF", "ExportCombinedMapPdf"
+
+    SectionLabel ws, 45, "Exports & hand-off"
+    AddButton ws, 18, ws.Rows(46).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
+    AddButton ws, 218, ws.Rows(46).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
+    AddButton ws, 18, ws.Rows(49).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+
+    AddButton ws, 18, ws.Rows(52).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 54, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 56
+End Sub
+
+Private Sub AddStateValidation(ByVal cell As Range)
+    With cell.Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=STATE_LIST
+        .IgnoreBlank = True
+        .InCellDropdown = True
+    End With
 End Sub
 
 Private Sub LabelValue(ByVal ws As Worksheet, ByVal r As Long, ByVal label As String, _
         ByVal namedRange As String, ByVal defaultVal As String)
-    ws.Cells(r, 1).Value = label
-    ws.Cells(r, 1).Font.Bold = True
-    With ws.Cells(r, 2)
-        .Interior.Color = RGB(255, 255, 204)
+    ws.Cells(r, 2).Value = label
+    ws.Cells(r, 2).Font.Bold = True
+    With ws.Cells(r, 3)
+        .Interior.Color = CLR_INPUT
         .Borders.LineStyle = xlContinuous
         .Borders.Color = RGB(200, 200, 200)
         If Len(defaultVal) > 0 Then .Value = defaultVal
     End With
-    AddNameForCell ws.Cells(r, 2), namedRange
+    AddNameForCell ws.Cells(r, 3), namedRange
 End Sub
 
 Private Sub AddNameForCell(ByVal cell As Range, ByVal nm As String)
@@ -271,29 +368,55 @@ End Sub
 ' ---- Sites (the shared table) --------------------------------------------
 
 Private Sub BuildSites()
-    Dim ws As Worksheet, isNew As Boolean
+    Dim ws As Worksheet
     Set ws = SheetByName(SH_SITES)
     If ws Is Nothing Then
         Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
         ws.Name = SH_SITES
-        isNew = True
     End If
 
+    WriteSitesToolbar ws
     WriteSitesHeader ws
     FillSitesFormulas ws
     ApplySitesValidation ws
     ApplySitesFormatting ws
+    ApplyProductColumns ws
 
-    ws.Rows(SITES_HEADER_ROW).Font.Bold = True
     ws.Activate
-    ws.Range("A2").Select
+    ws.Cells(SITES_FIRST_DATA_ROW, COL_SITENO).Select
     On Error Resume Next
     ' ActiveWindow can be Nothing when Excel is driven headless by COM.
     ' Skipping the freeze in that path is fine - the in-Excel "Build / Reset"
-    ' button still pins the header row.
+    ' button still pins the toolbar + header rows.
     ActiveWindow.FreezePanes = True
     On Error GoTo 0
     ws.Tab.Color = RGB(60, 60, 60)
+End Sub
+
+' Row 1 toolbar: the two most-used actions live ON the Sites sheet so the
+' paste -> classify -> review loop never leaves it. Buttons are free-floating
+' so hiding the WO/DI columns (standard product) can't squash them.
+Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
+    Dim sh As Shape, i As Long
+    ' Idempotent rebuild: drop only our own shapes (named RR_*).
+    For i = ws.Shapes.Count To 1 Step -1
+        If Left$(ws.Shapes(i).Name, 3) = "RR_" Then ws.Shapes(i).Delete
+    Next i
+
+    ws.Rows(SITES_TOOLBAR_ROW).RowHeight = 26
+
+    Set sh = AddButton(ws, 2, 2, 110, 22, "Check Roads", "CheckRoads", CLR_BTN_GO)
+    sh.Name = "RR_CheckRoads"
+    sh.Placement = xlFreeFloating
+    Set sh = AddButton(ws, 118, 2, 190, 22, "Photo Links (selected rows)", "OpenImageryForSelection")
+    sh.Name = "RR_PhotoLinks"
+    sh.Placement = xlFreeFloating
+
+    With ws.Cells(SITES_TOOLBAR_ROW, COL_CATEGORY)
+        .Value = "Fill in the yellow columns - everything else fills itself. Select rows, then Photo Links to review imagery."
+        .Font.Italic = True
+        .Font.Color = RGB(90, 90, 90)
+    End With
 End Sub
 
 Private Sub WriteSitesHeader(ByVal ws As Worksheet)
@@ -303,17 +426,18 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_DI) = "DI #"
     h(COL_SITENO) = "Site #"
     h(COL_SITENAME) = "Site Name"
-    h(COL_ADDRESS) = "Address"
     h(COL_LAT) = "Latitude"
     h(COL_LON) = "Longitude"
-    h(COL_CATEGORY) = "Category"
-    h(COL_DESC) = "Description"
-    h(COL_COSTS) = "Costs"
-    h(COL_WORKCOMP) = "Work Completion"
+    h(COL_DESC) = "Description (optional)"
+    h(COL_ADDRESS) = "Address (optional)"
+    h(COL_CATEGORY) = "Category (optional)"
+    h(COL_COSTS) = "Costs (optional)"
+    h(COL_WORKCOMP) = "Work Completion (optional)"
     h(COL_GEOCODE) = "Geocode Status"
     h(COL_GMAP) = "Google Maps"
     h(COL_STREETVIEW) = "Street View"
     h(COL_BING) = "Bing"
+    h(COL_GEARTH) = "Google Earth"
     h(COL_FEMAVIEW) = "FEMA Viewer"
     h(COL_FIRMPORTAL) = "FIRMette Portal"
     h(COL_NFCMAP) = "NFC Map"
@@ -353,20 +477,21 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     SetLinkFormula ws, COL_GMAP, r1, r2, URL_GMAP, "Map", latC, lonC
     SetLinkFormula ws, COL_STREETVIEW, r1, r2, URL_STREETVIEW, "Street", latC, lonC
     SetLinkFormula ws, COL_BING, r1, r2, URL_BING, "Bing", latC, lonC
+    SetLinkFormula ws, COL_GEARTH, r1, r2, URL_GEARTH, "Earth", latC, lonC
     SetLinkFormula ws, COL_FEMAVIEW, r1, r2, URL_FEMAVIEW, "FEMA", latC, lonC
     SetLinkFormula ws, COL_FIRMPORTAL, r1, r2, URL_FIRMPORTAL, "FIRMette", latC, lonC
     ' Per-row "Open in map" (F11), state-aware (F8): the URL depends on
-    ' Setup's State dropdown, not just lat/lon, so it gets its own formula
-    ' builder rather than SetLinkFormula's single-template pattern.
+    ' Start Here's State dropdown, not just lat/lon, so it gets its own
+    ' formula builder rather than SetLinkFormula's single-template pattern.
     SetNfcMapFormula ws, r1, r2, latC, lonC
-    ' The AGOL Map column is driven by the inspector's own webmap URL
-    ' on Setup. The formula handles all three "blank" states (no URL
-    ' set, missing coords) and stitches center/level/marker query
-    ' params onto whatever URL was pasted.
+    ' The AGOL Map column is driven by the user's own webmap URL on Start
+    ' Here. The formula handles all three "blank" states (no URL set,
+    ' missing coords) and stitches center/level/marker query params onto
+    ' whatever URL was pasted.
     SetAgolMapFormula ws, r1, r2, latC, lonC
 End Sub
 
-' The AGOL formula is bespoke enough (depends on the dynamic Setup URL,
+' The AGOL formula is bespoke enough (depends on the dynamic Start Here URL,
 ' picks ? vs & based on whether the URL already has query params) that
 ' it doesn't fit SetLinkFormula. Built as its own helper.
 Private Sub SetAgolMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
@@ -403,11 +528,11 @@ Private Function UrlExprFromTemplate(ByVal urlTemplate As String, ByVal latC As 
     UrlExprFromTemplate = """" & Replace(Replace(urlTemplate, "{LAT}", """&" & latC & "&"""), "{LON}", """&" & lonC & "&""") & """"
 End Function
 
-' Per-row "Open in map" (F11), keyed off Setup's State dropdown (F8) since
-' MI/IN/WI each need a different URL (§4.2/§4.2a/§4.2b) - the only wired
-' states get their own map link; anything else (MN/IL/OH, or blank) falls
-' back to the plain FEMA Map Viewer pin so the column is never broken, just
-' generic.
+' Per-row "Open in map" (F11), keyed off Start Here's State dropdown (F8)
+' since MI/IN/WI each need a different URL (§4.2/§4.2a/§4.2b) - the only
+' wired states get their own map link; anything else (MN/IL/OH, or blank)
+' falls back to the plain FEMA Map Viewer pin so the column is never broken,
+' just generic.
 Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
     Dim miExpr As String, inExpr As String, wiExpr As String, fallbackExpr As String
@@ -416,8 +541,9 @@ Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 A
     inExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IN, latC, lonC)
     wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC)
     fallbackExpr = UrlExprFromTemplate(URL_FEMAVIEW, latC, lonC)
-    ' Blank State (never happens once Setup is built - B9 defaults to "MI" -
-    ' but cheap to guard) matches ClassifyRows's default-to-MI behavior.
+    ' Blank State (never happens once Start Here is built - the State cell
+    ' defaults to "MI" - but cheap to guard) matches ClassifyRows's
+    ' default-to-MI behavior.
     urlExpr = "IF(OR(" & NR_STATE & "=""MI""," & NR_STATE & "="""")," & miExpr & _
         ",IF(" & NR_STATE & "=""IN""," & inExpr & _
         ",IF(" & NR_STATE & "=""WI""," & wiExpr & "," & fallbackExpr & ")))"
@@ -457,8 +583,9 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
 
     ' Sensible widths.
     ws.Columns(COL_SITENAME).ColumnWidth = 22
-    ws.Columns(COL_ADDRESS).ColumnWidth = 28
     ws.Columns(COL_DESC).ColumnWidth = 26
+    ws.Columns(COL_ADDRESS).ColumnWidth = 28
+    ws.Columns(COL_CATEGORY).ColumnWidth = 12
     ws.Columns(COL_COSTS).ColumnWidth = 14
     ws.Columns(COL_WORKCOMP).ColumnWidth = 16
     ws.Columns(COL_CLASS).ColumnWidth = 16
@@ -471,11 +598,20 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
     ws.Columns(COL_AGOLMAP).ColumnWidth = 10
 
+    ' Guidance tints (friction fix: nothing used to tell the user which
+    ' columns are theirs). Yellow = type here; grey = a workflow writes it.
+    ' Link columns stay white. Conditional-format rules below win over
+    ' these static fills when they match, so the verdict colors still show.
+    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_WO), ws.Cells(r2, COL_WORKCOMP)).Interior.Color = CLR_INPUT
+    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_GEOCODE), ws.Cells(r2, COL_GEOCODE)).Interior.Color = CLR_RESULT
+    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_ELIGIBILITY)).Interior.Color = CLR_RESULT
+    ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_FIRMSTATUS), ws.Cells(r2, COL_MAPSTATUS)).Interior.Color = CLR_RESULT
+
     ' Tri-state highlight on the Federal Aid Status column:
     '   red    — cell starts with "Federal aid"  (federal-aid road)
     '   green  — cell starts with "Non-federal aid"
     '   yellow — cell starts with "Review" (non-certified class or no
-    '            road found within the Setup search-buffer radius)
+    '            road found within the search-buffer radius)
     ' "Non-federal aid" intentionally tests for the literal prefix
     ' (LEFT … 15) because a substring search for "Federal aid" would
     ' also match "Non-federal aid". Order matters when format rules
@@ -496,63 +632,19 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     End With
 
     On Error Resume Next
+    If ws.AutoFilterMode Then ws.AutoFilterMode = False
     ws.Range(ws.Cells(SITES_HEADER_ROW, 1), ws.Cells(SITES_HEADER_ROW, COL_LAST)).AutoFilter
     On Error GoTo 0
 End Sub
 
-' ---- Workflow control sheets ---------------------------------------------
-
-Private Sub BuildClassifySheet()
-    Dim ws As Worksheet
-    Set ws = FreshSheet(SH_CLASSIFY)
-    HideGridlines ws
-    TitleBlock ws, "1.  Classify Roads", "Look up FHWA functional class + ACUB urban boundary for every Sites row."
-    Bullets ws, 5, Array( _
-        "Reads Latitude/Longitude from the Sites table.", _
-        "Writes FHWA Class, Urban/Rural, ACUB Name, Road Name and Eligibility back to each row.", _
-        "Federal aid rows (Urban Minor Collector or greater) are highlighted red, non-federal aid green, review yellow.", _
-        "Michigan, Indiana and Wisconsin road class are wired in V1; other states still get the ACUB check.")
-    AddButton ws, 18, 150, 200, 34, "Classify All Rows", "ClassifyAllRows", CLR_BTN_GO
-    AddButton ws, 230, 150, 200, 34, "Re-run Failed Rows", "ReRunFailedClassifications", CLR_BTN
-    ws.Tab.Color = RGB(46, 139, 87)
-End Sub
-
-Private Sub BuildImagerySheet()
-    Dim ws As Worksheet
-    Set ws = FreshSheet(SH_IMAGERY)
-    HideGridlines ws
-    TitleBlock ws, "2.  Review Imagery", "Open a curated set of imagery sources for the selected Sites row(s)."
-    Bullets ws, 5, Array( _
-        "Select one or more rows in the Sites table first.", _
-        "Opens Google Maps, Street View, Bing aerial, FEMA Map Viewer for each point.", _
-        "Each opens in your default browser; review pre-disaster condition there.")
-    AddButton ws, 18, 140, 280, 36, "Open Imagery for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
-    ws.Tab.Color = RGB(70, 130, 180)
-End Sub
-
-Private Sub BuildMapsSheet()
-    Dim ws As Worksheet
-    Set ws = FreshSheet(SH_MAPS)
-    HideGridlines ws
-    TitleBlock ws, "3.  Maps & FIRMettes", "Batch FEMA FIRMette download, per-site map pages, and exports."
-    Bullets ws, 5, Array( _
-        "Set WO/DI/Disaster and the output folder on the Setup sheet first.", _
-        "FIRMettes download as PDFs named per site; status lands in the Sites table.", _
-        "Map pages give one printable page per site for a pasted screenshot.")
-    AddButton ws, 18, 140, 190, 32, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, 218, 140, 190, 32, "Re-run Failed FIRMettes", "ReRunFailedFirmettes", CLR_BTN
-    AddButton ws, 18, 180, 190, 32, "Prepare Map Pages", "PrepareMapPages", CLR_BTN
-    AddButton ws, 218, 180, 190, 32, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN
-    AddButton ws, 18, 220, 190, 32, "Export Sites to KML", "ExportSitesToKML", CLR_BTN
-    AddButton ws, 218, 220, 190, 32, "Export Sites Table (CSV)", "ExportSitesCsv", CLR_BTN
-    AddButton ws, 18, 260, 390, 32, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap", CLR_BTN
-    ws.Tab.Color = RGB(184, 134, 11)
-End Sub
-
-Private Sub Bullets(ByVal ws As Worksheet, ByVal startRow As Long, ByVal items As Variant)
-    Dim i As Long
-    For i = LBound(items) To UBound(items)
-        ws.Cells(startRow + i, 2).Value = ChrW(8226) & "  " & items(i)
-        ws.Cells(startRow + i, 2).Font.Color = RGB(70, 70, 70)
-    Next i
+' The inspector-only columns exist in both products (shared COL_* constants,
+' shared workflow code) but are hidden in the standard product so a PDMG /
+' partner / reviewer never sees job bookkeeping they don't use.
+Private Sub ApplyProductColumns(ByVal ws As Worksheet)
+    Dim hideCols As Boolean
+    hideCols = Not ProductIsInspector()
+    ws.Columns(COL_WO).Hidden = hideCols
+    ws.Columns(COL_DI).Hidden = hideCols
+    ws.Columns(COL_FIRMSTATUS).Hidden = hideCols
+    ws.Columns(COL_MAPSTATUS).Hidden = hideCols
 End Sub
