@@ -254,25 +254,22 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     StepLine ws, 15, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
     LabelValue ws, 17, "State", NR_STATE, "MI"
-    LabelValue ws, 18, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 18, "Output Folder", NR_OUTFOLDER, ""
     LabelValue ws, 19, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
     AddStateValidation ws.Cells(17, 3)
+    SetOutputFolderDefault ws.Cells(18, 3)
     AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
 
-    NoteLine ws, 21, "Output Folder can stay blank - exports save next to this workbook. " & _
-        "AGOL Webmap URL is only needed for the AGOL Map column / Send-to-AGOL button."
-    NoteLine ws, 22, "Michigan, Indiana and Wisconsin road-class lookups are wired. Other states still get the " & _
-        "urban-boundary (ACUB) check. Every service, layer and caveat is documented on the Sources tab."
-
-    AddButton ws, 18, ws.Rows(24).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, 250, ws.Rows(24).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
-    AddButton ws, 18, ws.Rows(27).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
-    AddButton ws, 18, ws.Rows(30).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
-    AddButton ws, 215, ws.Rows(30).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
-    AddButton ws, 18, ws.Rows(33).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
-    AddButton ws, 18, ws.Rows(37).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 39, "Build / Reset repairs the layout; your Sites data is preserved."
-    VersionLabel ws, 41
+    AddButton ws, 18, ws.Rows(21).Top, 220, 38, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 250, ws.Rows(21).Top, 170, 38, "Re-run Failed Rows", "ReRunFailedRows"
+    AddButton ws, 18, ws.Rows(24).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection"
+    AddButton ws, 18, ws.Rows(27).Top, 185, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
+    AddButton ws, 215, ws.Rows(27).Top, 185, 28, "Export Sites to KML", "ExportSitesToKML"
+    AddButton ws, 18, ws.Rows(30).Top, 382, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
+    AddButton ws, 18, ws.Rows(34).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 36, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
+        "Build / Reset repairs the layout - your Sites data is preserved."
+    VersionLabel ws, 38
 End Sub
 
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
@@ -343,6 +340,21 @@ Private Sub AddStateValidation(ByVal cell As Range)
         .IgnoreBlank = True
         .InCellDropdown = True
     End With
+End Sub
+
+' Standard product only: show the folder this workbook is saved in right in
+' the Output Folder cell, so the user sees where exports will land without
+' having to configure anything. A live CELL("filename") formula yields the
+' workbook's folder (with trailing "\"); it resolves to "" for an unsaved
+' file or a web-hosted (SharePoint http://) path, which is exactly the case
+' ResolveOutputFolder already falls back on - so behavior is unchanged, the
+' cell just now displays the default. Browse-for-folder or typing overwrites
+' the formula with an explicit path.
+Private Sub SetOutputFolderDefault(ByVal cell As Range)
+    cell.Formula = "=IF(OR(CELL(""filename"",$A$1)="""",LEFT(CELL(""filename"",$A$1),4)=""http""),""""," & _
+        "LEFT(CELL(""filename"",$A$1),FIND(""["",CELL(""filename"",$A$1))-1))"
+    cell.Font.Color = RGB(90, 90, 90)
+    cell.Font.Italic = True
 End Sub
 
 Private Sub LabelValue(ByVal ws As Worksheet, ByVal r As Long, ByVal label As String, _

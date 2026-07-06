@@ -39,7 +39,9 @@ try {
   # ---- §5.8: MN state (unwired), classify a Detroit-area coord ----
   Write-Host ""
   Write-Host "=== §5.8: State=MN on Detroit coord ===" -ForegroundColor Cyan
-  $wb.Names('JobState').RefersToRange.Value2 = 'MN'
+  # Use the annotated dropdown value to also exercise modUtil.StateCode,
+  # which must strip "(not wired)" back to the bare "MN" code.
+  $wb.Names('JobState').RefersToRange.Value2 = 'MN (not wired)'
   $sites.Cells(3, 4).Value2 = 'MN-state Detroit'
   $sites.Cells(3, 5).Value2 = [double]42.331
   $sites.Cells(3, 6).Value2 = [double]-83.045

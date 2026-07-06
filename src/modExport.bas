@@ -94,7 +94,7 @@ End Function
 ' formula generated in SetNfcMapFormula - keep the two in sync.
 Private Function NfcMapUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
     Dim stateCode As String, template As String
-    stateCode = UCase$(SetupValue(NR_STATE))
+    stateCode = BareStateCode(SetupValue(NR_STATE))
     If Len(stateCode) = 0 Then stateCode = "MI"   ' matches ClassifyRows's default
     Select Case stateCode
         Case "MI": template = URL_NFC_MAPVIEW

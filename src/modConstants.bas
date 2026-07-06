@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #21"
+Public Const BUILD_REFERENCE As String = "PR #22"
 
 ' ---- Sheet names ----
 Public Const SH_START As String = "Start Here"
@@ -172,8 +172,11 @@ Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgi
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-' ---- State selector (F8). MI/IN/WI NFC layers are wired in V1; MN/IL/OH are placeholders. ----
-Public Const STATE_LIST As String = "WI,IN,MI,MN,IL,OH"
+' ---- State selector (F8). MI/IN/WI NFC layers are wired in V1; MN/IL/OH are
+' placeholders and are labeled "(not wired)" in the dropdown so the user can
+' see at a glance which states classify roads vs. ACUB-only. modUtil.BareStateCode
+' strips the "(not wired)" suffix back to the bare 2-letter code for all logic. ----
+Public Const STATE_LIST As String = "WI,IN,MI,MN (not wired),IL (not wired),OH (not wired)"
 
 ' ---- Status-prefix used by the "re-run failed rows" feature (F12). ----
 Public Const STATUS_FAILED_PREFIX As String = "Failed - "
