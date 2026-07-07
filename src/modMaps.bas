@@ -618,6 +618,12 @@ Public Sub OpenSitesOnNfcLayer()
     dialogTitle = "Open Sites on NFC Layer"
     If Not WriteSitesKml(file, n, dialogTitle) Then Exit Sub
 
+    ' Also drop a GeoJSON next to the KML: it's the better format for the AGOL
+    ' Experience "Add Data" + Feature Info step-through (queryable feature layer
+    ' + real verdict fields). Failure here is non-fatal - the KML still works.
+    Dim gjFile As String, gjN As Long
+    WriteSitesGeoJson gjFile, gjN, dialogTitle
+
     Dim url As String
     url = NfcLayerUrlForFirstSite()
     If Len(url) = 0 Then url = BuildUrl(NfcLayerTemplate(), 0, 0)   ' no sites w/ coords - open layer anyway
@@ -628,10 +634,13 @@ Public Sub OpenSitesOnNfcLayer()
         On Error GoTo 0
         Dim q As String: q = Chr$(34)
         Shell "explorer.exe /select," & q & file & q, vbNormalFocus
-        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & vbCrLf & _
+        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & _
+            IIf(Len(gjFile) > 0, "and GeoJSON: " & gjFile & vbCrLf, "") & vbCrLf & _
             "The state NFC functional-class layer should now be open in ArcGIS Map Viewer." & vbCrLf & _
             "Drag the highlighted KML from Explorer onto the map to add all your sites," & vbCrLf & _
-            "colored red (federal aid) / green (non-federal aid) / blue (review).", _
+            "colored red (federal aid) / green (non-federal aid) / blue (review)." & vbCrLf & vbCrLf & _
+            "For an ArcGIS Experience with a click-through review, add the .geojson " & _
+            "instead (Add Data widget) - see docs/agol-review-app.md.", _
             vbInformation, dialogTitle
     End If
 End Sub
@@ -824,6 +833,162 @@ Private Function XmlEscape(ByVal s As String) As String
     s = Replace(s, "<", "&lt;")
     s = Replace(s, ">", "&gt;")
     XmlEscape = s
+End Function
+
+' ---- GeoJSON export (ArcGIS Online Add Data / Experience Builder path) -----
+' Prefer GeoJSON over KML for the AGOL path: a GeoJSON added at runtime becomes
+' a fully queryable client-side FEATURE layer, so Experience Builder's Feature
+' Info "1 of N" navigation, field-based selection, and symbolize-by-field all
+' work. An added KML becomes a limited "KML layer" that widgets often can't step
+' through. Each site's classifier results ride along as flat PROPERTIES (real
+' AGOL fields), including a Verdict bucket + VerdictColor hex so the layer can be
+' styled red/green/blue by field. KML export stays for Google Earth.
+' See docs/agol-review-app.md.
+Public Sub ExportSitesToGeoJson()
+    Dim file As String, n As Long, dialogTitle As String
+    dialogTitle = "Export GeoJSON"
+    If Not WriteSitesGeoJson(file, n, dialogTitle) Then Exit Sub
+    If Not gHeadless Then
+        Dim q As String: q = Chr$(34)
+        Shell "explorer.exe /select," & q & file & q, vbNormalFocus
+        MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & vbCrLf & _
+            "In your ArcGIS Online Experience, use the Add Data widget to load this " & _
+            ".geojson, then step through the sites with the Feature Info widget.", _
+            vbInformation, dialogTitle
+    End If
+End Sub
+
+' Shared GeoJSON builder: mirrors WriteSitesKml. Writes a FeatureCollection of
+' every row with valid coordinates to the resolved output folder. Sets
+' filePath + featureCount on success; returns False (with a MsgBox unless
+' headless) on failure.
+Private Function WriteSitesGeoJson(ByRef filePath As String, ByRef featureCount As Long, _
+        ByVal dialogTitle As String) As Boolean
+    Dim ws As Worksheet, last As Long, r As Long, feats As String, n As Long
+    Set ws = SitesSheet()
+    last = SitesLastRow()
+    If last < SITES_FIRST_DATA_ROW Then
+        If Not gHeadless Then MsgBox "No site rows to export.", vbInformation, dialogTitle
+        Exit Function
+    End If
+
+    For r = SITES_FIRST_DATA_ROW To last
+        If HasValidCoords(ws, r) Then
+            If n > 0 Then feats = feats & "," & vbCrLf
+            feats = feats & SiteFeatureJson(ws, r)
+            n = n + 1
+        End If
+    Next r
+
+    If n = 0 Then
+        If Not gHeadless Then MsgBox "No rows have valid coordinates to export.", vbInformation, dialogTitle
+        Exit Function
+    End If
+
+    Dim js As String
+    js = "{""type"":""FeatureCollection"",""features"":[" & vbCrLf & feats & vbCrLf & "]}"
+
+    Dim folder As String, file As String
+    folder = ResolveOutputFolder()
+    If Not EnsureFolderExists(folder) Then
+        If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, dialogTitle
+        Exit Function
+    End If
+    file = folder & ProductTitle() & " Sites.geojson"
+
+    If Not WriteTextFile(file, js) Then
+        If Not gHeadless Then MsgBox "Could not write the GeoJSON file.", vbExclamation, dialogTitle
+        Exit Function
+    End If
+
+    filePath = file
+    featureCount = n
+    WriteSitesGeoJson = True
+End Function
+
+' One GeoJSON Feature for a Sites row. Geometry is [lon, lat] per RFC 7946
+' (GeoJSON is always WGS84, so AGOL ingests it without reprojection). Optional
+' properties are omitted when blank so the field list stays clean.
+Private Function SiteFeatureJson(ByVal ws As Worksheet, ByVal r As Long) As String
+    Dim lat As String, lon As String, status As String, nm As String, props As String
+    lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
+    lon = InvariantNum(ws.Cells(r, COL_LON).Value)
+    status = Trim$(CStr(ws.Cells(r, COL_ELIGIBILITY).Value))
+    nm = Trim$(CStr(ws.Cells(r, COL_SITENAME).Value))
+    If Len(nm) = 0 Then nm = "Site row " & r
+
+    props = """Name"":""" & JsonEsc(nm) & """"     ' Name always present (first, no leading comma)
+    props = props & JProp("SiteNo", CStr(ws.Cells(r, COL_SITENO).Value))
+    props = props & JProp("WO", CStr(ws.Cells(r, COL_WO).Value))
+    props = props & JProp("DI", CStr(ws.Cells(r, COL_DI).Value))
+    props = props & JProp("FedAidStatus", status)
+    props = props & JProp("Verdict", VerdictBucketLabel(status))
+    props = props & JProp("VerdictColor", VerdictColorHex(status))
+    props = props & JProp("FHWAClass", CStr(ws.Cells(r, COL_CLASS).Value))
+    props = props & JProp("UrbanRural", CStr(ws.Cells(r, COL_URBANRURAL).Value))
+    props = props & JProp("ACUBName", CStr(ws.Cells(r, COL_ACUBNAME).Value))
+    props = props & JProp("RoadName", CStr(ws.Cells(r, COL_ROADNAME).Value))
+    props = props & JProp("StreetName", CStr(ws.Cells(r, COL_STREET).Value))
+    props = props & JProp("ReviewNote", CStr(ws.Cells(r, COL_REVIEWNOTE).Value))
+    props = props & JProp("Category", CStr(ws.Cells(r, COL_CATEGORY).Value))
+    props = props & JProp("Description", BuildDescBlock(ws, r, ""))
+    ' Numeric lat/lon too - handy in an attribute table / label.
+    props = props & ",""Latitude"":" & lat & ",""Longitude"":" & lon
+
+    SiteFeatureJson = "{""type"":""Feature"",""properties"":{" & props & _
+        "},""geometry"":{""type"":""Point"",""coordinates"":[" & lon & "," & lat & "]}}"
+End Function
+
+' Emit a JSON  ,"key":"value"  pair (leading comma), or "" when the value is
+' blank. Callers seed the object with the always-present Name pair first, so
+' every optional pair can safely lead with a comma.
+Private Function JProp(ByVal key As String, ByVal raw As String) As String
+    Dim v As String: v = Trim$(raw)
+    If Len(v) = 0 Then Exit Function
+    JProp = ",""" & key & """:""" & JsonEsc(v) & """"
+End Function
+
+' Verdict bucket + display color, reusing the same status->bucket mapping the
+' KML pins use (PinStyleId). Colors match the web prototype / PDF palette.
+Private Function VerdictBucketLabel(ByVal status As String) As String
+    Select Case PinStyleId(status)
+        Case "fedAid": VerdictBucketLabel = "Federal aid"
+        Case "nonFedAid": VerdictBucketLabel = "Non-federal aid"
+        Case Else: VerdictBucketLabel = "Review"
+    End Select
+End Function
+
+Private Function VerdictColorHex(ByVal status As String) As String
+    Select Case PinStyleId(status)
+        Case "fedAid": VerdictColorHex = "#c0392b"       ' red
+        Case "nonFedAid": VerdictColorHex = "#27ae60"    ' green
+        Case Else: VerdictColorHex = "#2980b9"           ' blue (review / unclassified)
+    End Select
+End Function
+
+' JSON string escape. Escapes the mandatory control/quote/backslash chars and,
+' to keep the file pure-ASCII (WriteTextFile writes ANSI), any byte >126 as a
+' \uXXXX sequence - which is valid UTF-8-safe JSON.
+Private Function JsonEsc(ByVal s As String) As String
+    Dim i As Long, ch As String, code As Long, out As String
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        Select Case ch
+            Case """": out = out & "\"""
+            Case "\": out = out & "\\"
+            Case vbCr: out = out & "\r"
+            Case vbLf: out = out & "\n"
+            Case vbTab: out = out & "\t"
+            Case Else
+                code = AscW(ch) And &HFFFF&
+                If code < 32 Or code > 126 Then
+                    out = out & "\u" & Right$("000" & LCase$(Hex$(code)), 4)
+                Else
+                    out = out & ch
+                End If
+        End Select
+    Next i
+    JsonEsc = out
 End Function
 
 Private Function WriteTextFile(ByVal path As String, ByVal content As String) As Boolean
