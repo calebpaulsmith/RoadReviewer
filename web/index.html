@@ -68,10 +68,18 @@
           border: 1px solid #c5cfd8; border-radius: 10px; padding: 0 8px 0 5px; white-space: nowrap; }
   .chip .cw { width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,.3); flex: none; }
   .chip.urban { background: #f5e9f6; border-color: #c79bd1; }
+  .chip.primary { border: 1.5px solid #1c2733; font-weight: 600; }
+  .chip.primary .ctag { font-size: 9.5px; font-weight: 700; letter-spacing: .4px; color: #fff;
+                        background: #1c2733; border-radius: 7px; padding: 0 5px; margin-left: 2px; }
   .row .streets { color: var(--muted); }
   .row .streets b { color: var(--ink); font-weight: 600; }
   .row .links { margin-left: auto; }
   .row .links a { margin-left: 8px; font-size: 11.5px; white-space: nowrap; }
+  .row .links a.maplink { font-weight: 700; }
+  details.howcolors { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  details.howcolors summary { cursor: pointer; color: #205d8c; }
+  details.howcolors ol { margin: 6px 0; padding-left: 20px; }
+  details.howcolors li { margin: 3px 0; }
   a { color: #205d8c; }
   details.netlog { margin-top: 16px; font-size: 12.5px; color: var(--muted); }
   details.netlog pre { max-height: 180px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0 0; }
@@ -127,6 +135,16 @@
             <option value="OH">Ohio (ACUB only)</option>
           </select>
         </label>
+        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft.">Search radius:
+          <select id="bufferSel">
+            <option value="50">50 ft (strict)</option>
+            <option value="100">100 ft</option>
+            <option value="150">150 ft</option>
+            <option value="250" selected>250 ft (default)</option>
+            <option value="500">500 ft</option>
+            <option value="1000">1,000 ft (wide)</option>
+          </select>
+        </label>
         <span class="count" id="parseCount"></span>
       </div>
       <textarea id="coordsIn" spellcheck="false" placeholder="Paste coordinates — one point per line. Results appear automatically.
@@ -140,10 +158,19 @@ Site 12, 44.2700, -83.5200"></textarea>
         Classification runs as you paste; no submit button.
       </div>
       <div class="legend">
-        <span class="l-fed">Federal aid (Urban Minor Collector or greater)</span>
-        <span class="l-nonfed">Non-federal aid</span>
-        <span class="l-review">Review / no result</span>
+        <span class="l-fed">Federal aid — closest road</span>
+        <span class="l-nonfed">Non-federal aid — closest road</span>
+        <span class="l-review">Review — ambiguous, needs a look</span>
       </div>
+      <details class="howcolors">
+        <summary>How the colors are decided</summary>
+        <ol>
+          <li>Every road within the search radius is found, and the true distance from your point to each one is measured.</li>
+          <li><b>The closest road decides red vs green</b> — it's the road your point is on. Red if its class is federal-aid (Urban Minor Collector or greater), green otherwise. Urban vs rural comes from the 2020 Adjusted Census Urban Boundaries, never from the road data.</li>
+          <li><b>Yellow only downgrades green</b> — a green result turns yellow when something nearby could flip it to federal-aid: a federal-aid road within 30 ft of the closest road (GPS can't tell which one the point is on), any other federal-aid road inside the radius, a Minor Collector sitting right on an urban-boundary edge, or no road found at all. Red never downgrades — a federal-aid closest road stays red.</li>
+        </ol>
+        <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
+      </details>
     </div>
     <div class="map-col">
       <div class="reviewbar">
@@ -166,6 +193,7 @@ Site 12, 44.2700, -83.5200"></textarea>
       <span style="flex:1"></span>
       <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
       <button id="dlCsv">Download CSV</button>
+      <button id="dlGeojson" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">Download GeoJSON</button>
       <label class="count" title="How wide an area the report map for each site covers">PDF map width:
         <select id="pdfZoom">
           <option value="300">Close (~0.4 mi)</option>
@@ -218,15 +246,52 @@ const REST = {
   TIGER_ROADS:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
 };
 
-const DEFAULT_BUFFER_FEET = 200;
-const ACUB_MIN_BUFFER_FEET = 200;
+// Search radius when the exact point-on-road intersect misses (adjustable in
+// the UI; the Excel tool's "Search buffer" cell, same 250 ft default).
+const DEFAULT_BUFFER_FEET = 250;
+// The urban-boundary check never narrows below this, even when the road
+// buffer is tightened — a point a few feet on the rural side of a road that
+// itself forms the urban boundary must still resolve Urban (field-observed
+// failure mode; modClassify.ACUB_MIN_BUFFER_FEET).
+const ACUB_MIN_BUFFER_FEET = 250;
+// Two roads whose distances differ by less than this are "close together":
+// GPS alone can't tell which one the point is on, so a federal-aid second
+// road there is worth a yellow flag (modClassify.CLOSE_ROAD_FEET).
+const CLOSE_ROAD_FEET = 30;
 
 // Per-row verification links (§4.3 URL templates).
 const LINK_TEMPLATES = {
   "Google":     "https://www.google.com/maps?q={LAT},{LON}",
   "StreetView": "https://www.google.com/maps?q&layer=c&cbll={LAT},{LON}",
-  "FEMA":       "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   "FIRMette":   "https://msc.fema.gov/portal/firmette?latitude={LAT}&longitude={LON}",
+};
+
+// "ArcGIS map" per-row link — mirrors the Excel tool's "AGOL NFC Layer"
+// column (URL_NFC_MAPVIEW / _IN / _WI in modConstants.bas): ArcGIS Map
+// Viewer centered + markered on the point with the state's functional-class
+// layer loaded. MI opens the curated FEMA-hosted NFC/ACUB webmap (a raw
+// side-load of MDOT's time-enabled layer 353 surfaces a time slider that
+// hides the roads); IN/WI side-load the state's live FeatureServer; every
+// other state gets the plain pinned viewer.
+const ARCGIS_MAP_TEMPLATES = {
+  MI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}",
+  IN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  WI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  DEFAULT: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+};
+
+// "Public map" per-row link — each state's own official public
+// functional-class map (modConstants APP_*). Plain app URLs with NO
+// coordinates: the Experience apps can't be reliably centered via URL (the
+// coordinate deep-link mis-navigated, PR #17/#18), so they open statewide —
+// download the GeoJSON and drag it onto the map to see your sites there.
+const PUBLIC_MAP = {
+  MI: "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce",
+  IN: "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot",
+  WI: "https://wisconsindot.gov/Pages/projects/data-plan/plan-res/function.aspx",
+  MN: "https://webgis.dot.state.mn.us/emma/",
+  IL: "https://www.gettingaroundillinois.com/MapViewer/?config=RFCconfig.json",
+  OH: "https://tims.dot.state.oh.us/tims",
 };
 
 function functionalSystemLabel(code) {
@@ -257,150 +322,253 @@ function wisconsinLocalCategoryToFhwa(cat) {
   }
 }
 
-function buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt) {
+function buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt, withGeom) {
   let url = baseUrl + "/query?where=" + encodeURIComponent(whereClause) +
     "&geometry=" + lon + "," + lat +
     "&geometryType=esriGeometryPoint&inSR=4326" +
     "&spatialRel=esriSpatialRelIntersects" +
     "&outFields=" + encodeURIComponent(outFields) +
-    "&returnGeometry=false&f=json";
+    (withGeom ? "&returnGeometry=true&outSR=4326" : "&returnGeometry=false") + "&f=json";
   if (distanceFt > 0) url += "&distance=" + distanceFt + "&units=esriSRUnit_Foot";
   return url;
 }
 
 function featureCount(json) { return (json && json.features) ? json.features.length : 0; }
 
+const cleanStr = v => (v === undefined || v === null) ? "" : String(v).trim();
+
 function attrValues(json, field) {
   if (!json || !json.features) return [];
   return json.features.map(f => f.attributes ? f.attributes[field] : undefined)
                       .filter(v => v !== undefined && v !== null && String(v).trim() !== "");
-}
-function extractIntegers(json, field) {
-  return attrValues(json, field).map(Number).filter(Number.isFinite).map(Math.trunc);
 }
 function firstString(json, field) {
   const v = attrValues(json, field);
   return v.length ? String(v[0]) : "";
 }
 
-async function runQuery(baseUrl, lat, lon, outFields, whereClause, distanceFt) {
-  const json = await httpGetJson(buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt));
+// ---- per-road distances (port of modHttp.MinDistanceFt / PointSegDistM) ----
+// Distance in metres from the local origin (0,0) to segment A-B (planar).
+function pointSegDistM(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(ax, ay);
+  let t = -(ax * dx + ay * dy) / l2;   // projection of the origin onto AB, clamped
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+  return Math.hypot(ax + t * dx, ay + t * dy);
+}
+// Minimum distance in FEET from (lat,lon) to one feature's geometry
+// (polyline paths / polygon rings / a point). Uses a local equirectangular
+// projection — accurate at the few-hundred-foot scale this cares about — and
+// true point-to-segment distance, not just nearest-vertex (a long straight
+// segment can pass close to the point between far-apart vertices).
+// Infinity when the feature carries no geometry.
+function minDistanceFt(geometry, lat, lon) {
+  if (!geometry) return Infinity;
+  const parts = geometry.paths || geometry.rings ||
+    (geometry.x !== undefined ? [[[geometry.x, geometry.y]]] : null);
+  if (!parts || !parts.length) return Infinity;
+  const mPerLat = 111320, mPerLon = 111320 * Math.cos(lat * Math.PI / 180);
+  let best = Infinity;
+  for (const part of parts) {
+    const pv = part.map(([x, y]) => [(x - lon) * mPerLon, (y - lat) * mPerLat]);
+    if (pv.length === 1) best = Math.min(best, Math.hypot(pv[0][0], pv[0][1]));
+    for (let i = 0; i < pv.length - 1; i++)
+      best = Math.min(best, pointSegDistM(pv[i][0], pv[i][1], pv[i + 1][0], pv[i + 1][1]));
+  }
+  return best * 3.28084;   // metres -> feet
+}
+// One {attrs, distFt} per feature of a with-geometry response.
+function featureEntries(json, lat, lon) {
+  return ((json && json.features) || []).map(f => ({
+    attrs: f.attributes || {}, distFt: minDistanceFt(f.geometry, lat, lon) }));
+}
+
+async function runQuery(baseUrl, lat, lon, outFields, whereClause, distanceFt, withGeom) {
+  const json = await httpGetJson(buildQueryUrl(baseUrl, lat, lon, outFields, whereClause, distanceFt, withGeom));
   if (json && json.error) throw new Error("service error " + (json.error.code || "") + " " + (json.error.message || ""));
   return json;
 }
 
 // Exact point intersect first; if no hit, retry with the fallback buffer (§4.2).
-async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fallbackFt) {
-  let json = await runQuery(baseUrl, lat, lon, outFields, whereClause, 0);
+async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fallbackFt, withGeom) {
+  let json = await runQuery(baseUrl, lat, lon, outFields, whereClause, 0, withGeom);
   if (featureCount(json) === 0) {
-    json = await runQuery(baseUrl, lat, lon, outFields, whereClause, fallbackFt);
+    json = await runQuery(baseUrl, lat, lon, outFields, whereClause, fallbackFt, withGeom);
   }
   return json;
 }
 
-// Per-segment detail for the UI: [{code, name}] — one entry per returned
-// segment, name only where the source layer carries it on the same feature
-// (WI both layers; MI/IN class layers have no name field, see §4.2/§4.2a).
+// Per-segment detail: [{code, name, distFt}] — one entry per returned
+// segment with its true distance to the point; name only where the source
+// layer carries it on the same feature (WI both layers; MI/IN class layers
+// have no name field, see §4.2/§4.2a). `roads` is the separate named-road
+// list ([{name, distFt}]) merged into the Road Name display.
 async function queryMichiganNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt);
-  const codes = extractIntegers(nfc, "FunctionalSystem");
-  let roadName = "";
+  const nfc = await queryWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, true);
+  const segments = featureEntries(nfc, lat, lon)
+    .filter(e => cleanStr(e.attrs.FunctionalSystem) !== "" && Number.isFinite(Number(e.attrs.FunctionalSystem)))
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FunctionalSystem)), name: "", distFt: e.distFt }));
+  const roads = [];
   try {
-    const route = await queryWithFallback(REST.MDOT_ROUTE, lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt);
-    roadName = (firstString(route, "RouteDesignation") + " " + firstString(route, "RouteNumber")).trim();
+    const route = await queryWithFallback(REST.MDOT_ROUTE, lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt, true);
+    for (const e of featureEntries(route, lat, lon)) {
+      const nm = [e.attrs.RouteDesignation, e.attrs.RouteNumber].map(cleanStr).filter(Boolean).join(" ");
+      if (nm) roads.push({ name: nm, distFt: e.distFt });
+    }
   } catch (e) { /* route name is best-effort, matching modClassify */ }
-  return { codes, roadName, segments: codes.map(c => ({ code: c, name: "" })) };
+  return { segments, roads };
 }
 
 async function queryIndianaNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt);
-  const codes = extractIntegers(nfc, "functional_class");
-  let roadName = "";
+  const nfc = await queryWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt, true);
+  const segments = featureEntries(nfc, lat, lon)
+    .filter(e => cleanStr(e.attrs.functional_class) !== "" && Number.isFinite(Number(e.attrs.functional_class)))
+    .map(e => ({ code: Math.trunc(Number(e.attrs.functional_class)), name: "", distFt: e.distFt }));
+  const roads = [];
   try {
-    const nm = await queryWithFallback(REST.IN_ROADNAME, lat, lon, "st_full", "1=1", bufferFt);
-    roadName = firstString(nm, "st_full");
+    const nm = await queryWithFallback(REST.IN_ROADNAME, lat, lon, "st_full", "1=1", bufferFt, true);
+    for (const e of featureEntries(nm, lat, lon)) {
+      const s = cleanStr(e.attrs.st_full);
+      if (s) roads.push({ name: s, distFt: e.distFt });
+    }
   } catch (e) { /* best-effort */ }
-  return { codes, roadName, segments: codes.map(c => ({ code: c, name: "" })) };
+  return { segments, roads };
 }
 
 async function queryWisconsinNfc(lat, lon, bufferFt) {
-  const trunk = await queryWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt);
+  const trunk = await queryWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, true);
   if (featureCount(trunk) > 0) {
-    const clean = v => (v === undefined || v === null) ? "" : String(v).trim();
-    const segments = [];
-    for (const f of trunk.features) {
-      const a = f.attributes || {};
-      const code = Number(a.FED_FC_CD);
-      if (clean(a.FED_FC_CD) === "" || !Number.isFinite(code)) continue;
-      segments.push({ code: Math.trunc(code),
-        name: [a.HWYTYPE, a.HWYNUM, a.HWYDIR].map(clean).filter(Boolean).join(" ") });
+    const segments = [], roads = [];
+    for (const e of featureEntries(trunk, lat, lon)) {
+      const a = e.attrs, code = Number(a.FED_FC_CD);
+      if (cleanStr(a.FED_FC_CD) === "" || !Number.isFinite(code)) continue;
+      const name = [a.HWYTYPE, a.HWYNUM, a.HWYDIR].map(cleanStr).filter(Boolean).join(" ");
+      segments.push({ code: Math.trunc(code), name, distFt: e.distFt });
+      if (name) roads.push({ name, distFt: e.distFt });
     }
-    const roadName = [firstString(trunk, "HWYTYPE"), firstString(trunk, "HWYNUM"), firstString(trunk, "HWYDIR")]
-      .join(" ").replace(/\s+/g, " ").trim();
-    return { codes: segments.map(s => s.code), roadName, segments };
+    return { segments, roads };
   }
-  const loc = await queryWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt);
-  const clean = v => (v === undefined || v === null) ? "" : String(v).trim();
-  const segments = [];
-  for (const f of (loc.features || [])) {
-    const a = f.attributes || {};
-    const cat = Number(a.FNCT_CLS_CTGY_TYCD);
-    if (clean(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) continue;
-    segments.push({ code: wisconsinLocalCategoryToFhwa(Math.trunc(cat)), name: clean(a.ST_LABL_NM) });
+  const loc = await queryWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, true);
+  const segments = [], roads = [];
+  for (const e of featureEntries(loc, lat, lon)) {
+    const a = e.attrs, cat = Number(a.FNCT_CLS_CTGY_TYCD);
+    if (cleanStr(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) continue;
+    const name = cleanStr(a.ST_LABL_NM);
+    segments.push({ code: wisconsinLocalCategoryToFhwa(Math.trunc(cat)), name, distFt: e.distFt });
+    if (name) roads.push({ name, distFt: e.distFt });
   }
-  return { codes: segments.map(s => s.code), roadName: firstString(loc, "ST_LABL_NM"), segments };
+  return { segments, roads };
 }
 
 const NFC_WIRED = { MI: queryMichiganNfc, IN: queryIndianaNfc, WI: queryWisconsinNfc };
 
-function classLabels(codes, bufferFt) {
-  if (codes.length === 0) return "No road segment within " + bufferFt + " ft";
+// Distinct FHWA class labels across the detected segments, nearest-first.
+function classLabels(segments, bufferFt) {
+  if (!segments.length) return "No road segment within " + bufferFt + " ft";
   const out = [];
-  for (const c of codes) {
-    const label = functionalSystemLabel(c);
+  for (const s of segments) {
+    const label = functionalSystemLabel(s.code);
     if (!out.includes(label)) out.push(label);
   }
   return out.join(" | ");
 }
 
-// Federal Aid Status verdict per CLAUDE.md §4.2's table — a direct port of
-// modClassify.FederalAidVerdict. Classifies the road, not the project.
-function federalAidVerdict(codes, isUrban, bufferFt) {
-  if (codes.length === 0) return "No road segment within " + bufferFt + " ft - review manually";
-  let isFederalAid = false, manual = false, hasRuralMinorCollector = false, worstCode = 99;
-  for (const c of codes) {
-    if (c === 7) { /* Local - never federal aid */ }
-    else if (c === 6) {
-      if (isUrban) { isFederalAid = true; if (6 < worstCode) worstCode = 6; }
-      else hasRuralMinorCollector = true;
-    }
-    else if (c >= 1 && c <= 5) { isFederalAid = true; if (c < worstCode) worstCode = c; }
-    else manual = true;
+// Merge every detected road (state class/route layers + Census TIGER) into
+// one nearest-first "Name (D ft) | Name (D ft)" list, deduped by name
+// keeping each name's nearest distance — the same string the Excel tool
+// writes to its Road Name column (modClassify.FormatRoadList).
+function mergeRoadList(roads) {
+  const best = new Map();
+  for (const r of roads) {
+    const nm = cleanStr(r.name);
+    if (!nm) continue;
+    const k = nm.toLowerCase();
+    if (!best.has(k) || (r.distFt ?? Infinity) < best.get(k).distFt) best.set(k, { name: nm, distFt: r.distFt ?? Infinity });
   }
-  if (isFederalAid) return "Federal aid - " + (isUrban ? "Urban " : "Rural ") + functionalSystemLabel(worstCode);
-  if (manual) return "Review - non-certified class, check manually";
-  if (hasRuralMinorCollector) return "Non-federal aid - Rural Minor Collector";
-  return "Non-federal aid - " + (isUrban ? "Urban" : "Rural") + " Local";
+  return [...best.values()].sort((a, b) => a.distFt - b.distFt);
+}
+function formatRoadList(roadList) {
+  return roadList.map(r => r.name + (Number.isFinite(r.distFt) ? ` (${Math.round(r.distFt)} ft)` : "")).join(" | ");
+}
+
+// A segment's class is federal-aid: 1-5 always; 6 (Minor Collector) only
+// when urban; 7 (Local) never; 0 (non-certified) is handled as "review"
+// upstream (modClassify.ClassIsFederal).
+function classIsFederal(code, isUrban) {
+  if (code >= 1 && code <= 5) return true;
+  if (code === 6) return isUrban;
+  return false;
+}
+
+// The core verdict — a direct port of modClassify.ComputeVerdict. The
+// CLOSEST road segment decides red vs green (it's the road the point is
+// ON), and yellow only ever DOWNGRADES green: a green result becomes
+// "Review - <reason>" when an ambiguity could actually make it federal.
+// Red stays red. Classifies the road, not the project.
+function computeVerdict(segments, exactUrban, boundaryAmbiguous, bufferFt) {
+  if (!segments.length)
+    return { verdict: "Review - no road within " + bufferFt + " ft", reason: "No road found" };
+  const sorted = [...segments].sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
+  const p = sorted[0];
+
+  if (p.code === 0)
+    return { verdict: "Review - non-certified class, check manually", reason: "Non-certified" };
+  if (classIsFederal(p.code, exactUrban))
+    return { verdict: "Federal aid - " + (exactUrban ? "Urban " : "Rural ") + functionalSystemLabel(p.code), reason: "" };
+
+  // Primary is non-federal -> green base.
+  let baseText;
+  if (p.code === 6) baseText = "Non-federal aid - Rural Minor Collector";   // non-fed 6 => rural
+  else if (p.code === 7) baseText = "Non-federal aid - " + (exactUrban ? "Urban" : "Rural") + " Local";
+  else baseText = "Non-federal aid - " + (exactUrban ? "Urban " : "Rural ") + functionalSystemLabel(p.code);
+
+  // Ambiguities that turn green -> yellow, most-specific reason first:
+  // (a) the 2nd-closest road is within 30 ft of the closest AND is federal;
+  // (b) any other detected road is federal-aid;
+  // (c) a Minor Collector sitting on the urban boundary (urban would flip it).
+  let reason = "";
+  if (sorted.length > 1 && ((sorted[1].distFt ?? Infinity) - (p.distFt ?? Infinity)) < CLOSE_ROAD_FEET
+      && classIsFederal(sorted[1].code, exactUrban))
+    reason = "Second road close";
+  if (!reason && sorted.slice(1).some(s => classIsFederal(s.code, exactUrban)))
+    reason = "Nearby FHWA road";
+  if (!reason && p.code === 6 && boundaryAmbiguous)
+    reason = "Urban boundary edge";
+
+  return reason ? { verdict: "Review - " + reason, reason } : { verdict: baseText, reason: "" };
+}
+
+// Point-in-ACUB-polygon (exact) first; only if the point is outside every
+// polygon, buffer out to the boundary floor to detect "right on the urban
+// edge" (port of modClassify.DetermineAcub). Three outcomes:
+// exactUrban (definitely Urban) / boundary (ambiguous edge) / rural.
+async function determineAcub(lat, lon, bufferFt) {
+  let j = await runQuery(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", 0, false);
+  if (featureCount(j) > 0) return { exactUrban: true, boundary: false, name: firstString(j, "NAME") };
+  j = await runQuery(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", Math.max(bufferFt, ACUB_MIN_BUFFER_FEET), false);
+  if (featureCount(j) > 0) return { exactUrban: false, boundary: true, name: firstString(j, "NAME") };
+  return { exactUrban: false, boundary: false, name: "" };
 }
 
 // Full per-point pipeline, mirroring modClassify.ClassifyOneRow:
-// ACUB (always, with the 200-ft floor buffer) -> state NFC + road name ->
-// TIGER street names (non-fatal) -> class label + verdict.
+// ACUB three-state (exact / boundary-edge / rural, with the 250-ft floor) ->
+// state NFC segments + named roads, all with distances -> TIGER street
+// names (non-fatal) -> class label + ambiguity-aware verdict.
 async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET) {
-  const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", classLabel: "",
-                roadName: "", streets: "", streetList: [], verdict: "", failed: false,
-                segments: [], bufferFt };
-  const acubBuffer = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
+  const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", acubBoundary: false,
+                classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
+                verdict: "", reviewReason: "", failed: false, segments: [], bufferFt };
 
   let acub;
   try {
-    acub = await queryWithFallback(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", acubBuffer);
+    acub = await determineAcub(lat, lon, bufferFt);
   } catch (e) {
     out.verdict = "Failed - ACUB query (" + e.message + ")"; out.failed = true; return out;
   }
-  const isUrban = featureCount(acub) > 0;
-  out.urbanRural = isUrban ? "Urban" : "Rural";
-  out.acubName = isUrban ? firstString(acub, "NAME") : "";
+  out.urbanRural = acub.exactUrban ? "Urban" : "Rural";
+  out.acubName = acub.name;
+  out.acubBoundary = acub.boundary;
 
   const nfcQuery = NFC_WIRED[stateCode];
   if (!nfcQuery) {
@@ -408,23 +576,36 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
     return out;
   }
 
-  let codes, roadName, segments;
+  let segments, roads;
   try {
-    ({ codes, roadName, segments } = await nfcQuery(lat, lon, bufferFt));
+    ({ segments, roads } = await nfcQuery(lat, lon, bufferFt));
   } catch (e) {
     out.verdict = "Failed - NFC query (" + e.message + ")"; out.failed = true; return out;
   }
-  out.roadName = roadName || "";
-  out.segments = segments || codes.map(c => ({ code: c, name: "" }));
+  out.segments = [...segments].sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
 
+  // Census TIGER street names (with distances) — covers the local streets
+  // the state layers name poorly. Non-fatal; feeds both the street list and
+  // the merged Road Name list.
   try {
-    const tiger = await runQuery(REST.TIGER_ROADS, lat, lon, "NAME", "1=1", bufferFt);
-    out.streetList = [...new Set(attrValues(tiger, "NAME").map(String))];
+    const tiger = await runQuery(REST.TIGER_ROADS, lat, lon, "NAME", "1=1", bufferFt, true);
+    const seen = new Set();
+    for (const e of featureEntries(tiger, lat, lon)) {
+      const nm = cleanStr(e.attrs.NAME);
+      if (!nm) continue;
+      roads.push({ name: nm, distFt: e.distFt });
+      const k = nm.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.streetList.push(nm); }
+    }
     out.streets = out.streetList.join(" | ");
   } catch (e) { /* non-fatal, matching modClassify */ }
 
-  out.classLabel = classLabels(codes, bufferFt);
-  out.verdict = federalAidVerdict(codes, isUrban, bufferFt);
+  out.roadList = mergeRoadList(roads);
+  out.roadName = formatRoadList(out.roadList);
+  out.classLabel = classLabels(out.segments, bufferFt);
+  const v = computeVerdict(out.segments, acub.exactUrban, acub.boundary, bufferFt);
+  out.verdict = v.verdict;
+  out.reviewReason = v.reason;
   return out;
 }
 
@@ -516,10 +697,29 @@ function verdictBucket(v) {
 }
 const BUCKET_COLOR = { fed: "#d73027", nonfed: "#1a9850", review: "#b58900", failed: "#777", pending: "#4a7fb5" };
 
-function pointLinks(lat, lon) {
-  return Object.entries(LINK_TEMPLATES).map(([name, tpl]) =>
-    `<a href="${tpl.replaceAll("{LAT}", lat).replaceAll("{LON}", lon)}" target="_blank" rel="noopener">${name}</a>`
-  ).join(" ");
+// Current search radius (feet) from the UI, clamped like the Excel tool's
+// BufferFeet() (1..1000, falling back to the 250 ft default).
+function bufferFeet() {
+  const v = parseInt($("bufferSel").value, 10);
+  return Number.isFinite(v) && v >= 1 && v <= 1000 ? v : DEFAULT_BUFFER_FEET;
+}
+
+function pointLinks(lat, lon, state) {
+  const fill = tpl => tpl.replaceAll("{LAT}", lat).replaceAll("{LON}", lon);
+  const out = [
+    // Primary: ArcGIS Map Viewer pinned on the exact point with the state's
+    // class layer — the same link the Excel tool's "AGOL NFC Layer" column opens.
+    `<a class="maplink" href="${fill(ARCGIS_MAP_TEMPLATES[state] || ARCGIS_MAP_TEMPLATES.DEFAULT)}" target="_blank" rel="noopener" ` +
+      `title="ArcGIS Map Viewer, centered and pinned on this exact point, with the state's functional-class layer loaded">ArcGIS map</a>`,
+  ];
+  if (PUBLIC_MAP[state]) {
+    out.push(`<a href="${PUBLIC_MAP[state]}" target="_blank" rel="noopener" ` +
+      `title="The state's official public functional-class map. It opens statewide (it can't be centered by URL) — use Download GeoJSON and drag the file onto the map to see your sites on it">Public map</a>`);
+  }
+  for (const [name, tpl] of Object.entries(LINK_TEMPLATES)) {
+    out.push(`<a href="${fill(tpl)}" target="_blank" rel="noopener">${name}</a>`);
+  }
+  return out.join(" ");
 }
 
 /* ---- state: keyed results cache so re-parses don't re-query ---- */
@@ -542,58 +742,74 @@ const FHWA_CHIP_COLOR = { 1: "#0070ff", 2: "#a900e6", 3: "#e60000", 4: "#38a800"
                           5: "#ffaa00", 6: "#ffff00", 7: "#343434", 0: "#8c8c8c" };
 const BUCKET_WORD = { fed: "FEDERAL AID", nonfed: "NON-FEDERAL AID", review: "REVIEW", failed: "FAILED" };
 
-function badgeHtml(verdict, bucket) {
+// Plain-language expansion of each yellow "Review" reason, shown as a
+// tooltip on the verdict so the ≤3-word reason is self-explanatory.
+const REASON_EXPLAIN = {
+  "Second road close": "The two closest roads are within 30 ft of each other and the other one is federal-aid — GPS alone can't tell which road the point is on. Check it on the map.",
+  "Nearby FHWA road": "The closest road is non-federal, but another federal-aid road sits inside the search radius. Confirm the site isn't on that one.",
+  "Urban boundary edge": "The closest road is a Minor Collector right at the urban-boundary edge; inside the boundary it would be federal-aid. Confirm urban vs rural on the map.",
+  "No road found": "No classified road segment inside the search radius — widen the radius or double-check the coordinates.",
+  "Non-certified": "The closest segment is a non-certified roadway in the state data — classify it manually.",
+};
+
+function badgeHtml(verdict, bucket, reason) {
   // Split "Federal aid - Urban Minor Collector" into a solid badge + detail.
   const m = verdict.match(/^(Federal aid|Non-federal aid|Review|Failed)\s*-\s*(.*)$/i);
   const detail = m ? m[2] : verdict;
-  return `<span class="badge b-${bucket}">${BUCKET_WORD[bucket] || bucket.toUpperCase()}</span>` +
-    (detail ? `<span class="verdict-detail">${esc(detail)}</span>` : "");
+  const tip = reason && REASON_EXPLAIN[reason] ? ` title="${esc(REASON_EXPLAIN[reason])}"` : "";
+  return `<span class="badge b-${bucket}"${tip}>${BUCKET_WORD[bucket] || bucket.toUpperCase()}</span>` +
+    (detail ? `<span class="verdict-detail"${tip}>${esc(detail)}</span>` : "");
 }
 
 // The roads found near the point: a count + one chip per distinct road/class,
-// each swatched in that class's FHWA color (the spreadsheet's "A | B | C"
-// string, unpacked). Segments of the same road+class collapse into one chip
-// with a ×n multiplier.
+// nearest first, each swatched in that class's FHWA color and carrying its
+// distance from the point. The FIRST chip is the closest road — the one that
+// decides red vs green — and is marked as such. Segments of the same
+// road+class collapse into one chip (nearest distance, ×n multiplier).
 function roadChipsHtml(res) {
   const segs = res.segments || [];
-  // No segments: the verdict badge already reads "No road segment within N ft
-  // - review manually", so don't repeat it here.
+  // No segments: the verdict badge already reads "no road within N ft".
   if (!segs.length) return "";
   const groups = new Map();
   for (const s of segs) {
     const k = s.code + "|" + (s.name || "");
-    if (!groups.has(k)) groups.set(k, { code: s.code, name: s.name || "", n: 0 });
-    groups.get(k).n++;
+    const g = groups.get(k) || { code: s.code, name: s.name || "", n: 0, distFt: Infinity };
+    g.n++;
+    g.distFt = Math.min(g.distFt, s.distFt ?? Infinity);
+    groups.set(k, g);
   }
   const chips = [...groups.values()]
-    .sort((a, b) => (a.code || 99) - (b.code || 99) || a.name.localeCompare(b.name))
-    .map(g => {
+    .sort((a, b) => a.distFt - b.distFt || (a.code || 99) - (b.code || 99) || a.name.localeCompare(b.name))
+    .map((g, i) => {
       const cls = functionalSystemLabel(g.code);
-      const label = (g.name ? `<b>${esc(g.name)}</b> · ` : "") + esc(cls) + (g.n > 1 ? ` ×${g.n}` : "");
-      return `<span class="chip" title="FHWA functional class ${g.code} — ${esc(cls)}">` +
+      const dist = Number.isFinite(g.distFt) ? ` (${Math.round(g.distFt)} ft)` : "";
+      const label = (g.name ? `<b>${esc(g.name)}</b> · ` : "") + esc(cls) + dist + (g.n > 1 ? ` ×${g.n}` : "") +
+        (i === 0 ? `<span class="ctag">closest</span>` : "");
+      const tip = i === 0
+        ? `Closest road — its class decides red vs green. FHWA functional class ${g.code} — ${esc(cls)}`
+        : `FHWA functional class ${g.code} — ${esc(cls)}`;
+      return `<span class="chip${i === 0 ? " primary" : ""}" title="${tip}">` +
         `<i class="cw" style="background:${FHWA_CHIP_COLOR[g.code] || FHWA_CHIP_COLOR[0]}"></i>${label}</span>`;
     });
   const n = segs.length;
-  return `<span class="segsum">${n} road segment${n > 1 ? "s" : ""} within ${res.bufferFt} ft:</span> ` + chips.join(" ");
+  return `<span class="segsum">${n} road segment${n > 1 ? "s" : ""} within ${res.bufferFt} ft, nearest first:</span> ` + chips.join(" ");
 }
 
 function urbanChipHtml(res) {
   if (!res.urbanRural) return "";
   if (res.urbanRural === "Urban")
     return `<span class="chip urban" title="Inside a 2020 Adjusted Census Urban Boundary"><i class="cw" style="background:#d886c8"></i>Urban · ${esc(res.acubName || "adjusted urban area")}</span>`;
+  if (res.acubBoundary)
+    return `<span class="chip" title="Outside the urban polygon, but within the boundary search buffer — the point sits right on the urban edge"><i class="cw" style="background:#efe0ee"></i>Rural · edge of ${esc(res.acubName || "urban area")}</span>`;
   return `<span class="chip" title="Outside every 2020 Adjusted Census Urban Boundary"><i class="cw" style="background:#e8f0e4"></i>Rural</span>`;
 }
 
 function extrasHtml(res) {
-  const bits = [];
-  // Trunkline/centerline route name, only when the chips don't already carry names.
-  if (res.roadName && !(res.segments || []).some(s => s.name))
-    bits.push(`<span class="streets">Route: <b>${esc(res.roadName)}</b></span>`);
-  const streets = res.streetList && res.streetList.length ? res.streetList
-    : (res.streets ? res.streets.split(" | ") : []);
-  if (streets.length)
-    bits.push(`<span class="streets" title="Street names within the search buffer (Census TIGER)">Streets: <b>${streets.map(esc).join("</b>, <b>")}</b></span>`);
-  return bits.join(" ");
+  // Every road detected near the point, nearest first with distances —
+  // state route/centerline names + Census TIGER street names merged (the
+  // Excel tool's Road Name column).
+  if (!res.roadName) return "";
+  return `<span class="streets" title="Every named road detected near the point, nearest first — state route layers + Census TIGER street names">Roads: <b>${esc(res.roadName)}</b></span>`;
 }
 
 function render() {
@@ -618,12 +834,13 @@ function render() {
     total++;
     const stateSel = $("stateSel").value;
     const state = stateSel === "AUTO" ? (detectState(p.lat, p.lon) || "??") : stateSel;
-    const key = p.lat + "," + p.lon + "," + state;
+    const buffer = bufferFeet();
+    const key = p.lat + "," + p.lon + "," + state + "," + buffer;
     const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
       `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
     tr.className = "row v-pending";
     tr.innerHTML = headHtml + `<span>querying…</span>` +
-      `<span class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</span>`;
+      `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span>`;
     body.appendChild(tr);
     tr.addEventListener("click", e => { if (e.target.closest("a")) return; selectSiteByPoint(p); });
 
@@ -639,8 +856,8 @@ function render() {
 
     if (!cache.has(key)) {
       cache.set(key, state === "??"
-        ? classifyPoint(p.lat, p.lon, "XX")   // outside MI/IN/WI: ACUB-only path
-        : classifyPoint(p.lat, p.lon, state));
+        ? classifyPoint(p.lat, p.lon, "XX", buffer)   // outside MI/IN/WI: ACUB-only path
+        : classifyPoint(p.lat, p.lon, state, buffer));
     }
     cache.get(key).then(res => {
       if (res.failed) cache.delete(key);   // transient service errors (F12): don't cache, allow retry
@@ -649,15 +866,17 @@ function render() {
       const bucket = verdictBucket(res.verdict);
       tr.className = "row v-" + bucket;
       const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
-      tr.innerHTML = headHtml + badgeHtml(res.verdict, bucket) + retry +
+      tr.innerHTML = headHtml + badgeHtml(res.verdict, bucket, res.reviewReason) + retry +
         [roadChipsHtml(res), urbanChipHtml(res), extrasHtml(res)].filter(Boolean).join(" ") +
-        `<span class="links">${pointLinks(p.lat, p.lon)} ${sourceLink(state)}</span>`;
+        `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span>`;
       marker.setStyle({ fillColor: BUCKET_COLOR[bucket] });
       marker.setPopupContent(
         `<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br>` +
         `${esc(res.classLabel)}${res.roadName ? " — " + esc(res.roadName) : ""}<br>` +
         `${esc(res.urbanRural)}${res.acubName ? " (" + esc(res.acubName) + ")" : ""}<br>` +
-        `<b>${esc(res.verdict)}</b><br>${pointLinks(p.lat, p.lon)}`);
+        `<b>${esc(res.verdict)}</b>` +
+        (res.reviewReason && REASON_EXPLAIN[res.reviewReason] ? `<br><i>${esc(REASON_EXPLAIN[res.reviewReason])}</i>` : "") +
+        `<br>${pointLinks(p.lat, p.lon, state)}`);
       done++;
       $("statusCount").textContent = done < total ? `classifying ${done} of ${total}…` : `${total} point(s) classified`;
     }).catch(() => { /* classifyPoint never rejects; belt and braces */ });
@@ -686,15 +905,16 @@ $("resultsBody").addEventListener("click", e => {
   if (e.target.classList.contains("retry")) { e.preventDefault(); render(); }
 });
 $("stateSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
+$("bufferSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
 $("clearBtn").addEventListener("click", () => { $("coordsIn").value = ""; onInput(); });
 
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
-                        "Urban Area (ACUB)", "Route", "Street(s)", "Federal Aid Status"];
+                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason"];
 function exportRows() {
   return currentPoints.filter(p => !p.invalid && p.result).map(p => [
     p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
-    p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict,
+    p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
   ]);
 }
 $("dlCsv").addEventListener("click", () => {
@@ -711,6 +931,39 @@ $("copyTsv").addEventListener("click", async () => {
   await navigator.clipboard.writeText(tsv);
   $("copyTsv").textContent = "Copied ✓";
   setTimeout(() => { $("copyTsv").textContent = "Copy for Excel"; }, 1500);
+});
+
+// GeoJSON export — the same FeatureCollection shape the Excel tool's
+// "Export GeoJSON" produces (modMaps.WriteSitesGeoJson), so either file
+// drags onto an ArcGIS map / Experience Add-Data widget interchangeably.
+// Blank properties are omitted to keep the attribute table clean.
+const BUCKET_GEO_LABEL = { fed: "Federal aid", nonfed: "Non-federal aid", review: "Review", failed: "Review" };
+$("dlGeojson").addEventListener("click", () => {
+  const pts = currentPoints.filter(p => !p.invalid && p.result);
+  if (!pts.length) { alert("Paste and classify at least one point first."); return; }
+  const features = pts.map(p => {
+    const r = p.result, bucket = verdictBucket(r.verdict);
+    const props = { Name: p.name };
+    const add = (k, v) => { if (v !== undefined && v !== null && String(v).trim() !== "") props[k] = v; };
+    add("FedAidStatus", r.verdict);
+    add("Verdict", BUCKET_GEO_LABEL[bucket]);
+    add("VerdictColor", BUCKET_COLOR[bucket]);
+    add("FHWAClass", r.classLabel);
+    add("UrbanRural", r.urbanRural);
+    add("ACUBName", r.acubName);
+    add("RoadName", r.roadName);
+    add("StreetName", r.streets);
+    add("ReviewNote", r.reviewReason);
+    props.Latitude = p.lat; props.Longitude = p.lon;
+    return { type: "Feature", properties: props,
+      geometry: { type: "Point", coordinates: [p.lon, p.lat] } };
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ type: "FeatureCollection", features }, null, 1)],
+    { type: "application/geo+json" }));
+  a.download = "road-checker-sites.geojson";
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 </script>
 
@@ -738,7 +991,6 @@ $("copyTsv").addEventListener("click", async () => {
      mixing a raster path for MI with a vector path for the rest.
      ============================================================ -->
 <script>
-const REPORT_BUFFER_FEET = DEFAULT_BUFFER_FEET;  // classification buffer cited in the figure footer
 
 // Figure layout in logical units. The canvas renders at 2x pixels for print
 // sharpness and lands ~532 pt wide on the letter page, so one logical unit
@@ -875,14 +1127,16 @@ function liveLayerLink(layerUrl, lat, lon) {
 // adjusted urban boundary, so it references both the class and urban/rural
 // questions at once.
 const STATE_APP = {
-  MI: { label: "MDOT's official NFC / NHS / Adjusted Urban Boundary map", coversAcub: true,
-        url: "https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce" },
-  IN: { label: "INDOT's official Functional Class & Urban Area map", coversAcub: true,
-        url: "https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot" },
+  MI: { label: "MDOT's official NFC / NHS / Adjusted Urban Boundary map", coversAcub: true, url: PUBLIC_MAP.MI },
+  IN: { label: "INDOT's official Functional Class & Urban Area map", coversAcub: true, url: PUBLIC_MAP.IN },
+  WI: { label: "WisDOT's official functional-classification page (static county/urban maps)", coversAcub: false, url: PUBLIC_MAP.WI },
+  MN: { label: "MnDOT's EMMA map (functional class reference)", coversAcub: false, url: PUBLIC_MAP.MN },
+  IL: { label: "IDOT's Getting Around Illinois functional-class viewer", coversAcub: false, url: PUBLIC_MAP.IL },
+  OH: { label: "ODOT's TIMS map (functional class reference)", coversAcub: false, url: PUBLIC_MAP.OH },
 };
 function officialAppLink(state) {
   const app = STATE_APP[state];
-  return app ? { label: app.label + " (authoritative reference)", url: app.url, official: true } : null;
+  return app ? { label: app.label + " (official public map)", url: app.url, official: true } : null;
 }
 
 // Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but frame-wide and with
@@ -1266,7 +1520,7 @@ async function buildPointReport(pt, radiusMeters) {
   }
   if (basemap) citationLines.push("Basemap: © Esri World Street Map tiles, fetched for this frame at report time");
   citationLines.push("Retrieved " + nowStamp + " · frame ≈ " + ((2 * radiusMeters) / 1609.344).toFixed(2) +
-    " mi wide · classification buffer " + REPORT_BUFFER_FEET + " ft");
+    " mi wide · classification buffer " + (pt.result ? pt.result.bufferFt : bufferFeet()) + " ft");
   links.push({ label: "Google Maps at this site", url: "https://www.google.com/maps?q=" + pt.lat + "," + pt.lon });
 
   const seenUrls = new Set();
@@ -1339,7 +1593,7 @@ async function generatePdfReport() {
 
       let ly = imgY + imgH + 14;
       doc.setFontSize(9); doc.setTextColor(90, 100, 110);
-      doc.text("Source data — the official state map is the primary reference; the pinned links open on this exact site:", 40, ly); ly += 12;
+      doc.text("Source data — the state's public map is the official reference; the pinned ArcGIS links open on this exact site:", 40, ly); ly += 12;
       for (const link of rep.links) {
         doc.setTextColor(32, 93, 140);
         if (link.official) doc.setFont("helvetica", "bold");
@@ -1462,7 +1716,7 @@ async function showSiteLayers(p) {
   // shown first. Its canonical root URL — no fragile deep-link (that broke).
   const officialLink = officialAppLink(data.state);
   if (officialLink) {
-    entries.push(`<div class="hdr">Official reference — <a href="${officialLink.url}" target="_blank" rel="noopener" title="${esc(officialLink.label)}">${esc(STATE_APP[data.state].label)}</a></div>`);
+    entries.push(`<div class="hdr">Public map (official) — <a href="${officialLink.url}" target="_blank" rel="noopener" title="${esc(officialLink.label)} — opens statewide; download the GeoJSON and drag it onto the map to see your sites">${esc(STATE_APP[data.state].label)}</a></div>`);
   }
 
   // ACUB polygons first so road lines draw on top of the fill.

@@ -1202,7 +1202,7 @@ summarized here so it isn't relitigated:
   original flat pipe-joined columns for spreadsheet hand-off.
 - **Same logic as Excel.** `web/index.html`'s `<script id="rr-core">`
   block is a hand-port of `modClassify.bas`/`modConstants.bas` (same
-  where-clauses, fallback buffers incl. the 200-ft ACUB floor, verdict
+  where-clauses, fallback buffers incl. the ACUB floor, verdict
   table, state gate). The two must be kept in sync by hand — there is no
   shared source between VBA and JS. `build/verify-web-core.mjs` executes
   that exact script block headless against the live services and passed
@@ -1211,6 +1211,27 @@ summarized here so it isn't relitigated:
   table rows + colored markers, stubbed services) also passed. MDOT
   throws occasional transient 503s; failed rows aren't cached and get a
   per-row retry link (web analog of F12).
+- **PR #24 verdict model ported to the web (2026-07-08).** rr-core now
+  mirrors the Excel coloring overhaul end to end: per-road distances
+  (geometry + point-to-segment math, port of `modHttp.MinDistanceFt`),
+  three-state ACUB (exact / boundary-edge / rural, 250-ft floor),
+  closest-road-drives-red/green, yellow-only-downgrades-green with a
+  `reviewReason` field (Second road close / Nearby FHWA road / Urban
+  boundary edge), and the 250-ft default buffer. Same pass added: a
+  **Search radius** select (50–1,000 ft; part of the result cache key),
+  distance-annotated class chips with the closest one tagged (it decides
+  the color), a merged nearest-first "Roads:" list (= the Excel Road
+  Name column), a "How the colors are decided" explainer on the page +
+  a step-by-step `sources.html#verdict` section, per-row **ArcGIS map**
+  link (parity with the Excel AGOL NFC Layer column's
+  `URL_NFC_MAPVIEW*` templates) and **Public map** link (official state
+  app root, all six states), and a **Download GeoJSON** export matching
+  `modMaps.WriteSitesGeoJson`'s property shape for drag-drop onto AGOL
+  maps. CSV/TSV exports gained Review Reason + the distance-annotated
+  road list. All three web verifiers were updated and pass (42/42 core
+  checks incl. every live §4.2* coordinate; the review-UI test now also
+  exercises the yellow "Second road close" path, the radius control,
+  the new links, and the GeoJSON download).
 - **PDF report.** A "Download PDF Report" button (jsPDF, vendored like
   Leaflet) produces a cover page + one page per classified site. Each
   site page has **one combined, page-filling map**: an Esri World

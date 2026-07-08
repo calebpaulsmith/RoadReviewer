@@ -4,11 +4,16 @@ A single static page that performs RoadReviewer's Workflow 1 (Classify
 Roads) in the browser. Paste coordinates into the textarea and each point
 is parsed, classified, and pinned on the map automatically — no submit
 button, no server, nothing stored. The page is a direct JavaScript port of
-`src/modClassify.bas` + `src/modConstants.bas`: same layer URLs, same
-retired-segment filters, same 150/200-ft fallback buffers, same
-`FederalAidVerdict` table, same red/green/yellow buckets. A "Download PDF
-Report" button turns the classified points into a citeable PDF — see
-below.
+`src/modClassify.bas` + `src/modConstants.bas` + `src/modHttp.bas`'s
+distance math: same layer URLs, same retired-segment filters, same
+exact-intersect-then-buffer fallback (radius adjustable in the UI,
+default 250 ft, matching the Excel Search buffer), same per-road
+distances, and the same PR #24 verdict model — the **closest** road
+segment decides red vs green, yellow only downgrades green with an
+explicit Review Reason ("Second road close" / "Nearby FHWA road" /
+"Urban boundary edge"), and red never downgrades. Same red/green/yellow
+buckets as the Sites table and KML export. A "Download PDF Report"
+button turns the classified points into a citeable PDF — see below.
 
 ## Results pane
 
@@ -17,17 +22,30 @@ table), so nothing ever scrolls horizontally and many sites fit on
 screen. Each card carries a solid-color verdict badge (FEDERAL AID /
 NON-FEDERAL AID / REVIEW / FAILED) over a matching row tint and left
 border, then unpacks the Excel tool's pipe-joined class string into
-individual road chips: "N road segments within 200 ft:" followed by one
-chip per distinct road/class, each swatched in the standard FHWA class
-color (the same palette the map overlay and PDF figures use, so chip
-color = line color on the map). Where the source layer carries a road
-name on the class feature (both Wisconsin layers), the chip pairs
-name + class ("STH 86 E · Major Collector"); Michigan/Indiana class
-layers publish no name field, so their chips show class only (with a ×n
-multiplier for repeated segments) alongside the separate Route and
-TIGER street-name lookups. An Urban/Rural chip cites the ACUB polygon
-name. CSV / copy-for-Excel exports keep the original flat columns
-(pipe-joined) for spreadsheet hand-off.
+individual road chips: "N road segments within {radius} ft, nearest
+first:" followed by one chip per distinct road/class **with its measured
+distance** ("Local (0 ft)", "Major Collector (19 ft)"), each swatched in
+the standard FHWA class color (the same palette the map overlay and PDF
+figures use, so chip color = line color on the map). The first chip is
+tagged **closest** — that's the segment that decided red vs green. Where
+the source layer carries a road name on the class feature (both
+Wisconsin layers), the chip pairs name + class ("STH 86 E · Major
+Collector"); Michigan/Indiana class layers publish no name field, so
+their chips show class only (with a ×n multiplier for repeated
+segments). A "Roads:" line merges every named road (state route layers +
+Census TIGER) nearest-first with distances — the Excel Road Name column.
+An Urban/Rural chip cites the ACUB polygon name (including the
+"Rural · edge of …" boundary-ambiguous case). Yellow REVIEW verdicts show
+their ≤3-word reason inline, with a plain-language explanation in the
+tooltip and marker popup. Per-row links: **ArcGIS map** (Map Viewer
+pinned on the point with the state class layer — parity with the Excel
+"AGOL NFC Layer" column), **Public map** (the state's official app at
+its root — pair it with **Download GeoJSON** and drag the file onto the
+map to see your sites there), Google, Street View, FIRMette, Source.
+CSV / copy-for-Excel exports keep the flat columns (now including Review
+Reason and the distance-annotated road list); Download GeoJSON emits the
+same FeatureCollection shape as the Excel tool's GeoJSON export
+(verdict, color, class, roads as properties).
 
 ## Site-by-site review
 
