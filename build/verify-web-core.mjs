@@ -31,7 +31,7 @@ async function httpGetJson(url) {
 const ctx = vm.createContext({ httpGetJson, console });
 vm.runInContext(m[1], ctx, { filename: "rr-core (from web/index.html)" });
 const core = vm.runInContext(
-  "({ classifyPoint, detectState, parseCoordinates, federalAidVerdict, wisconsinLocalCategoryToFhwa })", ctx);
+  "({ classifyPoint, detectState, parseCoordinates, computeVerdict, classIsFederal, mergeRoadList, minDistanceFt, wisconsinLocalCategoryToFhwa })", ctx);
 
 let pass = 0, fail = 0;
 function check(label, ok, detail) {
@@ -59,12 +59,44 @@ for (const [lat, lon, want] of [
   [46.65, -90.86, "WI"], [36.16, -86.78, null],                               // Washburn Co, Nashville TN
 ]) check(`${lat},${lon} -> ${want}`, core.detectState(lat, lon) === want, "got " + core.detectState(lat, lon));
 
-console.log("federalAidVerdict edge cases:");
-check("rural minor collector", core.federalAidVerdict([6], false, 200) === "Non-federal aid - Rural Minor Collector");
-check("urban minor collector", core.federalAidVerdict([6], true, 200) === "Federal aid - Urban Minor Collector");
-check("mixed 7+5 rural", core.federalAidVerdict([7, 5], false, 200) === "Federal aid - Rural Major Collector");
-check("code 0 review", core.federalAidVerdict([0], true, 200) === "Review - non-certified class, check manually");
-check("WI 96 -> 5", core.wisconsinLocalCategoryToFhwa(96) === 5);
+console.log("computeVerdict (closest-road + ambiguity model, port of modClassify.ComputeVerdict):");
+{
+  const seg = (code, distFt, name = "") => ({ code, distFt, name });
+  const v = (segs, urban, boundary) => core.computeVerdict(segs, urban, boundary, 250);
+  check("closest rural local -> green", v([seg(7, 5)], false, false).verdict === "Non-federal aid - Rural Local");
+  check("closest urban local -> green", v([seg(7, 5)], true, false).verdict === "Non-federal aid - Urban Local");
+  check("closest urban minor collector -> red", v([seg(6, 5)], true, false).verdict === "Federal aid - Urban Minor Collector");
+  check("closest rural minor collector -> green (correct label)", v([seg(6, 5)], false, false).verdict === "Non-federal aid - Rural Minor Collector");
+  check("red stays red with local nearby", v([seg(5, 5), seg(7, 10)], false, false).verdict === "Federal aid - Rural Major Collector");
+  check("interstate gets urban/rural prefix", v([seg(1, 5)], true, false).verdict === "Federal aid - Urban Interstate");
+  check("local closest + federal within 30 ft -> Second road close",
+    v([seg(7, 5), seg(5, 20)], false, false).verdict === "Review - Second road close");
+  check("local closest + federal beyond 30 ft -> Nearby FHWA road",
+    v([seg(7, 5), seg(5, 100)], false, false).verdict === "Review - Nearby FHWA road");
+  check("second road within 30 ft but NOT federal stays green",
+    v([seg(7, 5), seg(6, 20)], false, false).verdict === "Non-federal aid - Rural Local");
+  check("second road within 30 ft, urban 6 IS federal -> yellow",
+    v([seg(7, 5), seg(6, 20)], true, false).reason === "Second road close");
+  check("minor collector on urban boundary edge -> yellow",
+    v([seg(6, 5)], false, true).verdict === "Review - Urban boundary edge");
+  check("local on boundary edge stays green (only class 6 flips)",
+    v([seg(7, 5)], false, true).verdict === "Non-federal aid - Rural Local");
+  check("non-certified closest -> review", v([seg(0, 5)], true, false).verdict === "Review - non-certified class, check manually");
+  check("no segments -> review", v([], false, false).verdict === "Review - no road within 250 ft" && v([], false, false).reason === "No road found");
+  check("WI 96 -> 5", core.wisconsinLocalCategoryToFhwa(96) === 5);
+}
+
+console.log("distance helpers:");
+{
+  // A straight N-S segment 0.00125 deg east of the point at lat ~42.3:
+  // 0.00125 deg lon * 111320 m/deg * cos(42.28536deg) = 102.94 m = 337.7 ft.
+  const d = core.minDistanceFt({ paths: [[[-85.569, 42.28], [-85.569, 42.29]]] }, 42.28536, -85.57025);
+  check("point-to-polyline distance ~338 ft (equirectangular)", Math.abs(d - 337.7) < 2, "got " + d.toFixed(1));
+  check("no geometry -> Infinity", core.minDistanceFt(undefined, 42, -85) === Infinity);
+  const merged = core.mergeRoadList([{ name: "Main St", distFt: 50 }, { name: "MAIN ST", distFt: 10 }, { name: "Q Ave", distFt: 30 }]);
+  check("road list dedups by name keeping nearest, sorted",
+    merged.length === 2 && merged[0].name === "MAIN ST" && merged[0].distFt === 10 && merged[1].name === "Q Ave");
+}
 
 /* ---------- live service checks (§4.2 / §4.2a / §4.2b test coordinates) ---------- */
 const CASES = [
@@ -93,7 +125,16 @@ for (const [state, lat, lon, want] of CASES) {
   if (want.urbanRural && r.urbanRural !== want.urbanRural) problems.push(`urbanRural "${r.urbanRural}" != "${want.urbanRural}"`);
   if (want.acubName && r.acubName !== want.acubName) problems.push(`acubName "${r.acubName}" != "${want.acubName}"`);
   if (want.classIncludes && !r.classLabel.includes(want.classIncludes)) problems.push(`classLabel "${r.classLabel}" !~ "${want.classIncludes}"`);
-  check(`${state} ${lat},${lon} -> ${r.verdict}` + (r.roadName ? ` [${r.roadName}]` : "") + (r.streets ? ` {${r.streets}}` : ""),
+  // PR #24 parity: wired-state results must carry real per-segment distances
+  // and a nearest-first merged road list with "(N ft)" suffixes.
+  if (["MI", "IN", "WI"].includes(state)) {
+    if (!r.segments.length || !r.segments.every(s => Number.isFinite(s.distFt))) problems.push("segments missing finite distFt");
+    if (r.roadName && !/\(\d+ ft\)/.test(r.roadName)) problems.push(`roadName "${r.roadName}" missing (N ft) distances`);
+    const dists = r.roadList.map(x => x.distFt);
+    if (dists.some((d, i) => i > 0 && d < dists[i - 1])) problems.push("roadList not sorted nearest-first");
+  }
+  check(`${state} ${lat},${lon} -> ${r.verdict}` + (r.reviewReason ? ` (${r.reviewReason})` : "") +
+    (r.roadName ? ` [${r.roadName}]` : "") + (r.streets ? ` {${r.streets}}` : ""),
     problems.length === 0, problems.join("; "));
 }
 

@@ -71,19 +71,22 @@ await page.route("**/*", async route => {
   if (url.includes("arcgisonline.com")) return route.abort();   // imagery/labels layers: irrelevant to this test
 
   const json = { contentType: "application/json" };
-  // --- classification pass (rr-core, returnGeometry=false) ---
-  if (url.includes("FeatureServer/353/query") && !url.includes("returnGeometry=true"))
-    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { FunctionalSystem: 6, PR: "0006904" } }] }) });
+  // --- classification pass (rr-core: POINT queries — since the PR #24 port
+  // these carry returnGeometry=true too, so dispatch on the geometry type,
+  // not the geometry flag) ---
+  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryPoint"))
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { FunctionalSystem: 6, PR: "0006904" },
+      geometry: { paths: [[[-85.57026, 42.28530], [-85.57024, 42.28542]]] } }] }) });
   if (url.includes("FeatureServer/543/query")) return route.fulfill({ ...json, body: JSON.stringify({ features: [] }) });
-  if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && !url.includes("returnGeometry=true"))
+  if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && url.includes("esriGeometryPoint"))
     return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Kalamazoo, MI", UACE: "43723", state_1: "MI" } }] }) });
   if (url.includes("TIGERweb")) return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "S Pitcher St" } }] }) });
 
-  // --- report pass (rr-report, returnGeometry=true + layer metadata) ---
+  // --- report pass (rr-report: frame ENVELOPE queries + layer metadata) ---
   if (url.includes("FeatureServer/353?f=json")) return route.fulfill({ ...json, body: miMeta });
-  if (url.includes("FeatureServer/353/query") && url.includes("returnGeometry=true")) return route.fulfill({ ...json, body: miGeom });
+  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryEnvelope")) return route.fulfill({ ...json, body: miGeom });
   if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0?f=json")) return route.fulfill({ ...json, body: acubMeta });
-  if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && url.includes("returnGeometry=true")) return route.fulfill({ ...json, body: acubGeom });
+  if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && url.includes("esriGeometryEnvelope")) return route.fulfill({ ...json, body: acubGeom });
 
   return route.abort();
 });

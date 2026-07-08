@@ -38,10 +38,45 @@
 <main>
 
 <p class="toc">Jump to:
+  <a href="#verdict">How the verdict works</a>
   <a href="#mi">Michigan</a> <a href="#in">Indiana</a> <a href="#wi">Wisconsin</a>
   <a href="#acub">Urban Boundaries (all states)</a> <a href="#tiger">Street Names (all states)</a>
   <a href="#firmette">FIRMettes</a> <a href="#basemap">Basemap</a> <a href="#unwired">Other states</a>
 </p>
+
+<section id="verdict">
+  <h2>How the verdict (row color) is decided</h2>
+  <div class="org">The same logic as the RoadReviewer Excel tool, step by step. It classifies the <b>road</b>, never the project.</div>
+  <h3>Step 1 — find the roads and measure them</h3>
+  <p>Every road-class segment intersecting the point is fetched from the state's functional-class layer(s).
+  If nothing passes exactly under the point, the search widens to the <b>search radius</b> (default 250 ft,
+  adjustable 50–1,000 ft on the main page). Each returned segment's geometry is used to compute the
+  <b>true distance in feet</b> from your point to that road's centerline — not just "was it inside the buffer".
+  Named roads (state route layers + Census TIGER street names) are measured the same way and listed nearest-first.</p>
+  <h3>Step 2 — urban or rural (independent of the roads)</h3>
+  <p>The point is tested against the nationwide 2020 Adjusted Census Urban Boundary polygons (ACUB, below).
+  Three outcomes: <b>inside</b> a polygon (Urban), <b>outside but within the boundary buffer</b> (a point right on
+  the urban edge — ambiguous), or clearly <b>Rural</b>. The boundary buffer never narrows below 250 ft even if the
+  road search radius is tightened, so a site a few feet on the rural side of a boundary-forming road still resolves Urban.</p>
+  <h3>Step 3 — the closest road decides red vs green</h3>
+  <p>The <b>closest</b> segment is treated as the road the point is ON, and its class alone decides the base color:</p>
+  <ul>
+    <li><b>Red — Federal aid:</b> FHWA classes 1–5 (Interstate through Major Collector) anywhere, or Minor Collector (6) <i>inside</i> an urban boundary.</li>
+    <li><b>Green — Non-federal aid:</b> Local (7) anywhere, or Minor Collector (6) in a rural area.</li>
+  </ul>
+  <p>Before this change, <i>any</i> federal-aid segment inside the buffer turned the row red — a culvert on a quiet
+  local street 180 ft from an arterial was flagged red. Now the arterial only matters if it creates a genuine ambiguity (step 4).</p>
+  <h3>Step 4 — yellow only downgrades green (red stays red)</h3>
+  <p>A green result is downgraded to yellow "Review" when something nearby could realistically flip it to
+  federal-aid. The specific reason is reported with the row, checked in this order (most specific first):</p>
+  <ul>
+    <li><b>Second road close</b> — the second-closest road is within <b>30 ft</b> of the closest one <i>and</i> is federal-aid. At that separation, GPS error alone can put the point on either road.</li>
+    <li><b>Nearby FHWA road</b> — some other detected road inside the search radius is federal-aid. The point is probably on the local road, but a human should confirm.</li>
+    <li><b>Urban boundary edge</b> — the closest road is a Minor Collector and the point sits right on an urban-boundary edge; urban vs rural flips a Minor Collector's verdict, so it needs a look.</li>
+    <li><b>No road found</b> / <b>Non-certified</b> — nothing classified within the radius, or the closest segment is a non-certified roadway in the state data.</li>
+  </ul>
+  <p>A red row is never downgraded: if the closest road is federal-aid, that IS the answer, regardless of what else is nearby.</p>
+</section>
 
 <section id="mi">
   <h2>Michigan — road functional class &amp; route designation</h2>
@@ -109,7 +144,7 @@
   <h3>Layer 0 — "Adjusted Urban Areas"</h3>
   <div class="url"><a href="https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0" target="_blank" rel="noopener">https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0</a></div>
   <p>Nationwide polygon layer of FHWA-adjusted 2020 Census urban boundaries. Fields read: <code>NAME</code> (e.g. "Kalamazoo, MI"), <code>UACE</code> (5-digit Census urban-area code), <code>state_1</code>. A point inside any polygon ⇒ Urban; otherwise Rural. This single layer answers urban/rural for <b>every</b> state, wired or not.</p>
-  <div class="quirk"><b>Quirk — boundary buffer floor.</b> The point-in-polygon test retries with a buffer of at least 200 ft when the exact point misses, so a site a few feet on the wrong side of a road that itself touches the urban boundary still resolves Urban (a real field-observed failure mode).</div>
+  <div class="quirk"><b>Quirk — boundary buffer floor.</b> The point-in-polygon test retries with a buffer of at least 250 ft when the exact point misses. An exact hit means Urban; a buffered-only hit means the point is right on the urban edge — reported as Rural but flagged for review when the class is Minor Collector (the one class whose verdict flips on urban vs rural). This guards a real field-observed failure mode: a site a few feet on the wrong side of a road that itself forms the urban boundary.</div>
   <div class="quirk"><b>Quirk — generalized geometry in figures.</b> Boundary geometry drawn on the map/PDF is fetched with ~11 m simplification (<code>maxAllowableOffset</code>) to keep the payload small; the urban/rural <i>determination</i> itself always uses the full-precision service-side intersection.</div>
 </section>
 
