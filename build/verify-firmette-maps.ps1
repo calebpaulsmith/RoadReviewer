@@ -36,7 +36,7 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = 'Test Applicant'
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
-  # Clear and write one Sites row (row 1 toolbar, row 2 header, data from 3;
+  # Clear and write one Sites row (row 1 header, data from row 2; tests use row 3;
   # Lat=5, Lon=6, Description=7, Category=9)
   $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
@@ -56,7 +56,7 @@ try {
   $excel.Run('DownloadFirmettes') | Out-Null
   $sw.Stop()
   Write-Host ("  finished in " + $sw.Elapsed.TotalSeconds + "s")
-  $firmStatus = [string]$sites.Cells(3, 27).Value2   # FIRMette Status (col 27 after the Review Reason column)
+  $firmStatus = [string]$sites.Cells(3, 29).Value2   # FIRMette Status (col 29 in the new layout)
   Write-Host ("  FIRMette Status: " + $firmStatus)
 
   $pdfFiles = Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf'

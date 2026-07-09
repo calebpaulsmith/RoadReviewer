@@ -35,7 +35,7 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = 'Test Applicant'
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ($outFolder + '\')
 
-  # Row 1 toolbar, row 2 header, data from row 3; Lat=5, Lon=6, Category=9.
+  # Row 1 header, data from row 2; tests use row 3; Lat=5, Lon=6, Category=9.
   $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $sites.Cells(3, 3).Value2 = 1
@@ -48,7 +48,7 @@ try {
 
   Write-Host "=== Case A: WO and DI BOTH blank ===" -ForegroundColor Cyan
   $excel.Run('DownloadFirmettes') | Out-Null
-  $statusA = [string]$sites.Cells(3, 27).Value2   # FIRMette Status (col 27 after the Review Reason column)
+  $statusA = [string]$sites.Cells(3, 29).Value2   # FIRMette Status (col 29 in the new layout)
   Write-Host ("  FIRMette Status: " + $statusA)
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')
   Write-Host ("  PDFs: " + $pdfs.Count)
@@ -88,8 +88,8 @@ try {
   Get-ChildItem -LiteralPath $outFolder | Remove-Item -Force
   $wb.Worksheets('MapPages').Delete()
   $wb.Names('JobWO').RefersToRange.Value2 = '123'
-  $sites.Cells(3, 27).Value2 = ''   # FIRMette Status
-  $sites.Cells(3, 28).Value2 = ''   # Map Status
+  $sites.Cells(3, 29).Value2 = ''   # FIRMette Status
+  $sites.Cells(3, 30).Value2 = ''   # Map Status
 
   $excel.Run('DownloadFirmettes') | Out-Null
   $pdfs = @(Get-ChildItem -LiteralPath $outFolder -Filter '*.pdf')

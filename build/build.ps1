@@ -41,7 +41,9 @@ $importOrder = @(
   'modGeocode.bas',
   'modImagery.bas',
   'modMaps.bas',
-  'modExport.bas'
+  'modMapImage.bas',
+  'modExport.bas',
+  'modExportMenu.bas'
 )
 
 # Verify all files exist before launching Excel

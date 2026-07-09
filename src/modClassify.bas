@@ -93,6 +93,9 @@ NextRow:
 
 Done:
     ClearStatus
+    ' The auto-reviewer columns ship hidden; this is the macro that fills them,
+    ' so reveal them now (idempotent, and safe even on the error path).
+    ShowReviewerColumns
     If Err.Number <> 0 Then
         If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Check Roads"
     Else
