@@ -251,7 +251,7 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     ws.Range("B12").Font.Bold = True
     StepLine ws, 13, "1.  Pick your state below."
     StepLine ws, 14, "2.  Paste your Latitude and Longitude on the Sites tab (the yellow columns)."
-    StepLine ws, 15, "3.  On the Sites tab, click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
+    StepLine ws, 15, "3.  Come back here and click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
     LabelValue ws, 17, "State", NR_STATE, "MI"
     LabelValue ws, 18, "Output Folder", NR_OUTFOLDER, ""
@@ -264,10 +264,22 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
 
     NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses. 250 ft is a good default."
 
-    AddButton ws, 18, ws.Rows(26).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 28, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
+    ' Actions live here now, not on a Sites row-1 toolbar (row 1 is the header
+    ' row). Same macros, same order the old toolbar used.
+    SectionLabel ws, 25, "Actions"
+    AddButton ws, 18, ws.Rows(26).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, 228, ws.Rows(26).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
+    AddButton ws, 408, ws.Rows(26).Top, 230, 30, "Photo Links (selected rows)", "OpenImageryForSelection"
+
+    SectionLabel ws, 29, "Exports"
+    CreateExportPicker ws, 18, ws.Rows(30).Top + 3, 300
+    AddButton ws, 326, ws.Rows(30).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+    NoteLine ws, 32, "Pick an export, then click Go. FIRMettes and map PDFs save to the Output Folder above."
+
+    AddButton ws, 18, ws.Rows(35).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 37, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
         "Build / Reset repairs the layout - your Sites data is preserved."
-    VersionLabel ws, 30
+    VersionLabel ws, 39
 End Sub
 
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
@@ -304,21 +316,21 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     AddButton ws, 18, ws.Rows(32).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
 
     SectionLabel ws, 35, "3.  Maps & FIRMettes"
-    AddButton ws, 18, ws.Rows(36).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(36).Top, 190, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
-    AddButton ws, 18, ws.Rows(39).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages"
-    AddButton ws, 218, ws.Rows(39).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    AddButton ws, 18, ws.Rows(42).Top, 250, 30, "Export Combined Map PDF", "ExportCombinedMapPdf"
+    ' FIRMettes and the combined map PDF are exports - they moved to the
+    ' Exports dropdown below. Prepare / Add Blank Map Page stay as buttons:
+    ' they build the sheet, they don't emit a file.
+    AddButton ws, 18, ws.Rows(36).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(36).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
+    AddButton ws, 418, ws.Rows(36).Top, 190, 30, "Insert Map Images", "InsertMapImages"
 
     SectionLabel ws, 45, "Exports & hand-off"
-    AddButton ws, 18, ws.Rows(46).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML"
-    AddButton ws, 218, ws.Rows(46).Top, 190, 28, "Export Sites Table (CSV)", "ExportSitesCsv"
-    AddButton ws, 18, ws.Rows(49).Top, 390, 28, "Send Sites to AGOL Map (KML + open webmap)", "SendSitesToAgolMap"
-    AddButton ws, 414, ws.Rows(49).Top, 240, 28, "Open Sites on NFC Layer (AGOL)", "OpenSitesOnNfcLayer"
+    CreateExportPicker ws, 18, ws.Rows(46).Top + 3, 300
+    AddButton ws, 326, ws.Rows(46).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+    NoteLine ws, 48, "Pick an export, then click Go. Everything writes to the Output Folder above."
 
-    AddButton ws, 18, ws.Rows(52).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 54, "Build / Reset repairs the layout; your Sites data is preserved."
-    VersionLabel ws, 56
+    AddButton ws, 18, ws.Rows(51).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 53, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 55
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)
@@ -407,40 +419,17 @@ Private Sub BuildSites()
     ws.Tab.Color = RGB(60, 60, 60)
 End Sub
 
-' Row 1 toolbar: the Sites actions live ON the Sites sheet so the paste ->
-' classify -> review loop never leaves it. Buttons are free-floating so
-' hiding columns (WO/DI, G-K) can't squash them. In the standard product
-' EVERY common action is here (Start Here has no action buttons); the
-' inspector keeps just the two shortcuts, its heavier workflow staying on
-' its own Start Here toolbar.
+' The Sites sheet no longer carries a toolbar - row 1 is the header row now,
+' and the old buttons were free-floating shapes pinned at Top:=2pt, so they
+' sat directly over it. Every action moved back to Start Here. This sub is
+' kept (and still called) purely so a Build / Reset on a workbook built by an
+' older version strips the orphaned RR_* shapes instead of leaving them
+' floating over the headers.
 Private Sub WriteSitesToolbar(ByVal ws As Worksheet)
     Dim i As Long
-    ' Idempotent rebuild: drop only our own shapes (named RR_*).
     For i = ws.Shapes.Count To 1 Step -1
         If Left$(ws.Shapes(i).Name, 3) = "RR_" Then ws.Shapes(i).Delete
     Next i
-
-    ws.Rows(SITES_TOOLBAR_ROW).RowHeight = 26
-
-    AddToolbarButton ws, "RR_CheckRoads", 2, 95, "Check Roads", "CheckRoads", True
-    If ProductIsInspector() Then
-        AddToolbarButton ws, "RR_PhotoLinks", 100, 190, "Photo Links (selected rows)", "OpenImageryForSelection", False
-    Else
-        AddToolbarButton ws, "RR_ReRun", 100, 105, "Re-run Failed", "ReRunFailedRows", False
-        AddToolbarButton ws, "RR_PhotoLinks", 208, 150, "Photo Links (selected)", "OpenImageryForSelection", False
-        AddToolbarButton ws, "RR_Csv", 361, 95, "Export CSV", "ExportSitesCsv", False
-        AddToolbarButton ws, "RR_Kml", 459, 95, "Export KML", "ExportSitesToKML", False
-        AddToolbarButton ws, "RR_Agol", 557, 175, "Send to AGOL Map", "SendSitesToAgolMap", False
-        AddToolbarButton ws, "RR_NfcLayer", 735, 200, "NFC Layer + Sites (AGOL)", "OpenSitesOnNfcLayer", False
-    End If
-End Sub
-
-Private Sub AddToolbarButton(ByVal ws As Worksheet, ByVal shapeName As String, ByVal leftPt As Single, _
-        ByVal widthPt As Single, ByVal caption As String, ByVal macroName As String, ByVal isGo As Boolean)
-    Dim sh As Shape
-    Set sh = AddButton(ws, leftPt, 2, widthPt, 22, caption, macroName, IIf(isGo, CLR_BTN_GO, CLR_BTN))
-    sh.Name = shapeName
-    sh.Placement = xlFreeFloating
 End Sub
 
 Private Sub WriteSitesHeader(ByVal ws As Worksheet)
@@ -464,7 +453,9 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_GEARTH) = "Google Earth"
     h(COL_FEMAVIEW) = "FEMA Viewer"
     h(COL_FIRMPORTAL) = "FIRMette Portal"
-    h(COL_NFCMAP) = "NFC Map"
+    h(COL_NFCAGOL) = "NFC Layer (Map Viewer)"
+    h(COL_AGOLMAP) = "Your AGOL Map"
+    h(COL_NFCMAP) = "State NFC App"
     h(COL_CLASS) = "FHWA Class"
     h(COL_URBANRURAL) = "Urban/Rural"
     h(COL_ACUBNAME) = "ACUB Name"
@@ -474,8 +465,6 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_REVIEWNOTE) = "Review Reason"
     h(COL_FIRMSTATUS) = "FIRMette Status"
     h(COL_MAPSTATUS) = "Map Status"
-    h(COL_AGOLMAP) = "AGOL Map"
-    h(COL_NFCAGOL) = "AGOL NFC Layer"
 
     Dim c As Long
     For c = 1 To COL_LAST
@@ -719,4 +708,54 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     For c = COL_DESC To COL_WORKCOMP
         ws.Columns(c).Hidden = True
     Next c
+
+    ' Auto-reviewer output columns start hidden. CheckRoads / ReRunFailedRows
+    ' reveal them once there is something to show. A Build / Reset on a sheet
+    ' that already holds results keeps them visible rather than hiding data.
+    If SitesHasClassifiedRows(ws) Then
+        ShowReviewerColumns
+    Else
+        HideReviewerColumns
+    End If
 End Sub
+
+' ---- auto-reviewer column visibility --------------------------------------
+'
+' COL_REVIEWER_FIRST..COL_REVIEWER_LAST (FHWA Class .. Review Reason) are
+' written ONLY by the classifier. Showing them on a blank sheet advertises
+' seven empty columns and pushes the imagery links off-screen, so they stay
+' hidden until the macro that fills them has run.
+
+Public Sub ShowReviewerColumns()
+    SetReviewerColumnsHidden False
+End Sub
+
+Public Sub HideReviewerColumns()
+    SetReviewerColumnsHidden True
+End Sub
+
+Private Sub SetReviewerColumnsHidden(ByVal hide As Boolean)
+    On Error Resume Next        ' never let cosmetics break a classify run
+    Dim ws As Worksheet, c As Long
+    Set ws = SitesSheet()
+    If ws Is Nothing Then Exit Sub
+    For c = COL_REVIEWER_FIRST To COL_REVIEWER_LAST
+        ws.Columns(c).Hidden = hide
+    Next c
+    On Error GoTo 0
+End Sub
+
+' True when any data row already carries a verdict - i.e. the classifier has
+' run at some point and its columns should not be re-hidden by a rebuild.
+Private Function SitesHasClassifiedRows(ByVal ws As Worksheet) As Boolean
+    Dim lastRow As Long, r As Long
+    lastRow = ws.Cells(ws.Rows.Count, COL_LAT).End(xlUp).Row
+    If lastRow < SITES_FIRST_DATA_ROW Then Exit Function
+
+    For r = SITES_FIRST_DATA_ROW To lastRow
+        If Len(Trim$(CStr(ws.Cells(r, COL_ELIGIBILITY).Value))) > 0 Then
+            SitesHasClassifiedRows = True
+            Exit Function
+        End If
+    Next r
+End Function

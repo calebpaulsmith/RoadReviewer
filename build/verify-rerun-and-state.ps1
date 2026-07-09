@@ -20,8 +20,8 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
-# Sites layout: row 1 toolbar, row 2 header, data from row 3.
-# Columns: SiteName=4, Lat=5, Lon=6, Class=20, Urban/Rural=21, ACUB=22, Elig=25.
+# Sites layout: row 1 header, data from row 2 (row-1 toolbar retired).
+# Columns: SiteName=4, Lat=5, Lon=6, Class=16, Urban/Rural=17, ACUB=18, Elig=21.
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -47,10 +47,10 @@ try {
   $sites.Cells(3, 6).Value2 = [double]-83.045
   $excel.Run('CheckRoads') | Out-Null
 
-  $row_class = [string]$sites.Cells(3, 14).Value2
-  $row_urban = [string]$sites.Cells(3, 15).Value2
-  $row_acub  = [string]$sites.Cells(3, 16).Value2
-  $row_elig  = [string]$sites.Cells(3, 19).Value2
+  $row_class = [string]$sites.Cells(3, 16).Value2
+  $row_urban = [string]$sites.Cells(3, 17).Value2
+  $row_acub  = [string]$sites.Cells(3, 18).Value2
+  $row_elig  = [string]$sites.Cells(3, 21).Value2
   Write-Host ("  class: '" + $row_class + "'  urban/rural: '" + $row_urban + "'  ACUB: '" + $row_acub + "'  elig: '" + $row_elig + "'")
   if ($row_class -ne '') { throw "Row 3 should have blank class when state=MN (NFC not wired), got '$row_class'" }
   if ($row_acub -notlike "*Detroit*") { throw ("Row 3 ACUB should still resolve to Detroit (ACUB is nationwide), got '" + $row_acub + "'") }
@@ -68,24 +68,24 @@ try {
   $sites.Cells(3, 4).Value2 = 'Failed row (will retry)'
   $sites.Cells(3, 5).Value2 = [double]42.28536
   $sites.Cells(3, 6).Value2 = [double]-85.57025
-  $sites.Cells(3, 19).Value2 = 'Failed - simulated test failure'   # Federal Aid Status
+  $sites.Cells(3, 21).Value2 = 'Failed - simulated test failure'   # Federal Aid Status
 
   $sites.Cells(4, 4).Value2 = 'Already-classified row (should not retry)'
   $sites.Cells(4, 5).Value2 = [double]42.6911
   $sites.Cells(4, 6).Value2 = [double]-84.5360
-  $sites.Cells(4, 14).Value2 = 'PREVIOUS-CLASS-MARKER'   # FHWA Class
-  $sites.Cells(4, 19).Value2 = 'Non-federal aid - Urban Local (sticky)'   # Federal Aid Status
+  $sites.Cells(4, 16).Value2 = 'PREVIOUS-CLASS-MARKER'   # FHWA Class
+  $sites.Cells(4, 21).Value2 = 'Non-federal aid - Urban Local (sticky)'   # Federal Aid Status
 
   Write-Host "  Before re-run:"
-  Write-Host ("    row 3 elig = '" + [string]$sites.Cells(3, 19).Value2 + "'")
-  Write-Host ("    row 4 class = '" + [string]$sites.Cells(4, 14).Value2 + "'  elig = '" + [string]$sites.Cells(4, 19).Value2 + "'")
+  Write-Host ("    row 3 elig = '" + [string]$sites.Cells(3, 21).Value2 + "'")
+  Write-Host ("    row 4 class = '" + [string]$sites.Cells(4, 16).Value2 + "'  elig = '" + [string]$sites.Cells(4, 21).Value2 + "'")
 
   $excel.Run('ReRunFailedRows') | Out-Null
 
   Write-Host "  After re-run:"
-  $r3 = [string]$sites.Cells(3, 19).Value2
-  $r4_class = [string]$sites.Cells(4, 14).Value2
-  $r4_elig = [string]$sites.Cells(4, 19).Value2
+  $r3 = [string]$sites.Cells(3, 21).Value2
+  $r4_class = [string]$sites.Cells(4, 16).Value2
+  $r4_elig = [string]$sites.Cells(4, 21).Value2
   Write-Host ("    row 3 elig = '" + $r3 + "'")
   Write-Host ("    row 4 class = '" + $r4_class + "'  elig = '" + $r4_elig + "'")
 

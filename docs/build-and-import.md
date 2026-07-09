@@ -20,7 +20,9 @@ minutes and needs nothing beyond Excel with macros enabled (no add-ins, no
    - `modGeocode.bas`
    - `modImagery.bas`
    - `modMaps.bas`
+   - `modMapImage.bas`
    - `modExport.bas`
+   - `modExportMenu.bas`
 4. Back in Excel, press **Alt + F8**, choose **BuildWorkbook**, and click
    **Run**. This creates the Home, Setup, Sites and three workflow sheets,
    wires every button, and lays out the Sites table.

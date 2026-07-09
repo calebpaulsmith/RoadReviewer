@@ -54,11 +54,11 @@ Public Const NR_BUFFER As String = "JobBufferFeet"
 Public Const DEFAULT_BUFFER_FEET As Long = 250
 
 ' ---- Sites table geometry ----
-' Row 1 is a slim toolbar (hint text + Check Roads / Photo Links buttons)
-' so the paste -> classify -> review loop never has to leave the sheet.
-Public Const SITES_TOOLBAR_ROW As Long = 1
-Public Const SITES_HEADER_ROW As Long = 2
-Public Const SITES_FIRST_DATA_ROW As Long = 3
+' Row 1 IS the header row. The action buttons that used to float over a slim
+' row-1 toolbar have moved back to Start Here (they were free-floating shapes
+' anchored at Top:=2pt, so they would have covered the headers here).
+Public Const SITES_HEADER_ROW As Long = 1
+Public Const SITES_FIRST_DATA_ROW As Long = 2
 Public Const SITES_FORMULA_ROWS As Long = 500   ' hyperlink/validation pre-fill depth
 
 ' ---- Sites column indices (1-based) ----
@@ -81,45 +81,53 @@ Public Const COL_CATEGORY As Long = 9
 Public Const COL_COSTS As Long = 10
 Public Const COL_WORKCOMP As Long = 11
 Public Const COL_GEOCODE As Long = 12
-' NFC Map stays on the LEFT (per-row map link, next to the results). The other
-' imagery/photo links moved to the RIGHT of the classification results (cols
-' 21-26) so the class + status are adjacent to the inputs, not behind six link
-' columns.
-Public Const COL_NFCMAP As Long = 13
-' Classification results (contiguous 14-20; the grey tint + tri-color verdict
-' conditional format both span this range).
-Public Const COL_CLASS As Long = 14
-Public Const COL_URBANRURAL As Long = 15
-Public Const COL_ACUBNAME As Long = 16
-Public Const COL_ROADNAME As Long = 17
+' ---- map links (13-15) ----
+' PRIMARY map link. "NFC Layer (Map Viewer)" opens the state functional-class
+' layer in ArcGIS Map Viewer, CENTERED + MARKERED on the row's point. This is
+' the link that actually navigates to the coordinate, so it leads.
+Public Const COL_NFCAGOL As Long = 13
+' The user-led link, sitting immediately to its right: a per-row deep-link into
+' the user's OWN AGOL webmap (Start Here NR_AGOLMAP). Empty cell when
+' NR_AGOLMAP isn't set, so the column is unobtrusive when nobody wired one up.
+Public Const COL_AGOLMAP As Long = 14
+' The state's official public functional-class app (APP_MI / APP_IN / ...).
+' Authoritative, but carries NO lat/lon - the state Experience apps mis-navigate
+' on coordinate deep-links (PR #17/#18), so it opens at the default extent and
+' is demoted behind the two links above.
+Public Const COL_NFCMAP As Long = 15
+
+' ---- classification results (contiguous 16-22) ----
+' Written only by CheckRoads / ReRunFailedRows. HIDDEN until one of those runs
+' (see modBuild.ShowReviewerColumns). The grey tint + tri-color verdict
+' conditional format both span this range.
+Public Const COL_CLASS As Long = 16
+Public Const COL_URBANRURAL As Long = 17
+Public Const COL_ACUBNAME As Long = 18
+Public Const COL_ROADNAME As Long = 19
 ' Street name(s) from the U.S. Census Bureau's TIGERweb Local Roads layer.
 ' Dense (covers most addresses) where COL_ROADNAME / MDOT 543 only gets
 ' trunkline route designations like "I-94 BL". Pipe-joined when multiple
 ' streets fall inside the search buffer (intersection points).
-Public Const COL_STREET As Long = 18
-Public Const COL_ELIGIBILITY As Long = 19
+Public Const COL_STREET As Long = 20
+Public Const COL_ELIGIBILITY As Long = 21
 ' <=3-word reason a row is yellow ("Review"): Nearby FHWA road / Second road
 ' close / Urban boundary edge / etc. Blank for confident red or green rows.
-Public Const COL_REVIEWNOTE As Long = 20
-' Imagery / photo-source links (moved to the right of the results).
-Public Const COL_GMAP As Long = 21
-Public Const COL_STREETVIEW As Long = 22
-Public Const COL_BING As Long = 23
-Public Const COL_GEARTH As Long = 24
-Public Const COL_FEMAVIEW As Long = 25
-Public Const COL_FIRMPORTAL As Long = 26
-Public Const COL_FIRMSTATUS As Long = 27  ' inspector-only (hidden in standard)
-Public Const COL_MAPSTATUS As Long = 28   ' inspector-only (hidden in standard)
-' Per-row deep-link into the user's own AGOL webmap (Start Here NR_AGOLMAP).
-' Empty cell when NR_AGOLMAP isn't set, so the column is unobtrusive when
-' nobody has wired up an AGOL map.
-Public Const COL_AGOLMAP As Long = 29
-' "AGOL NFC Layer" - per-row link that opens the state functional-class layer
-' in ArcGIS Map Viewer, centered on the point. Distinct from COL_NFCMAP (the
-' official public app) and COL_AGOLMAP (the user's own pasted webmap). Placed
-' at the end to avoid reshuffling every column; drag it next to NFC Map if
-' you want them adjacent.
-Public Const COL_NFCAGOL As Long = 30
+Public Const COL_REVIEWNOTE As Long = 22
+
+' First and last of the auto-reviewer block, so the hide/show helper and the
+' conditional formats never drift out of sync with the constants above.
+Public Const COL_REVIEWER_FIRST As Long = COL_CLASS
+Public Const COL_REVIEWER_LAST As Long = COL_REVIEWNOTE
+
+' ---- imagery / photo-source links (23-28) ----
+Public Const COL_GMAP As Long = 23
+Public Const COL_STREETVIEW As Long = 24
+Public Const COL_BING As Long = 25
+Public Const COL_GEARTH As Long = 26
+Public Const COL_FEMAVIEW As Long = 27
+Public Const COL_FIRMPORTAL As Long = 28
+Public Const COL_FIRMSTATUS As Long = 29  ' inspector-only (hidden in standard)
+Public Const COL_MAPSTATUS As Long = 30   ' inspector-only (hidden in standard)
 Public Const COL_LAST As Long = 30
 
 ' ---- Verification map URL templates (§4.3). {LAT}/{LON} substituted at run time. ----

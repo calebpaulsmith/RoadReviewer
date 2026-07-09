@@ -15,10 +15,11 @@ if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmP
 
 $expectedSheets = @('Start Here', 'Sites', 'Sources')
 
-# New canonical Sites layout: row 1 toolbar, row 2 header, data from row 3.
-$HeaderRow = 2
-$FirstDataRow = 3
-$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Map','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status','AGOL Map','AGOL NFC Layer')
+# Canonical Sites layout: row 1 IS the header, data from row 2. The row-1
+# toolbar was retired; all actions live on Start Here.
+$HeaderRow = 1
+$FirstDataRow = 2
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Layer (Map Viewer)','Your AGOL Map','State NFC App','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -84,10 +85,14 @@ try {
     Write-Host ("  $btnCount buttons, every OnAction resolves") -ForegroundColor Green
   }
 
-  # Product button surface: shared actions everywhere; workflow-3 actions
-  # inspector-only.
-  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','ExportSitesCsv','ExportSitesToKML','SendSitesToAgolMap','OpenSitesOnNfcLayer','BuildWorkbook')
-  $inspectorActions = @('DownloadFirmettes','ReRunFailedFirmettes','PrepareMapPages','AddMapPage','ExportCombinedMapPdf')
+  # Product button surface. Exports (CSV/KML/GeoJSON/FIRMettes/Map PDF/AGOL)
+  # are no longer individual buttons - they're dispatched from the Start Here
+  # "Export" dropdown via RunSelectedExport, so only the buttons that survived
+  # are asserted here. The dropdown's menu is verified separately below.
+  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','RunSelectedExport','BuildWorkbook')
+  # Inspector-only BUTTONS (the map-page builders that emit no file). FIRMette
+  # download + combined-map-PDF moved into the export dropdown for both products.
+  $inspectorActions = @('PrepareMapPages','AddMapPage','InsertMapImages')
   foreach ($a in $sharedActions) {
     if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
   }
@@ -125,21 +130,32 @@ try {
   Write-Host ("  all " + $expectedHeaders.Count + " headers match constants") -ForegroundColor Green
 
   Write-Host "=== Product column hiding ===" -ForegroundColor Cyan
-  # Inspector-only columns: WO(1), DI(2), FIRMette Status(27), Map Status(28)
-  foreach ($c in @(1, 2, 27, 28)) {
+  # Inspector-only columns: WO(1), DI(2), FIRMette Status(29), Map Status(30)
+  foreach ($c in @(1, 2, 29, 30)) {
     $hidden = [bool]$sites.Columns($c).Hidden
     if ($isInspector -and $hidden) { throw "Inspector build should show column $c" }
     if (-not $isInspector -and -not $hidden) { throw "Standard build should hide column $c" }
   }
   Write-Host ("  inspector-only columns " + $(if ($isInspector) { 'visible' } else { 'hidden' }) + " as expected") -ForegroundColor Green
 
-  Write-Host "=== Sites toolbar (row 1) ===" -ForegroundColor Cyan
-  $toolbarNames = @()
-  foreach ($sh in $sites.Shapes) { $toolbarNames += $sh.Name }
-  foreach ($n in @('RR_CheckRoads', 'RR_PhotoLinks')) {
-    if ($toolbarNames -notcontains $n) { throw "Sites toolbar missing shape: $n" }
+  Write-Host "=== Auto-reviewer columns hidden on a fresh (unclassified) build ===" -ForegroundColor Cyan
+  # FHWA Class(16) .. Review Reason(22) ship hidden until CheckRoads reveals them.
+  foreach ($c in @(16, 22)) {
+    if (-not [bool]$sites.Columns($c).Hidden) { throw "Reviewer column $c should be hidden on a fresh build (classifier hasn't run)" }
   }
-  Write-Host "  Check Roads + Photo Links buttons present on the Sites sheet" -ForegroundColor Green
+  Write-Host "  reviewer columns 16..22 hidden until first Check Roads" -ForegroundColor Green
+
+  Write-Host "=== Sites toolbar retired + export dropdown present ===" -ForegroundColor Cyan
+  # The row-1 toolbar was removed; assert no leftover RR_* buttons on Sites.
+  foreach ($sh in $sites.Shapes) {
+    if ($sh.Name -like 'RR_*') { throw "Unexpected leftover toolbar shape on Sites: $($sh.Name)" }
+  }
+  # The export picker lives on Start Here and drives RunSelectedExport.
+  $startSheet = $wb.Worksheets('Start Here')
+  $hasPicker = $false
+  foreach ($sh in $startSheet.Shapes) { if ($sh.Name -eq 'RR_ExportPicker') { $hasPicker = $true } }
+  if (-not $hasPicker) { throw "Start Here is missing the RR_ExportPicker export dropdown" }
+  Write-Host "  no leftover Sites toolbar; export dropdown present on Start Here" -ForegroundColor Green
 
   Write-Host "=== Sites hyperlink resolution (test coord) ===" -ForegroundColor Cyan
   # Use the Kalamazoo test coord. We have to open in r/w to write cells; reopen.
@@ -150,8 +166,10 @@ try {
   $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536      # Lat
   $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon
   $excel.Calculate()
-  # Verify each hyperlink formula resolves to a non-empty string
-  $linkCols = @{ 13='NFC Map'; 21='Google Maps'; 22='Street View'; 23='Bing'; 24='Google Earth'; 25='FEMA Viewer'; 26='FIRMette Portal'; 30='AGOL NFC Layer' }
+  # Verify each hyperlink formula resolves to a non-empty string. Col 14
+  # ("Your AGOL Map") is intentionally blank unless JobAgolMap is set, so it's
+  # excluded here.
+  $linkCols = @{ 13='NFC Layer (Map Viewer)'; 15='State NFC App'; 23='Google Maps'; 24='Street View'; 25='Bing'; 26='Google Earth'; 27='FEMA Viewer'; 28='FIRMette Portal' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells($FirstDataRow, $k)
     $f = [string]$cell.Formula
@@ -172,7 +190,7 @@ try {
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
   Write-Host "=== Conditional formatting on Federal Aid Status columns ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells($FirstDataRow, 14), $sites.Cells($FirstDataRow, 20))
+  $r = $sites.Range($sites.Cells($FirstDataRow, 16), $sites.Cells($FirstDataRow, 22))
   $fcCount = $r.FormatConditions.Count
   Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }

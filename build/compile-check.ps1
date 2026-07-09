@@ -30,6 +30,8 @@ $job = Start-Job -ScriptBlock {
     [void]$x.Run('UrlEncode', 'x')                    # modHttp (geometry/distance helpers)
     [void]$x.Run('BufferFeet')                        # modClassify (verdict/query logic)
     [void]$x.Run('ResolveOutputFolder')               # modMaps
+    [void]$x.Run('ExportItemCount')                   # modExportMenu (pure hook)
+    $x.Run('RemoveMapImages') | Out-Null              # modMapImage (no-op w/o MapPages)
     $wb.Close($false)
     'COMPILE OK'
   } catch {
