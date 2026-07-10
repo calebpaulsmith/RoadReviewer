@@ -693,12 +693,31 @@ hosting pattern as the nationwide NTAD ACUB layer (§4.2), not a
 state-hosted server like MDOT's — so no browser-UA workaround needed.
 
 Wisconsin is the only wired state that needs **two layers queried in
-sequence**: the State Trunk Network covers interstates/state highways
-with a clean bare FHWA code; the Local Road Network snapshot covers
-everything else (county/municipal/town roads) but encodes urban/rural
-into its own class code instead of carrying a bare FHWA number.
+sequence**: the Local Road Network layer covers county/municipal/town
+roads *and most collectors* (the large majority of points) but encodes
+urban/rural into its own class code instead of carrying a bare FHWA
+number; the State Trunk Network covers interstates/state highways with a
+clean bare FHWA code.
 
-#### Layer `FFCL_gdb/3` — State Trunk Network (primary; state highways/interstates)
+**Query order (updated — PR "WI layer swap", 2026-07-10): local FIRST,
+trunk as fallback.** Per user direction, the Local Road Network layer is
+queried first because it carries most points; the State Trunk Network is
+consulted only when the local layer has no usable class for the point.
+This reverses the earlier trunk-first order. See "Query strategy" below
+for the stub-detection detail that keeps state highways correct.
+
+**Link change (same PR): WisDOT moved/locked the old local-roads
+service.** The previous `WI_Local_Roads_Flood_Damage_Assessment_Snapshot`
+now returns `{"error":{"code":499,"message":"Token Required"}}`; the live
+public local layer is `Functional_Class_Local_Non_Prod/1` (same schema,
+same account, same fields). The state-trunk `FFCL_gdb/3` was unchanged.
+Both URLs are now **overridable at runtime** without a rebuild — paste a
+replacement into the Sources sheet's "Service URLs" table (Excel named
+range `Svc_WI_LOCAL_ROADS`), the web tool's "Data service URLs" panel, or
+the notebook's `SERVICE_OVERRIDES` dict (see "Service-URL overrides"
+below).
+
+#### Layer `FFCL_gdb/3` — State Trunk Network (fallback; state highways/interstates)
 
 - URL: `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3`
   ("Extract of the Functional Class - State Trunk Network for IDA
@@ -734,14 +753,23 @@ into its own class code instead of carrying a bare FHWA number.
   snapshot/extract service (no version/retire-date field in the schema),
   unlike MDOT's editable production layer.
 
-#### Layer `WI_Local_Roads_Flood_Damage_Assessment_Snapshot/1` — Local Road Network (fallback; everything else)
+#### Layer `Functional_Class_Local_Non_Prod/1` — Local Road Network (queried FIRST; local roads + most collectors)
 
-- URL: `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1`
-- Type: `Feature Layer` (esriGeometryPolyline). Same WISLR-derived ~90-field
-  schema as WisDOT's general-purpose `WISLR_Functional_Road_Classification`
-  hosted layer, filtered to the local-road network — state highways
-  return null functional-class fields here (confirmed at WIS 181 and
-  I-41), which is why the State Trunk layer above is tried first.
+- URL: `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1`
+  (name "Functional Class - Wisconsin Local Road Network"; replaced the
+  token-gated `WI_Local_Roads_Flood_Damage_Assessment_Snapshot/1`,
+  confirmed live 2026-07-10).
+- Type: `Feature Layer` (esriGeometryPolyline), Web Mercator (`inSR=4326`
+  reprojects). Same WISLR-derived ~97-field schema as WisDOT's
+  general-purpose `WISLR_Functional_Road_Classification` hosted layer,
+  filtered to the local-road network. **State highways also appear here
+  but with a null (or `0`) `FNCT_CLS_CTGY_TYCD` — an unclassified "stub."**
+  The classifier skips those stubs for class/name AND treats their
+  presence as the trigger to also query the State Trunk layer (so a point
+  on a state highway is still classified). Confirmed live 2026-07-10: at
+  Milwaukee the layer returns `E Wisconsin Ave` (code 60) alongside a
+  null-class `'18'` stub; at STH 52 Rhinelander it returns only `'52'`
+  stubs (no real local class → fall through to trunk).
 - Relevant fields: **`ST_LABL_NM`** (road name — populated for local
   streets, better coverage here than MDOT's trunkline-only layer 543),
   `FNCT_CLS_TYCD` / **`FNCT_CLS_CTGY_TYCD`** (WisDOT's own class scheme —
@@ -781,17 +809,33 @@ into its own class code instead of carrying a bare FHWA number.
 - No retired-segment filter needed (same "point-in-time snapshot" pattern
   as the state-trunk layer).
 
-#### Query strategy (Wisconsin)
+#### Query strategy (Wisconsin) — local-first (PR "WI layer swap")
 
-1. Point-intersect (then 150-ft/configured-buffer fallback) against
-   `FFCL_gdb/3`. If any segment is returned, read `FED_FC_CD` directly
-   as the bare FHWA code and stop — state highways are always resolved
-   here.
-2. Only if step 1 returns nothing: point-intersect (then buffer
-   fallback) against `WI_Local_Roads_Flood_Damage_Assessment_Snapshot/1`,
-   decode `FNCT_CLS_CTGY_TYCD` via `WisconsinLocalCategoryToFhwa()`.
-3. ACUB (urban/rural) runs exactly as it does for every other state —
+1. Point-intersect (then configured-buffer fallback) against
+   `Functional_Class_Local_Non_Prod/1` **first** (one query returns both
+   `FNCT_CLS_CTGY_TYCD` and `ST_LABL_NM`, halving the hit count on this
+   layer). For each returned feature: if `FNCT_CLS_CTGY_TYCD` decodes
+   (via `WisconsinLocalCategoryToFhwa()`) to a real FHWA class ≥ 1, keep
+   the segment + name; if it is null or decodes to `0` (a state-highway
+   stub), skip it and set `sawStub`.
+2. Query `FFCL_gdb/3` (State Trunk, bare `FED_FC_CD`) **only when** the
+   local layer returned no real class **OR** `sawStub` is set (a state
+   highway is present that only the trunk layer classifies). Merge its
+   segments/names in with the local ones.
+3. The **closest** road across whatever both layers returned drives the
+   verdict (PR #24 model). Net effect: a point genuinely on a local road
+   near a state highway now reads as the local road with a yellow
+   "Nearby FHWA road" flag, rather than being forced to the highway's
+   class (e.g. 45.4711,-89.7345 = W Wisconsin Ave 26 ft vs STH 86 199 ft).
+4. ACUB (urban/rural) runs exactly as it does for every other state —
    independently of whichever WI layer answered the class query.
+
+Rationale for local-first (per user, 2026-07-10): most damage points are
+on local roads / collectors carried by the local layer, so querying it
+first means one query for the common case; the trunk layer is a low-risk
+fallback (it is the layer WisDOT did *not* lock down). The stub trigger
+keeps the single-query optimization from ever misclassifying a state
+highway that happens to sit near a local road.
 
 #### UA / header quirks
 
@@ -2016,4 +2060,43 @@ SetTrace ""
 SetHeadless True    ' suppress every workflow's MsgBox
 SetHeadless False   ' restore default
 ```
+
+### 9.7 Service-URL overrides — the "lego swapout" (PR "WI layer swap")
+
+Every REST endpoint the classifier queries can be re-pointed at runtime,
+no code change and no rebuild, so a state moving or locking a layer (as
+WisDOT just did to its local-roads service) is a paste-in-a-URL fix
+instead of a code edit + rebuild + redeploy. The **same short KEY names**
+are used in all four products so a swap is the same mental model
+everywhere:
+
+| Key | Default constant / REST entry |
+|---|---|
+| `MI_NFC` / `MI_ROUTE` | MDOT 353 / 543 |
+| `IN_NFC` / `IN_ROADNAME` | INDOT LRSE 22 / centerlines 15 |
+| `WI_LOCAL_ROADS` / `WI_STATE_TRUNK` | WisDOT local (queried first) / state-trunk |
+| `ACUB` | NTAD Adjusted Urban Areas |
+| `TIGER_ROADS` | Census TIGERweb local roads |
+| `MN_NFC` / `IL_NFC` / `OH_NFC` | reference-only (unwired) |
+
+- **Excel:** `modConstants.ServiceUrl(key)` returns the value pasted into
+  the Sources sheet's "3. SERVICE URLs" table (workbook named range
+  `Svc_<KEY>`, built by `modSources.SvcOverrideRow`) or the built-in
+  `ServiceDefault(key)` when the cell is blank. Every `REST_*` usage in
+  `modClassify` now goes through `ServiceUrl()`. Keep `ServiceDefault`,
+  `SvcOverrideRow`'s row list, and the web/notebook default tables in
+  sync.
+- **Web:** rr-core defines `svc(key)` = `globalThis.RR_SERVICE_OVERRIDES[key]
+  || REST[key]`; every `REST.X` read became `svc("X")`. A shared,
+  byte-identical `<script>` block on **index.html** and **sources.html**
+  (`#services`) loads pasted URLs from `localStorage["rr_service_overrides"]`
+  into `globalThis.RR_SERVICE_OVERRIDES` and renders the editable table.
+  rr-core stays self-contained/headless-safe (the override global is
+  optional; `verify-web-core.mjs` never sets it, so it exercises
+  defaults). NOTE: the two REST keys were renamed `MDOT_NFC`→`MI_NFC`,
+  `MDOT_ROUTE`→`MI_ROUTE` to match the Excel/notebook key vocabulary.
+- **Notebook:** `SERVICE_OVERRIDES` dict + `svc(key)`; same key names.
+- **Scope:** overrides cover the classification *query* endpoints only,
+  not the Map-Viewer deep-link templates (`URL_NFC_MAPVIEW*`) or the
+  FIRMette GP service.
 

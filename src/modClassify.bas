@@ -204,13 +204,13 @@ Private Sub DetermineAcub(ByVal lat As String, ByVal lon As String, _
         ByRef exactUrban As Boolean, ByRef boundaryAmbiguous As Boolean, _
         ByRef acubName As String, ByRef errMsg As String)
     Dim j As String
-    j = RunQuery(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", 0, errMsg, False)
+    j = RunQuery(ServiceUrl("ACUB"), lat, lon, ACUB_OUTFIELDS, "1=1", 0, errMsg, False)
     If Len(errMsg) > 0 Then Exit Sub
     If FeatureCount(j) > 0 Then
         exactUrban = True: boundaryAmbiguous = False: acubName = FirstString(j, "NAME")
         Exit Sub
     End If
-    j = RunQuery(REST_ACUB, lat, lon, ACUB_OUTFIELDS, "1=1", AcubBufferFeet(), errMsg, False)
+    j = RunQuery(ServiceUrl("ACUB"), lat, lon, ACUB_OUTFIELDS, "1=1", AcubBufferFeet(), errMsg, False)
     If Len(errMsg) > 0 Then Exit Sub
     If FeatureCount(j) > 0 Then
         exactUrban = False: boundaryAmbiguous = True: acubName = FirstString(j, "NAME")
@@ -228,33 +228,72 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
     Select Case stateCode
         Case "MI"
             ' Class from layer 353; trunkline route names from 543.
-            AddClassSegs REST_MDOT_NFC, "FunctionalSystem", "RHRetireDate IS NULL", False, False, _
+            AddClassSegs ServiceUrl("MI_NFC"), "FunctionalSystem", "RHRetireDate IS NULL", False, False, _
                 lat, lon, latP, lonP, segs, errMsg
             If Len(errMsg) > 0 Then Exit Sub
-            AddNamedRoads REST_MDOT_ROUTE, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
+            AddNamedRoads ServiceUrl("MI_ROUTE"), "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
                 "MI_ROUTE", lat, lon, latP, lonP, roads
         Case "IN"
-            AddClassSegs REST_IN_NFC, "functional_class", "record_status=5", False, False, _
+            AddClassSegs ServiceUrl("IN_NFC"), "functional_class", "record_status=5", False, False, _
                 lat, lon, latP, lonP, segs, errMsg
             If Len(errMsg) > 0 Then Exit Sub
-            AddNamedRoads REST_IN_ROADNAME, "st_full", "1=1", "SINGLE:st_full", lat, lon, latP, lonP, roads
+            AddNamedRoads ServiceUrl("IN_ROADNAME"), "st_full", "1=1", "SINGLE:st_full", lat, lon, latP, lonP, roads
         Case "WI"
-            ' State Trunk Network first (FED_FC_CD is a bare FHWA string);
-            ' only if nothing there, the Local Road Network snapshot.
-            AddClassSegs REST_WI_STATE_TRUNK, "FED_FC_CD", "1=1", True, False, _
-                lat, lon, latP, lonP, segs, errMsg
+            ' Local Road Network FIRST (it carries local roads AND most
+            ' collectors - the large majority of points), then the State Trunk
+            ' Network only if the local layer has no usable class for the point
+            ' (PR "WI layer swap"). State highways appear in the local layer as
+            ' unclassified "stubs" (null/0 class); AddWiLocalRoads skips those
+            ' and reports sawStub, which - like an empty local result - triggers
+            ' the trunk fallback so a point on a state highway is still
+            ' classified. One query per layer (class + name together) keeps the
+            ' hit count down on the local layer WisDOT is sensitive about.
+            Dim sawStub As Boolean
+            AddWiLocalRoads lat, lon, latP, lonP, segs, roads, sawStub, errMsg
             If Len(errMsg) > 0 Then Exit Sub
-            If segs.Count > 0 Then
-                AddNamedRoads REST_WI_STATE_TRUNK, "HWYTYPE,HWYNUM,HWYDIR", "1=1", "WI_TRUNK", _
-                    lat, lon, latP, lonP, roads
-            Else
-                AddClassSegs REST_WI_LOCAL_ROADS, "FNCT_CLS_CTGY_TYCD", "1=1", False, True, _
+            If segs.Count = 0 Or sawStub Then
+                AddClassSegs ServiceUrl("WI_STATE_TRUNK"), "FED_FC_CD", "1=1", True, False, _
                     lat, lon, latP, lonP, segs, errMsg
                 If Len(errMsg) > 0 Then Exit Sub
-                AddNamedRoads REST_WI_LOCAL_ROADS, "ST_LABL_NM", "1=1", "SINGLE:ST_LABL_NM", _
+                AddNamedRoads ServiceUrl("WI_STATE_TRUNK"), "HWYTYPE,HWYNUM,HWYDIR", "1=1", "WI_TRUNK", _
                     lat, lon, latP, lonP, roads
             End If
     End Select
+End Sub
+
+' Wisconsin Local Road Network: one query returns both the class code and the
+' street name (they share the layer), so this halves the local-layer hit count
+' vs. the generic AddClassSegs+AddNamedRoads pair AND lets a state-highway stub
+' be skipped for class and name in the same pass. A stub is any feature whose
+' FNCT_CLS_CTGY_TYCD is null or decodes to 0 (an unclassified state-highway
+' segment that appears here but is only classified on the trunk layer); each
+' one sets sawStub so QueryStateRoads consults the trunk layer.
+Private Sub AddWiLocalRoads(ByVal lat As String, ByVal lon As String, _
+        ByVal latP As Double, ByVal lonP As Double, _
+        ByRef segs As Collection, ByRef roads As Collection, _
+        ByRef sawStub As Boolean, ByRef errMsg As String)
+    Dim json As String, blocks As Collection, b As Variant
+    Dim ints As Collection, cls As Long, nm As String, d As Double
+    json = RunQuery(ServiceUrl("WI_LOCAL_ROADS"), lat, lon, _
+        "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", BufferFeet(), errMsg, True)
+    If Len(errMsg) > 0 Then Exit Sub
+    Set blocks = FeatureBlocks(json)
+    For Each b In blocks
+        Set ints = ExtractIntegers(CStr(b), "FNCT_CLS_CTGY_TYCD")
+        d = MinDistanceFt(CStr(b), lonP, latP)
+        If ints.Count = 0 Then
+            sawStub = True                          ' null class = state-highway stub
+        Else
+            cls = WisconsinLocalCategoryToFhwa(CLng(ints(1)))
+            If cls >= 1 Then
+                segs.Add Array(cls, d)
+                nm = Trim$(FirstString(CStr(b), "ST_LABL_NM"))
+                If Len(nm) > 0 Then roads.Add Array(nm, d)
+            Else
+                sawStub = True                      ' code 0 / unrecognized = stub
+            End If
+        End If
+    Next b
 End Sub
 
 ' Query a functional-class layer with geometry and append each segment's
@@ -327,7 +366,7 @@ Private Function AppendTigerRoads(ByVal lat As String, ByVal lon As String, _
         ByRef errMsg As String) As String
     Dim json As String, blocks As Collection, b As Variant, nm As String
     Dim seen As String, out As String
-    json = RunQuery(REST_TIGER_ROADS, lat, lon, "NAME", "1=1", BufferFeet(), errMsg, True)
+    json = RunQuery(ServiceUrl("TIGER_ROADS"), lat, lon, "NAME", "1=1", BufferFeet(), errMsg, True)
     If Len(errMsg) > 0 Then Exit Function
     Set blocks = FeatureBlocks(json)
     For Each b In blocks

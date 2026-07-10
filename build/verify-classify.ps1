@@ -46,7 +46,14 @@ $tests = @(
   # live-verified part; the verdict is Urban Local accordingly.
   @{ Row=8;  State='IN'; Name='Indianapolis-area Urban Local';   Lat=39.9876;  Lon=-86.0128;   ExpectElig='Non-federal aid'; ExpectClass='Local';            ExpectAcub='Indianapolis' }
   @{ Row=9;  State='WI'; Name='Milwaukee Minor Arterial';        Lat=43.0389;  Lon=-87.9065;   ExpectElig='Federal aid';     ExpectClass='Minor Arterial';   ExpectAcub='Milwaukee'  }
-  @{ Row=10; State='WI'; Name='Tomahawk Rural Major Collector';  Lat=45.4711;  Lon=-89.7345;   ExpectElig='Federal aid';     ExpectClass='Major Collector';  ExpectAcub=''           }
+  # Local-first WI order (PR "WI layer swap"): this point sits on W Wisconsin Ave
+  # (Rural Minor Collector, ~26 ft) - much closer than STH 86 (Major Collector,
+  # ~199 ft), which the stub-triggered state-trunk fallback still surfaces. So the
+  # closest road drives a non-federal base, and STH 86 downgrades it to a yellow
+  # "Review - Nearby FHWA road". (Before the swap the trunk layer was queried
+  # first and STH 86 was the only segment, reading "Federal aid - Rural Major
+  # Collector".) The class column lists both, nearest-first.
+  @{ Row=10; State='WI'; Name='Tomahawk local road near STH 86'; Lat=45.4711;  Lon=-89.7345;   ExpectElig='Review - Nearby FHWA road'; ExpectClass='Major Collector';  ExpectAcub=''           }
   # Regression tests for the Increment 4 FederalAidVerdict/PrefixedClass fixes (CLAUDE.md §7a):
   # a rural class-6 segment must read "...Rural Minor Collector", never "...Rural Local",
   # and class 1-3 (here Interstate) must get the Urban/Rural prefix same as 4-6.

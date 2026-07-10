@@ -41,7 +41,7 @@ LAYERS = [
      "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
      -87.9065, 43.0389),   # downtown Milwaukee
     ("WisDOT Local Road Network snapshot",
-     "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1",
+     "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
      -87.9065, 43.0389),
 ]
 

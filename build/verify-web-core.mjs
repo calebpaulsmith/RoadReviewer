@@ -108,7 +108,11 @@ const CASES = [
   ["IN", 39.4234, -86.7628, { verdictStarts: "Federal aid -", classIncludes: "Other Principal Arterial" }],
   ["IN", 39.9876, -86.0128, { verdictStarts: "Non-federal aid -", classIncludes: "Local" }],
   ["WI", 43.0389, -87.9065, { verdict: "Federal aid - Urban Minor Arterial", urbanRural: "Urban", acubName: "Milwaukee, WI" }],
-  ["WI", 45.4711, -89.7345, { verdictStarts: "Federal aid - Rural", classIncludes: "Major Collector" }],
+  // Local-first WI order (PR "WI layer swap"): the point sits on W Wisconsin Ave
+  // (Rural Minor Collector, ~26 ft) — much closer than STH 86 (Major Collector,
+  // ~199 ft), which the stub-triggered trunk fallback still surfaces. Closest
+  // road drives the base verdict (non-federal), STH 86 downgrades it to yellow.
+  ["WI", 45.4711, -89.7345, { verdict: "Review - Nearby FHWA road", urbanRural: "Rural", classIncludes: "Major Collector" }],
   ["WI", 45.169879, -89.102452, { verdict: "Non-federal aid - Rural Minor Collector", urbanRural: "Rural" }],   // §7a fix #2 regression
   ["WI", 44.764850, -91.406533, { verdict: "Federal aid - Urban Interstate", acubName: "Eau Claire, WI" }],      // §7a fix #3 regression
   ["MN", 44.9778, -93.2650, { verdict: "ACUB only - class lookup not wired for this state", urbanRural: "Urban" }], // Minneapolis: state gate

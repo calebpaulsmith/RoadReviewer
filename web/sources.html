@@ -28,6 +28,11 @@
   a { color: #205d8c; }
   .toc { font-size: 14px; }
   .toc a { margin-right: 14px; }
+  #svcTable { width: 100%; }
+  #svcTable td { vertical-align: top; }
+  #svcTable .k { font-size: 11.5px; color: var(--muted); }
+  #svcTable input { width: 100%; box-sizing: border-box; font: 12px ui-monospace, Consolas, monospace; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: #fffdf0; }
+  #svcTable input.overridden { background: #fff3cd; border-color: #d9b34d; }
 </style>
 </head>
 <body>
@@ -40,6 +45,7 @@
 <p class="toc">Jump to:
   <a href="#verdict">How the verdict works</a>
   <a href="#mi">Michigan</a> <a href="#in">Indiana</a> <a href="#wi">Wisconsin</a>
+  <a href="#services">Swap a service URL</a>
   <a href="#acub">Urban Boundaries (all states)</a> <a href="#tiger">Street Names (all states)</a>
   <a href="#firmette">FIRMettes</a> <a href="#basemap">Basemap</a> <a href="#unwired">Other states</a>
 </p>
@@ -124,18 +130,20 @@
   <div class="org">Organization: <b>Wisconsin Department of Transportation (WisDOT)</b> — ArcGIS Online hosted services (<code>services5.arcgis.com</code>, account wisnipsvki_WisDOT), published for damage-assessment use</div>
   <div class="quirk"><b>No official statewide public map to link to.</b> Unlike Michigan and Indiana, WisDOT does not publish a citizen-facing statewide interactive functional-classification app — its functional-class page serves per-county / per-urban-area <i>static PDFs</i>, and WISLR is a login-gated local-government system. So Wisconsin "live map" links fall back to the generic ArcGIS Map Viewer with the WisDOT class layer above side-loaded and the site pinned (<code>center</code>/<code>level</code>/<code>marker</code>). That's the authoritative WisDOT geometry at the point — just not inside a WisDOT-branded app, because none exists.</div>
 
-  <h3>Layer 3 — "Functional Class - State Trunk Network" (tried first)</h3>
-  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3</a></div>
-  <p>Covers interstates and state highways. Fields read: <code>FED_FC_CD</code> (string "1"–"7", bare FHWA code), <code>HWYTYPE</code>/<code>HWYNUM</code>/<code>HWYDIR</code> (route name, e.g. "USH 18 W"). Point-in-time snapshot — no retired-segment filter needed. If any segment answers here, the local-roads layer is not queried.</p>
-  <div class="quirk"><b>Quirk — two class fields.</b> This layer carries both <code>FED_FC_CD</code> (the federal FHWA code — what the classifier uses) and <code>FC_CD</code> (WisDOT's own internal code — what the layer's published renderer/legend keys off). The map figures fetch both: <code>FED_FC_CD</code> for the verdict, <code>FC_CD</code> only for matching WisDOT's own colors.</div>
-  <div class="quirk"><b>Quirk — <code>URB_TYPE</code> unused.</b> The layer has its own Urban/Rural field, but this tool deliberately ignores it: the nationwide ACUB polygon check is the single urban/rural source of truth for every state, so all states are judged by the same boundary dataset.</div>
-
-  <h3>Layer 1 — "WI_Local_Roads_Flood_Damage_Assessment_Snapshot" (fallback)</h3>
-  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1</a></div>
-  <p>Covers county/municipal/town roads. Fields read: <code>FNCT_CLS_CTGY_TYCD</code> (WisDOT category code), <code>ST_LABL_NM</code> (street name — good local-street coverage).</p>
+  <h3>Layer 1 — "Functional Class - Wisconsin Local Road Network" (queried FIRST)</h3>
+  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1</a></div>
+  <p>Covers county/municipal/town roads and most collectors — the large majority of points, so it is tried first. Fields read: <code>FNCT_CLS_CTGY_TYCD</code> (WisDOT category code), <code>ST_LABL_NM</code> (street name — good local-street coverage). If the local layer has no class for the point, or shows a state-highway stub (below), the state-trunk layer is queried too.</p>
+  <div class="quirk"><b>Quirk — WisDOT moved this layer.</b> WisDOT locked/renamed the previous local-roads service (<code>WI_Local_Roads_Flood_Damage_Assessment_Snapshot</code>, which now returns "Token Required"); this <code>Functional_Class_Local_Non_Prod</code> layer is the live public replacement. If it moves again, paste the new URL into <a href="index.html#services">the classifier's Service URLs panel</a> — no code change needed.</div>
+  <div class="quirk"><b>Quirk — state highways appear as unclassified "stubs."</b> State-highway geometry shows up in this layer too, but with a null (or 0) class. Those are skipped, and their presence triggers the state-trunk query below so a point sitting on a state highway is still classified.</div>
   <div class="quirk"><b>Quirk — urban/rural embedded in the code.</b> Unlike every other wired layer, this one encodes urban/rural into the class value itself (10 Rural Principal Arterial, 60 Urban Principal Arterial, 20/86 Minor Arterial, 30/96 Collector, 40 Rural Minor Collector, 45/97 Local). The tool strips that back to a bare FHWA 1–7 code before the shared federal-aid rule runs.</div>
   <div class="quirk"><b>Quirk — code 96 ("Urban Collector Other") doesn't split major vs minor collector.</b> It is mapped to Major Collector (5). This can never change a verdict: the major/minor split only matters for <i>rural</i> collectors, and every <i>urban</i> collector is federal-aid regardless.</div>
   <div class="quirk"><b>Quirk — no formal legend domain.</b> The category-code meanings aren't published as a coded-value domain; they were read from the layer's renderer <code>uniqueValueInfos</code> (its map symbology), which is also what the map figures use for colors.</div>
+
+  <h3>Layer 3 — "Functional Class - State Trunk Network" (fallback)</h3>
+  <div class="url"><a href="https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3" target="_blank" rel="noopener">https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3</a></div>
+  <p>Covers interstates and state highways. Fields read: <code>FED_FC_CD</code> (string "1"–"7", bare FHWA code), <code>HWYTYPE</code>/<code>HWYNUM</code>/<code>HWYDIR</code> (route name, e.g. "USH 18 W"). Point-in-time snapshot — no retired-segment filter needed. Queried when the local layer above has no class for the point (or shows a state-highway stub); whatever both layers return is then ranked by distance, closest road first.</p>
+  <div class="quirk"><b>Quirk — two class fields.</b> This layer carries both <code>FED_FC_CD</code> (the federal FHWA code — what the classifier uses) and <code>FC_CD</code> (WisDOT's own internal code — what the layer's published renderer/legend keys off). The map figures fetch both: <code>FED_FC_CD</code> for the verdict, <code>FC_CD</code> only for matching WisDOT's own colors.</div>
+  <div class="quirk"><b>Quirk — <code>URB_TYPE</code> unused.</b> The layer has its own Urban/Rural field, but this tool deliberately ignores it: the nationwide ACUB polygon check is the single urban/rural source of truth for every state, so all states are judged by the same boundary dataset.</div>
 </section>
 
 <section id="acub">
@@ -174,8 +182,95 @@
   <p>No road-functional-class layer is wired for Minnesota, Illinois, or Ohio yet — sites there get the ACUB urban/rural check only, and the verdict column says so rather than guessing. The nationwide ACUB and TIGER layers above already cover them; each state's DOT publishes its NFC layer differently and needs the same per-state schema research MI/IN/WI received.</p>
 </section>
 
+<section id="services">
+  <h2>Swap a service URL (advanced)</h2>
+  <p>Each row below is a live data service the <a href="index.html">classifier</a> reads. Leave a box blank to use the
+     built-in default (shown as the placeholder). If a state moves or locks a layer — the way WisDOT just moved its
+     Wisconsin local-roads layer — paste the full replacement layer URL (e.g. <code>https://…/FeatureServer/1</code>)
+     and it takes effect on your next classification. Overrides live only in this browser (nothing is uploaded) and
+     use the same key names as the Excel tool's Sources sheet (<code>Svc_&lt;KEY&gt;</code>) and the AGOL notebook
+     (<code>SERVICE_OVERRIDES</code>), so one swap is easy to mirror across every product.</p>
+  <table id="svcTable"><tbody></tbody></table>
+  <p><button id="svcReset" type="button">Reset all to defaults</button></p>
+</section>
+
 <p style="color:#5b6b7b;font-size:12.5px">All layer names, field names, domains, and quirks on this page were confirmed against each service's live REST metadata (<code>?f=json</code>) — sources last verified 2026-07-01 through 2026-07-03. This tool classifies the road, never the project.</p>
 
 </main>
+
+<script>
+(function () {
+  const STORE_KEY = "rr_service_overrides";
+  // [key, label] in display order. Wired layers only (what the web tool queries).
+  const SVC_KEYS = [
+    ["WI_LOCAL_ROADS", "Wisconsin — local roads + most collectors (queried first)"],
+    ["WI_STATE_TRUNK", "Wisconsin — state highways & interstates (fallback)"],
+    ["MI_NFC",         "Michigan — functional class (layer 353)"],
+    ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
+    ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
+    ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
+    ["ACUB",           "All states — adjusted urban-area boundary (urban/rural)"],
+    ["TIGER_ROADS",    "All states — Census street names"],
+  ];
+  // Built-in defaults for the placeholder text. On index.html the live REST
+  // object is authoritative (svc() falls back to it); this map keeps the panel
+  // self-contained on sources.html where rr-core isn't loaded.
+  const SVC_DEFAULTS = {
+    WI_LOCAL_ROADS: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
+    WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
+    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+    MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+    IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+    ACUB:           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
+    TIGER_ROADS:    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
+  };
+  function defaultFor(key) {
+    return (typeof REST !== "undefined" && REST[key]) || SVC_DEFAULTS[key] || "";
+  }
+  function load() {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}; } catch (e) { o = {}; }
+    // Drop blanks so svc() cleanly falls back to the default.
+    for (const k of Object.keys(o)) { if (!o[k] || !String(o[k]).trim()) delete o[k]; }
+    return o;
+  }
+  function save(o) {
+    const clean = {};
+    for (const k of Object.keys(o)) { if (o[k] && String(o[k]).trim()) clean[k] = String(o[k]).trim(); }
+    localStorage.setItem(STORE_KEY, JSON.stringify(clean));
+    globalThis.RR_SERVICE_OVERRIDES = clean;
+    return clean;
+  }
+  // Publish immediately so any classification uses overrides even before the
+  // panel is opened/rendered.
+  globalThis.RR_SERVICE_OVERRIDES = load();
+
+  function render() {
+    const tbody = document.querySelector("#svcTable tbody");
+    if (!tbody) return;
+    const store = globalThis.RR_SERVICE_OVERRIDES || {};
+    tbody.innerHTML = "<tr><th>Layer</th><th>Service URL (blank = built-in default)</th></tr>" +
+      SVC_KEYS.map(([k, label]) =>
+        `<tr><td><div>${label}</div><div class="k">${k}</div></td>` +
+        `<td><input data-key="${k}" value="${store[k] ? String(store[k]).replace(/"/g, "&quot;") : ""}" ` +
+        `placeholder="${defaultFor(k)}"></td></tr>`).join("");
+    tbody.querySelectorAll("input[data-key]").forEach(inp => {
+      inp.classList.toggle("overridden", !!inp.value.trim());
+      inp.addEventListener("change", () => {
+        const o = globalThis.RR_SERVICE_OVERRIDES || {};
+        const v = inp.value.trim();
+        if (v) o[inp.dataset.key] = v; else delete o[inp.dataset.key];
+        save(o);
+        inp.classList.toggle("overridden", !!v);
+      });
+    });
+    const reset = document.getElementById("svcReset");
+    if (reset) reset.addEventListener("click", () => { save({}); render(); });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>

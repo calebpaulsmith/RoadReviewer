@@ -384,7 +384,7 @@ Private Sub LabelValue(ByVal ws As Worksheet, ByVal r As Long, ByVal label As St
     AddNameForCell ws.Cells(r, 3), namedRange
 End Sub
 
-Private Sub AddNameForCell(ByVal cell As Range, ByVal nm As String)
+Public Sub AddNameForCell(ByVal cell As Range, ByVal nm As String)
     On Error Resume Next
     ThisWorkbook.Names(nm).Delete
     On Error GoTo 0

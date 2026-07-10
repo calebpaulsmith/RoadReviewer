@@ -11,6 +11,11 @@ build/prototype-vba/
 # Local IDE/agent state
 .claude/
 
+# Node deps for the web-test verifiers (build/web-tests, playwright-core)
+node_modules/
+# Python cache from running the notebook script locally
+__pycache__/
+
 # Inspector output (FIRMettes, Map PDFs, KML, CSV) — generated per WO
 # by the workflows; never source of truth, never committed.
 Output/

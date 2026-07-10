@@ -63,22 +63,37 @@ import json
 
 import requests
 
-# --- Authoritative REST endpoints (rr-core `REST`) ---------------------------
+# --- Authoritative REST endpoints -------------------------------------------
+# Key names match the Excel Sources-sheet Svc_ table and the web tool's REST /
+# RR_SERVICE_OVERRIDES, so a URL swap is the same mental model in every product.
 REST = {
     # Michigan MDOT — NFC class (layer 353) + trunkline route name (layer 543)
-    "MDOT_NFC":       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-    "MDOT_ROUTE":     "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    "MI_NFC":         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+    "MI_ROUTE":       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
     # Nationwide 2020 Adjusted Census Urban Boundary (USDOT NTAD)
     "ACUB":           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
     # Indiana INDOT — functional class + separate road-name centerline layer
     "IN_NFC":         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
     "IN_ROADNAME":    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
-    # Wisconsin WisDOT — state-trunk layer (primary) + local-roads snapshot (fallback)
+    # Wisconsin WisDOT — local-roads layer (queried FIRST) + state-trunk layer (fallback).
+    # WisDOT moved/locked the old WI_Local_Roads_Flood_Damage_Assessment_Snapshot
+    # (now token-gated); this is the live public local layer.
+    "WI_LOCAL_ROADS": "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
     "WI_STATE_TRUNK": "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
-    "WI_LOCAL_ROADS": "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1",
     # Census TIGER road centerlines — street names for every state (best-effort)
     "TIGER_ROADS":    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
 }
+
+# --- Service-URL overrides ("lego swapout") ---------------------------------
+# Paste a replacement layer URL here to re-point any service without editing the
+# query code — e.g. if WisDOT moves its local-roads layer again:
+#   SERVICE_OVERRIDES["WI_LOCAL_ROADS"] = "https://services5.arcgis.com/.../FeatureServer/1"
+# Keys match REST above (and the Excel/web override tables). Empty = use default.
+SERVICE_OVERRIDES: dict = {}
+
+def svc(key):
+    """The overriding URL for `key` if one is set, else the built-in default."""
+    return SERVICE_OVERRIDES.get(key) or REST[key]
 
 # Search radius when the exact point-on-road intersect misses (UI-adjustable; the
 # Excel tool's "Search buffer" cell, same 250 ft default).
@@ -283,7 +298,7 @@ def query_with_fallback(base_url, lat, lon, out_fields, where_clause, fallback_f
 # %%
 def query_michigan_nfc(lat, lon, buffer_ft):
     """MDOT layer 353 class (RHRetireDate IS NULL) + layer 543 trunkline route name."""
-    nfc = query_with_fallback(REST["MDOT_NFC"], lat, lon, "FunctionalSystem,PR",
+    nfc = query_with_fallback(svc("MI_NFC"), lat, lon, "FunctionalSystem,PR",
                               "RHRetireDate IS NULL", buffer_ft, True)
     segments = []
     for e in feature_entries(nfc, lat, lon):
@@ -297,7 +312,7 @@ def query_michigan_nfc(lat, lon, buffer_ft):
         segments.append({"code": code, "name": "", "distFt": e["distFt"]})
     roads = []
     try:   # route name is best-effort, matching modClassify
-        route = query_with_fallback(REST["MDOT_ROUTE"], lat, lon, "RouteDesignation,RouteNumber",
+        route = query_with_fallback(svc("MI_ROUTE"), lat, lon, "RouteDesignation,RouteNumber",
                                     "RHRetireDate IS NULL", buffer_ft, True)
         for e in feature_entries(route, lat, lon):
             nm = " ".join([s for s in (clean_str(e["attrs"].get("RouteDesignation")),
@@ -310,7 +325,7 @@ def query_michigan_nfc(lat, lon, buffer_ft):
 
 def query_indiana_nfc(lat, lon, buffer_ft):
     """INDOT LRSE_Functional_Class (record_status=5 Active) + separate centerline road name."""
-    nfc = query_with_fallback(REST["IN_NFC"], lat, lon, "functional_class",
+    nfc = query_with_fallback(svc("IN_NFC"), lat, lon, "functional_class",
                               "record_status=5", buffer_ft, True)
     segments = []
     for e in feature_entries(nfc, lat, lon):
@@ -324,7 +339,7 @@ def query_indiana_nfc(lat, lon, buffer_ft):
         segments.append({"code": code, "name": "", "distFt": e["distFt"]})
     roads = []
     try:   # best-effort
-        nm = query_with_fallback(REST["IN_ROADNAME"], lat, lon, "st_full", "1=1", buffer_ft, True)
+        nm = query_with_fallback(svc("IN_ROADNAME"), lat, lon, "st_full", "1=1", buffer_ft, True)
         for e in feature_entries(nm, lat, lon):
             s = clean_str(e["attrs"].get("st_full"))
             if s:
@@ -334,12 +349,34 @@ def query_indiana_nfc(lat, lon, buffer_ft):
     return segments, roads
 
 def query_wisconsin_nfc(lat, lon, buffer_ft):
-    """WisDOT state-trunk layer first (bare FED_FC_CD); only if it answers nothing, the
-    local-roads snapshot (FNCT_CLS_CTGY_TYCD, urban/rural embedded -> unpacked)."""
-    trunk = query_with_fallback(REST["WI_STATE_TRUNK"], lat, lon,
-                                "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", buffer_ft, True)
-    if feature_count(trunk) > 0:
-        segments, roads = [], []
+    """Local Road Network FIRST (local roads + most collectors — most points), then the
+    State Trunk Network only if the local layer has no usable class OR shows a state-highway
+    "stub" (null/0 class). Closest-road logic downstream picks the verdict (PR "WI layer swap")."""
+    segments, roads = [], []
+    saw_stub = False
+    loc = query_with_fallback(svc("WI_LOCAL_ROADS"), lat, lon,
+                              "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", buffer_ft, True)
+    for e in feature_entries(loc, lat, lon):
+        a = e["attrs"]
+        if clean_str(a.get("FNCT_CLS_CTGY_TYCD")) == "":
+            saw_stub = True
+            continue
+        try:
+            cat = int(float(a.get("FNCT_CLS_CTGY_TYCD")))
+        except (TypeError, ValueError):
+            saw_stub = True
+            continue
+        code = wisconsin_local_category_to_fhwa(cat)
+        if code < 1:                       # code 0 / unrecognized = state-highway stub
+            saw_stub = True
+            continue
+        name = clean_str(a.get("ST_LABL_NM"))
+        segments.append({"code": code, "name": name, "distFt": e["distFt"]})
+        if name:
+            roads.append({"name": name, "distFt": e["distFt"]})
+    if not segments or saw_stub:
+        trunk = query_with_fallback(svc("WI_STATE_TRUNK"), lat, lon,
+                                    "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", buffer_ft, True)
         for e in feature_entries(trunk, lat, lon):
             a = e["attrs"]
             if clean_str(a.get("FED_FC_CD")) == "":
@@ -353,22 +390,6 @@ def query_wisconsin_nfc(lat, lon, buffer_ft):
             segments.append({"code": code, "name": name, "distFt": e["distFt"]})
             if name:
                 roads.append({"name": name, "distFt": e["distFt"]})
-        return segments, roads
-    loc = query_with_fallback(REST["WI_LOCAL_ROADS"], lat, lon,
-                              "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", buffer_ft, True)
-    segments, roads = [], []
-    for e in feature_entries(loc, lat, lon):
-        a = e["attrs"]
-        if clean_str(a.get("FNCT_CLS_CTGY_TYCD")) == "":
-            continue
-        try:
-            cat = int(float(a.get("FNCT_CLS_CTGY_TYCD")))
-        except (TypeError, ValueError):
-            continue
-        name = clean_str(a.get("ST_LABL_NM"))
-        segments.append({"code": wisconsin_local_category_to_fhwa(cat), "name": name, "distFt": e["distFt"]})
-        if name:
-            roads.append({"name": name, "distFt": e["distFt"]})
     return segments, roads
 
 # States whose NFC layer is wired (rr-core NFC_WIRED). MN/IL/OH are ACUB-only.
@@ -463,10 +484,10 @@ def determine_acub(lat, lon, buffer_ft):
     """Point-in-ACUB-polygon (exact) first; if outside every polygon, buffer to the boundary
     floor to detect 'right on the urban edge' (rr-core determineAcub). Returns a dict with
     exact_urban / boundary / name."""
-    j = run_query(REST["ACUB"], lat, lon, "NAME,UACE,state_1", "1=1", 0, False)
+    j = run_query(svc("ACUB"), lat, lon, "NAME,UACE,state_1", "1=1", 0, False)
     if feature_count(j) > 0:
         return {"exact_urban": True, "boundary": False, "name": first_string(j, "NAME")}
-    j = run_query(REST["ACUB"], lat, lon, "NAME,UACE,state_1", "1=1",
+    j = run_query(svc("ACUB"), lat, lon, "NAME,UACE,state_1", "1=1",
                   max(buffer_ft, ACUB_MIN_BUFFER_FEET), False)
     if feature_count(j) > 0:
         return {"exact_urban": False, "boundary": True, "name": first_string(j, "NAME")}
@@ -506,7 +527,7 @@ def classify_point(lat, lon, state_code, buffer_ft=DEFAULT_BUFFER_FEET):
 
     # Census TIGER street names (non-fatal) — covers local streets the state layers name poorly.
     try:
-        tiger = run_query(REST["TIGER_ROADS"], lat, lon, "NAME", "1=1", buffer_ft, True)
+        tiger = run_query(svc("TIGER_ROADS"), lat, lon, "NAME", "1=1", buffer_ft, True)
         seen = set()
         for e in feature_entries(tiger, lat, lon):
             nm = clean_str(e["attrs"].get("NAME"))
@@ -636,8 +657,11 @@ def _run_self_test():
         ["IN", 39.9876, -86.0128, {"verdictStarts": "Non-federal aid -", "classIncludes": "Local"}],
         ["WI", 43.0389, -87.9065, {"verdict": "Federal aid - Urban Minor Arterial",
                                    "urbanRural": "Urban", "acubName": "Milwaukee, WI"}],
-        ["WI", 45.4711, -89.7345, {"verdictStarts": "Federal aid - Rural",
-                                   "classIncludes": "Major Collector"}],
+        # Local-first WI order (PR "WI layer swap"): point is on W Wisconsin Ave
+        # (Rural Minor Collector, ~26 ft), much closer than STH 86 (Major Collector,
+        # ~199 ft) which the stub-triggered trunk fallback still surfaces -> yellow.
+        ["WI", 45.4711, -89.7345, {"verdict": "Review - Nearby FHWA road",
+                                   "urbanRural": "Rural", "classIncludes": "Major Collector"}],
         ["WI", 45.169879, -89.102452, {"verdict": "Non-federal aid - Rural Minor Collector",
                                        "urbanRural": "Rural"}],                       # §7a fix #2 regression
         ["WI", 44.764850, -91.406533, {"verdict": "Federal aid - Urban Interstate",

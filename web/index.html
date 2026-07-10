@@ -83,6 +83,16 @@
   a { color: #205d8c; }
   details.netlog { margin-top: 16px; font-size: 12.5px; color: var(--muted); }
   details.netlog pre { max-height: 180px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0 0; }
+  details.svcpanel { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+  details.svcpanel summary { cursor: pointer; color: #205d8c; }
+  details.svcpanel table { border-collapse: collapse; width: 100%; margin: 8px 0 0; }
+  details.svcpanel th, details.svcpanel td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  details.svcpanel .k { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; white-space: nowrap; }
+  details.svcpanel input { width: 100%; box-sizing: border-box; font-size: 11.5px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; background: #fffdf0; }
+  details.svcpanel input.overridden { background: #fff3cd; border-color: #d9b34d; }
+  details.svcpanel .note { margin: 6px 0; }
+  details.svcpanel .act { margin-top: 8px; }
+  details.svcpanel button { font-size: 12px; padding: 4px 10px; }
   footer { padding: 14px 22px 26px; font-size: 12.5px; color: var(--muted); max-width: 1500px; margin: 0 auto; }
   .legend { display: flex; gap: 14px; font-size: 12.5px; margin-top: 6px; flex-wrap: wrap; }
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
@@ -209,6 +219,18 @@ Site 12, 44.2700, -83.5200"></textarea>
     <div id="resultsBody" class="rowlist"></div>
   </div>
 
+  <details class="svcpanel" id="services">
+    <summary>Data service URLs — swap a layer if a state moves it (advanced)</summary>
+    <div class="note">Each row is a live data service this page reads. Leave a box blank to use the built-in
+      default (shown as the placeholder). If a state moves or locks a layer — the way WisDOT just moved its
+      Wisconsin local-roads layer — paste the full replacement layer URL (e.g.
+      <span class="k">https://…/FeatureServer/1</span>) and it takes effect on your next classification.
+      Overrides are stored only in this browser (nothing is uploaded) and use the same key names as the
+      Excel tool's Sources sheet and the AGOL notebook. <a href="sources.html#services" target="_blank" rel="noopener">More on sources</a>.</div>
+    <table id="svcTable"><tbody></tbody></table>
+    <div class="act"><button id="svcReset" type="button">Reset all to defaults</button></div>
+  </details>
+
   <details class="netlog">
     <summary>Network log — every request this page makes (transparency)</summary>
     <pre id="netLog">(no requests yet)</pre>
@@ -235,16 +257,32 @@ Site 12, 44.2700, -83.5200"></textarea>
      Expects a global async httpGetJson(url) -> parsed JSON.
      ============================================================ -->
 <script id="rr-core">
+// Built-in default endpoints. Key names match the Excel Sources-sheet Svc_
+// override table and the notebook's SERVICE_OVERRIDES dict, so a URL swap is
+// the same mental model in every product.
 const REST = {
-  MDOT_NFC:      "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-  MDOT_ROUTE:    "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+  MI_NFC:        "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+  MI_ROUTE:      "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
   ACUB:          "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
   IN_NFC:        "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
   IN_ROADNAME:   "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
   WI_STATE_TRUNK:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
-  WI_LOCAL_ROADS:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1",
+  // WisDOT moved/locked the old WI_Local_Roads_Flood_Damage_Assessment_Snapshot
+  // (now token-gated); this is the live public local layer. If it moves again,
+  // paste a replacement under Sources → Service URLs (no code change needed).
+  WI_LOCAL_ROADS:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
   TIGER_ROADS:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
 };
+
+// Runtime service-URL override ("lego swapout"): the page — or a test — may set
+//   globalThis.RR_SERVICE_OVERRIDES = { WI_LOCAL_ROADS: "https://…/FeatureServer/1", … }
+// to re-point any layer a publisher has moved or locked, with no code change.
+// Keys match REST above (and the Excel/notebook override tables). Guarded with
+// globalThis so rr-core still runs headless in Node where `window` is undefined.
+function svc(key) {
+  const o = globalThis.RR_SERVICE_OVERRIDES;
+  return (o && o[key]) || REST[key];
+}
 
 // Search radius when the exact point-on-road intersect misses (adjustable in
 // the UI; the Excel tool's "Search buffer" cell, same 250 ft default).
@@ -405,13 +443,13 @@ async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fall
 // have no name field, see §4.2/§4.2a). `roads` is the separate named-road
 // list ([{name, distFt}]) merged into the Road Name display.
 async function queryMichiganNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(REST.MDOT_NFC, lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, true);
+  const nfc = await queryWithFallback(svc("MI_NFC"), lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.FunctionalSystem) !== "" && Number.isFinite(Number(e.attrs.FunctionalSystem)))
     .map(e => ({ code: Math.trunc(Number(e.attrs.FunctionalSystem)), name: "", distFt: e.distFt }));
   const roads = [];
   try {
-    const route = await queryWithFallback(REST.MDOT_ROUTE, lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt, true);
+    const route = await queryWithFallback(svc("MI_ROUTE"), lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt, true);
     for (const e of featureEntries(route, lat, lon)) {
       const nm = [e.attrs.RouteDesignation, e.attrs.RouteNumber].map(cleanStr).filter(Boolean).join(" ");
       if (nm) roads.push({ name: nm, distFt: e.distFt });
@@ -421,13 +459,13 @@ async function queryMichiganNfc(lat, lon, bufferFt) {
 }
 
 async function queryIndianaNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(REST.IN_NFC, lat, lon, "functional_class", "record_status=5", bufferFt, true);
+  const nfc = await queryWithFallback(svc("IN_NFC"), lat, lon, "functional_class", "record_status=5", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.functional_class) !== "" && Number.isFinite(Number(e.attrs.functional_class)))
     .map(e => ({ code: Math.trunc(Number(e.attrs.functional_class)), name: "", distFt: e.distFt }));
   const roads = [];
   try {
-    const nm = await queryWithFallback(REST.IN_ROADNAME, lat, lon, "st_full", "1=1", bufferFt, true);
+    const nm = await queryWithFallback(svc("IN_ROADNAME"), lat, lon, "st_full", "1=1", bufferFt, true);
     for (const e of featureEntries(nm, lat, lon)) {
       const s = cleanStr(e.attrs.st_full);
       if (s) roads.push({ name: s, distFt: e.distFt });
@@ -437,9 +475,26 @@ async function queryIndianaNfc(lat, lon, bufferFt) {
 }
 
 async function queryWisconsinNfc(lat, lon, bufferFt) {
-  const trunk = await queryWithFallback(REST.WI_STATE_TRUNK, lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, true);
-  if (featureCount(trunk) > 0) {
-    const segments = [], roads = [];
+  // Local Road Network FIRST — it carries local roads AND most collectors,
+  // the large majority of points. State highways also appear in this layer but
+  // with a null/0 class ("stubs"); we skip those and note sawStub. Fall through
+  // to the State Trunk Network only when the local layer has no usable class
+  // (empty) OR shows a stub (a state highway is present that only the trunk
+  // layer classifies). Closest-road logic downstream then picks the verdict.
+  const segments = [], roads = [];
+  let sawStub = false;
+  const loc = await queryWithFallback(svc("WI_LOCAL_ROADS"), lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, true);
+  for (const e of featureEntries(loc, lat, lon)) {
+    const a = e.attrs, cat = Number(a.FNCT_CLS_CTGY_TYCD);
+    if (cleanStr(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) { sawStub = true; continue; }
+    const code = wisconsinLocalCategoryToFhwa(Math.trunc(cat));
+    if (code < 1) { sawStub = true; continue; }   // code 0 / unrecognized = stub
+    const name = cleanStr(a.ST_LABL_NM);
+    segments.push({ code, name, distFt: e.distFt });
+    if (name) roads.push({ name, distFt: e.distFt });
+  }
+  if (segments.length === 0 || sawStub) {
+    const trunk = await queryWithFallback(svc("WI_STATE_TRUNK"), lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, true);
     for (const e of featureEntries(trunk, lat, lon)) {
       const a = e.attrs, code = Number(a.FED_FC_CD);
       if (cleanStr(a.FED_FC_CD) === "" || !Number.isFinite(code)) continue;
@@ -447,16 +502,6 @@ async function queryWisconsinNfc(lat, lon, bufferFt) {
       segments.push({ code: Math.trunc(code), name, distFt: e.distFt });
       if (name) roads.push({ name, distFt: e.distFt });
     }
-    return { segments, roads };
-  }
-  const loc = await queryWithFallback(REST.WI_LOCAL_ROADS, lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, true);
-  const segments = [], roads = [];
-  for (const e of featureEntries(loc, lat, lon)) {
-    const a = e.attrs, cat = Number(a.FNCT_CLS_CTGY_TYCD);
-    if (cleanStr(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) continue;
-    const name = cleanStr(a.ST_LABL_NM);
-    segments.push({ code: wisconsinLocalCategoryToFhwa(Math.trunc(cat)), name, distFt: e.distFt });
-    if (name) roads.push({ name, distFt: e.distFt });
   }
   return { segments, roads };
 }
@@ -544,9 +589,9 @@ function computeVerdict(segments, exactUrban, boundaryAmbiguous, bufferFt) {
 // edge" (port of modClassify.DetermineAcub). Three outcomes:
 // exactUrban (definitely Urban) / boundary (ambiguous edge) / rural.
 async function determineAcub(lat, lon, bufferFt) {
-  let j = await runQuery(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", 0, false);
+  let j = await runQuery(svc("ACUB"), lat, lon, "NAME,UACE,state_1", "1=1", 0, false);
   if (featureCount(j) > 0) return { exactUrban: true, boundary: false, name: firstString(j, "NAME") };
-  j = await runQuery(REST.ACUB, lat, lon, "NAME,UACE,state_1", "1=1", Math.max(bufferFt, ACUB_MIN_BUFFER_FEET), false);
+  j = await runQuery(svc("ACUB"), lat, lon, "NAME,UACE,state_1", "1=1", Math.max(bufferFt, ACUB_MIN_BUFFER_FEET), false);
   if (featureCount(j) > 0) return { exactUrban: false, boundary: true, name: firstString(j, "NAME") };
   return { exactUrban: false, boundary: false, name: "" };
 }
@@ -588,7 +633,7 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
   // the state layers name poorly. Non-fatal; feeds both the street list and
   // the merged Road Name list.
   try {
-    const tiger = await runQuery(REST.TIGER_ROADS, lat, lon, "NAME", "1=1", bufferFt, true);
+    const tiger = await runQuery(svc("TIGER_ROADS"), lat, lon, "NAME", "1=1", bufferFt, true);
     const seen = new Set();
     for (const e of featureEntries(tiger, lat, lon)) {
       const nm = cleanStr(e.attrs.NAME);
@@ -648,6 +693,87 @@ function parseCoordinates(text) {
   }
   return points;
 }
+</script>
+
+<!-- Service-URL overrides ("lego swapout"): shared identical block on
+     index.html and sources.html. Loads any pasted layer URLs from this
+     browser's localStorage into globalThis.RR_SERVICE_OVERRIDES (which
+     rr-core's svc() reads) and renders the editable table when #svcTable is
+     present. Nothing is uploaded; keys match the Excel Sources sheet + the
+     notebook SERVICE_OVERRIDES. Keep this block byte-identical in both files. -->
+<script>
+(function () {
+  const STORE_KEY = "rr_service_overrides";
+  // [key, label] in display order. Wired layers only (what the web tool queries).
+  const SVC_KEYS = [
+    ["WI_LOCAL_ROADS", "Wisconsin — local roads + most collectors (queried first)"],
+    ["WI_STATE_TRUNK", "Wisconsin — state highways & interstates (fallback)"],
+    ["MI_NFC",         "Michigan — functional class (layer 353)"],
+    ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
+    ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
+    ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
+    ["ACUB",           "All states — adjusted urban-area boundary (urban/rural)"],
+    ["TIGER_ROADS",    "All states — Census street names"],
+  ];
+  // Built-in defaults for the placeholder text. On index.html the live REST
+  // object is authoritative (svc() falls back to it); this map keeps the panel
+  // self-contained on sources.html where rr-core isn't loaded.
+  const SVC_DEFAULTS = {
+    WI_LOCAL_ROADS: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
+    WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
+    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
+    MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+    IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+    ACUB:           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
+    TIGER_ROADS:    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
+  };
+  function defaultFor(key) {
+    return (typeof REST !== "undefined" && REST[key]) || SVC_DEFAULTS[key] || "";
+  }
+  function load() {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}; } catch (e) { o = {}; }
+    // Drop blanks so svc() cleanly falls back to the default.
+    for (const k of Object.keys(o)) { if (!o[k] || !String(o[k]).trim()) delete o[k]; }
+    return o;
+  }
+  function save(o) {
+    const clean = {};
+    for (const k of Object.keys(o)) { if (o[k] && String(o[k]).trim()) clean[k] = String(o[k]).trim(); }
+    localStorage.setItem(STORE_KEY, JSON.stringify(clean));
+    globalThis.RR_SERVICE_OVERRIDES = clean;
+    return clean;
+  }
+  // Publish immediately so any classification uses overrides even before the
+  // panel is opened/rendered.
+  globalThis.RR_SERVICE_OVERRIDES = load();
+
+  function render() {
+    const tbody = document.querySelector("#svcTable tbody");
+    if (!tbody) return;
+    const store = globalThis.RR_SERVICE_OVERRIDES || {};
+    tbody.innerHTML = "<tr><th>Layer</th><th>Service URL (blank = built-in default)</th></tr>" +
+      SVC_KEYS.map(([k, label]) =>
+        `<tr><td><div>${label}</div><div class="k">${k}</div></td>` +
+        `<td><input data-key="${k}" value="${store[k] ? String(store[k]).replace(/"/g, "&quot;") : ""}" ` +
+        `placeholder="${defaultFor(k)}"></td></tr>`).join("");
+    tbody.querySelectorAll("input[data-key]").forEach(inp => {
+      inp.classList.toggle("overridden", !!inp.value.trim());
+      inp.addEventListener("change", () => {
+        const o = globalThis.RR_SERVICE_OVERRIDES || {};
+        const v = inp.value.trim();
+        if (v) o[inp.dataset.key] = v; else delete o[inp.dataset.key];
+        save(o);
+        inp.classList.toggle("overridden", !!v);
+      });
+    });
+    const reset = document.getElementById("svcReset");
+    if (reset) reset.addEventListener("click", () => { save({}); render(); });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
 </script>
 
 <script>
@@ -1145,10 +1271,10 @@ function officialAppLink(state) {
 async function fetchClassLayers(state, bbox, lat, lon) {
   if (state === "MI") {
     const [json, meta] = await Promise.all([
-      queryFrame(REST.MDOT_NFC, bbox, "FunctionalSystem,PR", "RHRetireDate IS NULL", false),
-      fetchLayerMeta(REST.MDOT_NFC),
+      queryFrame(svc("MI_NFC"), bbox, "FunctionalSystem,PR", "RHRetireDate IS NULL", false),
+      fetchLayerMeta(svc("MI_NFC")),
     ]);
-    return [{ url: REST.MDOT_NFC, layerName: meta.name || "MDOT Functional System (NFC)",
+    return [{ url: svc("MI_NFC"), layerName: meta.name || "MDOT Functional System (NFC)",
       legendHeader: "Road functional class (MDOT)", geometryType: "polyline",
       rendererField: "FunctionalSystem", drawingInfo: meta.drawingInfo,
       features: json.features || [], truncated: !!json.exceededTransferLimit,
@@ -1156,43 +1282,43 @@ async function fetchClassLayers(state, bbox, lat, lon) {
   }
   if (state === "IN") {
     const [json, meta] = await Promise.all([
-      queryFrame(REST.IN_NFC, bbox, "functional_class", "record_status=5", false),
-      fetchLayerMeta(REST.IN_NFC),
+      queryFrame(svc("IN_NFC"), bbox, "functional_class", "record_status=5", false),
+      fetchLayerMeta(svc("IN_NFC")),
     ]);
     // INDOT publishes a single-symbol renderer (every class the same color) —
     // substitute the standard FHWA palette so classes are distinguishable.
     const published = meta.drawingInfo && meta.drawingInfo.renderer && meta.drawingInfo.renderer.type === "uniqueValue";
-    return [{ url: REST.IN_NFC, layerName: meta.name || "Indiana LRSE Functional Class",
+    return [{ url: svc("IN_NFC"), layerName: meta.name || "Indiana LRSE Functional Class",
       legendHeader: "Road functional class (INDOT)", geometryType: "polyline",
       rendererField: "functional_class",
       drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo("functional_class"),
       synthSymbology: !published,
       features: json.features || [], truncated: !!json.exceededTransferLimit,
-      liveLink: { label: "Road class — INDOT functional-class layer, pinned", url: liveLayerLink(REST.IN_NFC, lat, lon), official: false } }];
+      liveLink: { label: "Road class — INDOT functional-class layer, pinned", url: liveLayerLink(svc("IN_NFC"), lat, lon), official: false } }];
   }
   if (state === "WI") {
     // Both WI layers, frame-wide: local roads drawn first (underneath), the
     // state trunk network on top — together they cover the whole network the
     // way the classifier's trunk-then-local fallback sees it.
     const [localJson, localMeta, trunkJson, trunkMeta] = await Promise.all([
-      queryFrame(REST.WI_LOCAL_ROADS, bbox, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", false),
-      fetchLayerMeta(REST.WI_LOCAL_ROADS),
-      queryFrame(REST.WI_STATE_TRUNK, bbox, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", false),
-      fetchLayerMeta(REST.WI_STATE_TRUNK),
+      queryFrame(svc("WI_LOCAL_ROADS"), bbox, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", false),
+      fetchLayerMeta(svc("WI_LOCAL_ROADS")),
+      queryFrame(svc("WI_STATE_TRUNK"), bbox, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", false),
+      fetchLayerMeta(svc("WI_STATE_TRUNK")),
     ]);
     return [
-      { url: REST.WI_LOCAL_ROADS, layerName: localMeta.name || "WisDOT Local Road Network",
+      { url: svc("WI_LOCAL_ROADS"), layerName: localMeta.name || "WisDOT Local Road Network",
         legendHeader: "Local road network (WisDOT)", geometryType: "polyline",
         rendererField: "FNCT_CLS_CTGY_TYCD", drawingInfo: localMeta.drawingInfo,
         features: localJson.features || [], truncated: !!localJson.exceededTransferLimit,
-        liveLink: { label: "Road class — WisDOT local-roads layer, pinned", url: liveLayerLink(REST.WI_LOCAL_ROADS, lat, lon), official: false } },
+        liveLink: { label: "Road class — WisDOT local-roads layer, pinned", url: liveLayerLink(svc("WI_LOCAL_ROADS"), lat, lon), official: false } },
       // Renderer keys off FC_CD (WisDOT's own code), NOT the FED_FC_CD field
       // classification uses - the two are different fields on the same layer.
-      { url: REST.WI_STATE_TRUNK, layerName: trunkMeta.name || "WisDOT State Trunk Network",
+      { url: svc("WI_STATE_TRUNK"), layerName: trunkMeta.name || "WisDOT State Trunk Network",
         legendHeader: "State trunk network (WisDOT)", geometryType: "polyline",
         rendererField: "FC_CD", drawingInfo: trunkMeta.drawingInfo,
         features: trunkJson.features || [], truncated: !!trunkJson.exceededTransferLimit,
-        liveLink: { label: "Road class — WisDOT state-trunk layer, pinned", url: liveLayerLink(REST.WI_STATE_TRUNK, lat, lon), official: false } },
+        liveLink: { label: "Road class — WisDOT state-trunk layer, pinned", url: liveLayerLink(svc("WI_STATE_TRUNK"), lat, lon), official: false } },
     ];
   }
   return [];
@@ -1200,10 +1326,10 @@ async function fetchClassLayers(state, bbox, lat, lon) {
 
 async function fetchAcubLayer(bbox) {
   const [json, meta] = await Promise.all([
-    queryFrame(REST.ACUB, bbox, "NAME,UACE,state_1", "1=1", true),
-    fetchLayerMeta(REST.ACUB),
+    queryFrame(svc("ACUB"), bbox, "NAME,UACE,state_1", "1=1", true),
+    fetchLayerMeta(svc("ACUB")),
   ]);
-  return { url: REST.ACUB, layerName: meta.name || "NTAD Adjusted Urban Areas",
+  return { url: svc("ACUB"), layerName: meta.name || "NTAD Adjusted Urban Areas",
     legendHeader: "Urban boundary (USDOT NTAD 2020)", geometryType: "polygon",
     drawingInfo: meta.drawingInfo, features: json.features || [] };
 }
@@ -1516,7 +1642,7 @@ async function buildPointReport(pt, radiusMeters) {
   if (acubLayer) {
     citationLines.push("Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — " + acubLayer.url);
     links.push({ label: "Urban boundary — NTAD 2020 Adjusted Urban Areas layer, pinned",
-      url: liveLayerLink(REST.ACUB, pt.lat, pt.lon), official: false });
+      url: liveLayerLink(svc("ACUB"), pt.lat, pt.lon), official: false });
   }
   if (basemap) citationLines.push("Basemap: © Esri World Street Map tiles, fetched for this frame at report time");
   citationLines.push("Retrieved " + nowStamp + " · frame ≈ " + ((2 * radiusMeters) / 1609.344).toFixed(2) +
@@ -1752,7 +1878,7 @@ async function showSiteLayers(p) {
   }
 
   const acubName = data.acub.features.length ? firstString({ features: data.acub.features }, "NAME") : "";
-  entries.push(`<div class="hdr">${esc(data.acub.legendHeader)} — <a href="${liveLayerLink(REST.ACUB, p.lat, p.lon)}" target="_blank" rel="noopener" title="Urban boundary — NTAD 2020 Adjusted Urban Areas, pinned">pinned view</a></div>`);
+  entries.push(`<div class="hdr">${esc(data.acub.legendHeader)} — <a href="${liveLayerLink(svc("ACUB"), p.lat, p.lon)}" target="_blank" rel="noopener" title="Urban boundary — NTAD 2020 Adjusted Urban Areas, pinned">pinned view</a></div>`);
   entries.push(data.acub.features.length
     ? `<div><span class="swp" style="background:${pcss};opacity:.55"></span>Adjusted Urban Area: ${esc(acubName)}</div>`
     : `<div><span class="swp" style="background:#fff"></span>No Adjusted Urban Area near this site (Rural)</div>`);
