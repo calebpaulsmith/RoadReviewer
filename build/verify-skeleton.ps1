@@ -215,6 +215,16 @@ try {
   if ($sourcesBlob -notmatch 'does NOT authoritatively') { throw "Sources sheet missing the not-authoritative disclaimer" }
   Write-Host "  boundary caveat + disclaimer present on Sources" -ForegroundColor Green
 
+  # Service-URL override table (PR "WI layer swap"): the section + the Svc_ named
+  # ranges the ServiceUrl() resolver reads must exist so a user can swap a layer.
+  if ($sourcesBlob -notmatch 'SERVICE URLs') { throw "Sources sheet missing the Service URLs override section" }
+  foreach ($svcName in @('Svc_WI_LOCAL_ROADS', 'Svc_WI_STATE_TRUNK', 'Svc_ACUB')) {
+    $found = $false
+    foreach ($nm in $wb.Names) { if ($nm.Name -eq $svcName -or $nm.Name -like ("*!" + $svcName)) { $found = $true; break } }
+    if (-not $found) { throw "Sources sheet missing named range $svcName for the service-override table" }
+  }
+  Write-Host "  service-URL override table + Svc_ named ranges present on Sources" -ForegroundColor Green
+
   # Clean up the test row so the saved file stays empty
   $sites.Range($sites.Cells($FirstDataRow, 4), $sites.Cells($FirstDataRow, 6)).ClearContents()
   $wb.Save()

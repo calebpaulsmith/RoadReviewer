@@ -254,7 +254,7 @@ Build a Web Map once, following **`docs/agol-review-app.md` §2** (full click li
    - **MI (MDOT NFC):** `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
    - **IN (INDOT class):** `https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22`
    - **WI (state trunk):** `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3`
-   - **WI (local roads):** `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1`
+   - **WI (local roads):** `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1`
    - **ACUB (all states):** `https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0`
    - (MN/IL/OH reference layers are also listed in `agol-review-app.md` §1 if you cover them.)
 3. Style the **ACUB** polygon at ~10% fill with a distinct outline, placed **below** the road

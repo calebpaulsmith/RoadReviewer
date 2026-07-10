@@ -197,15 +197,24 @@ Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv
 Public Const REST_IN_NFC As String = "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22"
 Public Const REST_IN_ROADNAME As String = "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15"
 
-' Wisconsin NFC (§4.2b) - two layers, queried in sequence. The State Trunk
-' Network (interstates/state highways) carries a bare FHWA 1-7 code
-' (FED_FC_CD, string) plus its own separate URB_TYPE field (unused - ACUB
-' stays the single urban/rural source of truth per §4.2). When no state-trunk
-' segment intersects, fall back to the Local Road Network snapshot, whose
-' FNCT_CLS_CTGY_TYCD field encodes urban/rural INTO the class code and needs
-' WisconsinLocalCategoryToFhwa() below to normalize back to bare FHWA 1-7.
+' Wisconsin NFC (§4.2b) - two layers. The LOCAL Road Network layer
+' (county/city/town roads AND most collectors) is queried FIRST because it
+' covers the large majority of points; the State Trunk Network
+' (interstates/state highways) is queried only when the local layer has no
+' classification for the point (§4.2b query strategy, PR "WI layer swap").
+'   - State Trunk: bare FHWA 1-7 code in FED_FC_CD (string), plus its own
+'     URB_TYPE field (unused - ACUB is the single urban/rural source per §4.2).
+'   - Local: FNCT_CLS_CTGY_TYCD encodes urban/rural INTO the class code and
+'     needs WisconsinLocalCategoryToFhwa() below to normalize to bare FHWA 1-7.
+'     State highways also appear in this layer but with a NULL/0 class (an
+'     unclassified "stub"); those are skipped and trigger the trunk fallback.
+' Link note (PR "WI layer swap"): WisDOT locked/renamed the old local-roads
+' snapshot (WI_Local_Roads_Flood_Damage_Assessment_Snapshot - now token-gated);
+' the live public local layer is Functional_Class_Local_Non_Prod/1. If WisDOT
+' moves it again, paste the new URL into the Sources sheet's Service URLs table
+' (named range Svc_WI_LOCAL_ROADS) - no rebuild needed (ServiceUrl below).
 Public Const REST_WI_STATE_TRUNK As String = "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3"
-Public Const REST_WI_LOCAL_ROADS As String = "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/WI_Local_Roads_Flood_Damage_Assessment_Snapshot/FeatureServer/1"
+Public Const REST_WI_LOCAL_ROADS As String = "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1"
 Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 ' U.S. Census Bureau TIGERweb — Local Roads (full detail layer 8 of the
 ' Transportation MapServer). Returns the NAME field for any street whose
@@ -213,6 +222,22 @@ Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/g
 ' auth. We hit this in addition to MDOT 543 because MDOT only carries
 ' designated trunkline routes — TIGER fills in the local street names.
 Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8"
+
+' Reference-only NFC class services for the not-yet-wired states (MN/IL/OH).
+' The tool does NOT query these yet (it runs only the ACUB check on those
+' states), but they are public here so (a) the Sources sheet can cite them and
+' (b) a future release - or a user pasting one into the Svc_ override table -
+' can wire them with the same shape as Indiana (bare FHWA 1-7 class field).
+Public Const REST_MN_NFC As String = "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11"
+Public Const REST_IL_NFC As String = "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0"
+Public Const REST_OH_NFC As String = "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0"
+
+' Service-URL overrides ("lego swapout", PR "WI layer swap"): every REST
+' endpoint the classifier queries can be re-pointed at runtime via the Sources
+' sheet's "Service URLs" table. The resolver functions ServiceUrl/ServiceDefault
+' live at the BOTTOM of this module (VBA requires all module-level Const/Dim
+' declarations to precede every procedure, §9.3 - so the functions can't sit
+' here between the Const blocks).
 
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -285,5 +310,44 @@ Public Function WisconsinLocalCategoryToFhwa(ByVal categoryCode As Long) As Long
         Case 40: WisconsinLocalCategoryToFhwa = 6         ' Rural Minor Collector
         Case 45, 97: WisconsinLocalCategoryToFhwa = 7     ' Local
         Case Else: WisconsinLocalCategoryToFhwa = 0       ' unrecognized - flagged for manual review
+    End Select
+End Function
+
+' ---- Service-URL overrides ("lego swapout", PR "WI layer swap") ----
+' Every REST endpoint the classifier queries can be re-pointed at runtime by
+' pasting a replacement service URL into the matching cell on the Sources sheet
+' (named range "Svc_<KEY>", built by modSources). This lets a user recover
+' instantly when a publisher moves or locks a layer - as WisDOT just did to its
+' local-roads snapshot - with no code change and no rebuild. The SAME key names
+' are used by the web tool (RR_SERVICE_OVERRIDES) and the AGOL notebook
+' (SERVICE_OVERRIDES) so one mental model spans every product. ServiceUrl(key)
+' returns the pasted override when present, else the ServiceDefault(key).
+Public Function ServiceUrl(ByVal key As String) As String
+    Dim pasted As String
+    pasted = SetupValue("Svc_" & key)
+    If Len(pasted) > 0 Then
+        ServiceUrl = pasted
+    Else
+        ServiceUrl = ServiceDefault(key)
+    End If
+End Function
+
+' The built-in default endpoint for each override key. Keep this list in sync
+' with modSources.SvcOverrideRow (the Sources-sheet table) and with the web /
+' notebook default tables.
+Public Function ServiceDefault(ByVal key As String) As String
+    Select Case key
+        Case "MI_NFC":         ServiceDefault = REST_MDOT_NFC
+        Case "MI_ROUTE":       ServiceDefault = REST_MDOT_ROUTE
+        Case "IN_NFC":         ServiceDefault = REST_IN_NFC
+        Case "IN_ROADNAME":    ServiceDefault = REST_IN_ROADNAME
+        Case "WI_STATE_TRUNK": ServiceDefault = REST_WI_STATE_TRUNK
+        Case "WI_LOCAL_ROADS": ServiceDefault = REST_WI_LOCAL_ROADS
+        Case "ACUB":           ServiceDefault = REST_ACUB
+        Case "TIGER_ROADS":    ServiceDefault = REST_TIGER_ROADS
+        Case "MN_NFC":         ServiceDefault = REST_MN_NFC
+        Case "IL_NFC":         ServiceDefault = REST_IL_NFC
+        Case "OH_NFC":         ServiceDefault = REST_OH_NFC
+        Case Else:             ServiceDefault = ""
     End Select
 End Function
