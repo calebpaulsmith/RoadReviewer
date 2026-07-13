@@ -85,14 +85,24 @@ try {
     Write-Host ("  $btnCount buttons, every OnAction resolves") -ForegroundColor Green
   }
 
-  # Product button surface. Exports (CSV/KML/GeoJSON/FIRMettes/Map PDF/AGOL)
-  # are no longer individual buttons - they're dispatched from the Start Here
-  # "Export" dropdown via RunSelectedExport, so only the buttons that survived
-  # are asserted here. The dropdown's menu is verified separately below.
-  $sharedActions = @('CheckRoads','ReRunFailedRows','OpenImageryForSelection','RunSelectedExport','BuildWorkbook')
-  # Inspector-only BUTTONS (the map-page builders that emit no file). FIRMette
-  # download + combined-map-PDF moved into the export dropdown for both products.
-  $inspectorActions = @('PrepareMapPages','AddMapPage','InsertMapImages')
+  # Product button surface. The general hand-off exports are dispatched from
+  # the Start Here "Export" dropdown (RunSelectedExport), so only the surviving
+  # buttons are asserted here; the dropdown menu is checked separately below.
+  #
+  # On the INSPECTOR product the classify + photo actions were collapsed into a
+  # second dropdown (RunSelectedRoadsAction), and KML / FIRMettes / combined map
+  # PDF were promoted to dedicated map-workflow buttons. On the STANDARD product
+  # Check Roads / Re-run / Photo Links remain standalone buttons.
+  $sharedActions = @('RunSelectedExport','BuildWorkbook')
+  if ($isInspector) {
+    $sharedActions += 'RunSelectedRoadsAction'
+  } else {
+    $sharedActions += @('CheckRoads','ReRunFailedRows','OpenImageryForSelection')
+  }
+  # Inspector-only BUTTONS: the map-page builders plus the promoted KML /
+  # FIRMette / combined-map-PDF workflow buttons. On the standard product these
+  # are either dropdown items (KML/FIRMette/PDF) or absent (map builders).
+  $inspectorActions = @('PrepareMapPages','AddMapPage','InsertMapImages','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
   foreach ($a in $sharedActions) {
     if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
   }
@@ -155,7 +165,14 @@ try {
   $hasPicker = $false
   foreach ($sh in $startSheet.Shapes) { if ($sh.Name -eq 'RR_ExportPicker') { $hasPicker = $true } }
   if (-not $hasPicker) { throw "Start Here is missing the RR_ExportPicker export dropdown" }
-  Write-Host "  no leftover Sites toolbar; export dropdown present on Start Here" -ForegroundColor Green
+  # Inspector also collapses Check Roads / Re-run / Photo Links into a second
+  # dropdown (RR_RoadsPicker driving RunSelectedRoadsAction).
+  if ($isInspector) {
+    $hasRoads = $false
+    foreach ($sh in $startSheet.Shapes) { if ($sh.Name -eq 'RR_RoadsPicker') { $hasRoads = $true } }
+    if (-not $hasRoads) { throw "Inspector Start Here is missing the RR_RoadsPicker dropdown" }
+  }
+  Write-Host "  no leftover Sites toolbar; action dropdown(s) present on Start Here" -ForegroundColor Green
 
   Write-Host "=== Sites hyperlink resolution (test coord) ===" -ForegroundColor Cyan
   # Use the Kalamazoo test coord. We have to open in r/w to write cells; reopen.
@@ -199,10 +216,16 @@ try {
   $start = $wb.Worksheets('Start Here')
   $startBlob = ''
   foreach ($cell in $start.UsedRange.Cells) { $startBlob += ([string]$cell.Value2) + "`n" }
-  if ($startBlob -notmatch 'NOT AN AUTHORITATIVE') { throw "Start Here is missing the disclaimer block" }
-  if ($startBlob -notmatch 'eligibility determination') { throw "Start Here disclaimer missing the eligibility clause" }
+  # Standard keeps the on-sheet disclaimer box. Inspector moved it to a dialog
+  # shown on Check Roads, so its Start Here should NOT carry the box text.
+  if ($isInspector) {
+    if ($startBlob -match 'NOT AN AUTHORITATIVE') { throw "Inspector Start Here should NOT carry the disclaimer box (it moved to the Check Roads dialog)" }
+  } else {
+    if ($startBlob -notmatch 'NOT AN AUTHORITATIVE') { throw "Start Here is missing the disclaimer block" }
+    if ($startBlob -notmatch 'eligibility determination') { throw "Start Here disclaimer missing the eligibility clause" }
+  }
   if ($startBlob -notmatch 'PR #') { throw "Start Here missing the PR/version label" }
-  Write-Host "  disclaimer block + version label present" -ForegroundColor Green
+  Write-Host "  disclaimer surface + version label correct for product" -ForegroundColor Green
 
   Write-Host "=== Sources sheet content ===" -ForegroundColor Cyan
   $sources = $wb.Worksheets('Sources')
