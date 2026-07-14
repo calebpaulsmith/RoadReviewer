@@ -395,11 +395,10 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         "first - one per page, top to bottom. To place one specific image on a " & _
         "page, use that page's " & Chr$(147) & "Select photo" & Chr$(148) & " button instead."
 
-    ' Step 2 - Export Combined Map PDF.
+    ' Step 2 - Export Combined Map PDF. No note: the caption says it (the long
+    ' explanation was dropped per user request, same as Start Here's step 5).
     AddMapControlStep wsMap, "Export", leftPt, 152, GREEN, _
-        "2.  Export Combined Map PDF", "ExportCombinedMapPdf", _
-        "Saves every map page into one PDF in the Output Folder, full-bleed " & _
-        "(no margins). Do this once every page has its image."
+        "2.  Export Combined Map PDF", "ExportCombinedMapPdf", ""
 End Sub
 
 ' One control-panel step: a green button over a grey note, both MAP_CTRL_PREFIX
@@ -422,6 +421,8 @@ Private Sub AddMapControlStep(ByVal wsMap As Worksheet, ByVal key As String, _
     End With
     btn.TextFrame2.VerticalAnchor = msoAnchorMiddle
     btn.OnAction = macroName
+
+    If Len(noteText) = 0 Then Exit Sub      ' button-only step (no explainer)
 
     Dim note As Shape
     Set note = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, topPt + 38, 260, 72)

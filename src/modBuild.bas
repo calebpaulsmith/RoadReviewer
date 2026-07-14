@@ -234,9 +234,7 @@ Public Function DisclaimerBodyText() As String
     DisclaimerBodyText = "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
         "candidates for a person to review, and may miss or mis-tag roads. EVERY coordinate must be verified by a human " & _
         "against the official source map - use each row's NFC Map link and the Sources tab. Results are informational " & _
-        "only and do NOT constitute a federal-aid, funding, or eligibility determination. A point on or near an " & _
-        "urban/rural boundary is deliberately treated as Urban (within the search buffer; see the Sources tab) so " & _
-        "boundary roads are not missed - always confirm these manually."
+        "only."
 End Function
 
 ' Prominent red-bordered disclaimer box spanning B:C over `rowCount` rows.
@@ -294,10 +292,11 @@ Private Sub BuildStartHere()
 End Sub
 
 Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
-    TitleBlock ws, "RoadReviewer", _
-        "Is it a federal-aid road? FHWA functional class + adjusted urban boundary checker."
+    TitleBlock ws, "RoadReviewer", "Federal-aid road checker and review tool"
 
-    DisclaimerBlock ws, 5, 6
+    ' 4 rows, not 6 - the disclaimer body was trimmed (ends at "informational
+    ' only"), so the box shrinks to fit rather than carrying dead space.
+    DisclaimerBlock ws, 5, 4
 
     ws.Range("B12").Value = "How to use:"
     ws.Range("B12").Font.Bold = True
@@ -307,21 +306,23 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
 
     LabelValue ws, 17, "State", NR_STATE, "MI"
     LabelValue ws, 18, "Output Folder", NR_OUTFOLDER, ""
-    LabelValue ws, 19, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 19, "User-Defined AGOL Layer", NR_AGOLMAP, ""
     LabelValue ws, 20, "Road/boundary search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
     AddStateValidation ws.Cells(17, 3)
     SetOutputFolderDefault ws.Cells(18, 3)
     AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
     AddBufferValidation ws.Cells(20, 3)
 
-    NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses. 250 ft is a good default."
+    NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses."
 
     ' Actions live here now, not on a Sites row-1 toolbar (row 1 is the header
-    ' row). Same macros, same order the old toolbar used.
+    ' row). Same macros, same order the old toolbar used. The "Photo Links
+    ' (selected rows)" button was dropped per user request; OpenImageryForSelection
+    ' is still a live macro (and still reachable from the inspector's roads
+    ' dropdown), so the button can be restored here without touching modImagery.
     SectionLabel ws, 25, "Actions"
     AddButton ws, 18, ws.Rows(26).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
     AddButton ws, 228, ws.Rows(26).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
-    AddButton ws, 408, ws.Rows(26).Top, 230, 30, "Photo Links (selected rows)", "OpenImageryForSelection"
 
     SectionLabel ws, 29, "Exports"
     CreateExportPicker ws, 18, ws.Rows(30).Top + 3, 300
@@ -354,7 +355,7 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     LabelValue ws, 9, "Applicant", NR_APPLICANT, ""
     LabelValue ws, 10, "State", NR_STATE, "MI"
     LabelValue ws, 11, "Output Folder (optional)", NR_OUTFOLDER, ""
-    LabelValue ws, 12, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 12, "User-Defined AGOL Layer", NR_AGOLMAP, ""
     LabelValue ws, 13, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
     AddStateValidation ws.Cells(10, 3)
     AddButton ws, ws.Cells(11, 4).Left + 6, ws.Cells(11, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
@@ -378,7 +379,11 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
         "Output Folder - or use each page's 'Select photo' button."
     StepLine ws, 32, "4.  On the MapPages tab (right of the pages) use 'Map page tools': click 'Insert Map Images' to drop your " & _
         "screenshots on, oldest first - or a page's 'Select photo' button to place one by hand."
-    StepLine ws, 34, "5.  Then, right there on the MapPages tab, click 'Export Combined Map PDF' - one PDF, every site page, full-bleed."
+    ' Step 5's long explanation was dropped per user request - the button says
+    ' what it does. The same button also lives on the MapPages "Map page tools"
+    ' panel, so the inspector can export from either sheet.
+    StepLine ws, 34, "5.  Export the combined map PDF."
+    AddButton ws, 18, ws.Rows(35).Top, 230, 30, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
 
     ' ---- Hero workflow 2: FIRMettes ----
     SectionLabel ws, 41, "FIRMettes  (batch flood-map PDFs)"
@@ -527,7 +532,7 @@ Private Sub WriteSitesHeader(ByVal ws As Worksheet)
     h(COL_FEMAVIEW) = "FEMA Viewer"
     h(COL_FIRMPORTAL) = "FIRMette Portal"
     h(COL_NFCAGOL) = "NFC Layer (Map Viewer)"
-    h(COL_AGOLMAP) = "Your AGOL Map"
+    h(COL_AGOLMAP) = "User-Defined AGOL Layer"
     h(COL_NFCMAP) = "State NFC App"
     h(COL_CLASS) = "FHWA Class"
     h(COL_URBANRURAL) = "Urban/Rural"
@@ -807,9 +812,22 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     ' surface in the Federal Aid Status column, so nothing is lost by hiding it.
     ws.Columns(COL_GEOCODE).Hidden = True      ' L
 
-    ' Auto-reviewer output columns start hidden. CheckRoads / ReRunFailedRows
-    ' reveal them once there is something to show. A Build / Reset on a sheet
-    ' that already holds results keeps them visible rather than hiding data.
+    ' Inspector only: Bing and Google Earth stay hidden for good (the inspector
+    ' works from Google Maps / Street View / FEMA). The standard product keeps
+    ' its full photo-link strip.
+    If ProductIsInspector() Then
+        ws.Columns(COL_BING).Hidden = True
+        ws.Columns(COL_GEARTH).Hidden = True
+    Else
+        ws.Columns(COL_BING).Hidden = False
+        ws.Columns(COL_GEARTH).Hidden = False
+    End If
+
+    ' Auto-reviewer output columns start hidden (and, on the inspector, so do
+    ' the two NFC map-link columns - they only mean something once a row has a
+    ' class). CheckRoads / ReRunFailedRows reveal them once there is something
+    ' to show. A Build / Reset on a sheet that already holds results keeps them
+    ' visible rather than hiding data.
     If SitesHasClassifiedRows(ws) Then
         ShowReviewerColumns
     Else
@@ -840,6 +858,13 @@ Private Sub SetReviewerColumnsHidden(ByVal hide As Boolean)
     For c = COL_REVIEWER_FIRST To COL_REVIEWER_LAST
         ws.Columns(c).Hidden = hide
     Next c
+    ' Inspector only: the two NFC map links ride along with the FHWA results -
+    ' they're the "go look at the source map" follow-up to a class, so they show
+    ' up exactly when the class does. The standard product shows them always.
+    If ProductIsInspector() Then
+        ws.Columns(COL_NFCAGOL).Hidden = hide
+        ws.Columns(COL_NFCMAP).Hidden = hide
+    End If
     On Error GoTo 0
 End Sub
 

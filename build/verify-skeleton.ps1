@@ -19,7 +19,7 @@ $expectedSheets = @('Start Here', 'Sites', 'Sources')
 # toolbar was retired; all actions live on Start Here.
 $HeaderRow = 1
 $FirstDataRow = 2
-$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Layer (Map Viewer)','Your AGOL Map','State NFC App','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status')
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Layer (Map Viewer)','User-Defined AGOL Layer','State NFC App','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -99,20 +99,22 @@ try {
   # On the INSPECTOR product the classify + photo actions were collapsed into a
   # second dropdown (RunSelectedRoadsAction), and KML / FIRMettes / combined map
   # PDF were promoted to dedicated map-workflow buttons. On the STANDARD product
-  # Check Roads / Re-run / Photo Links remain standalone buttons.
+  # Check Roads / Re-run remain standalone buttons. The standard "Photo Links"
+  # button was removed (the OpenImageryForSelection macro is still live - it is
+  # reachable from the inspector's roads dropdown - it just has no button here).
   $sharedActions = @('RunSelectedExport','BuildWorkbook')
   if ($isInspector) {
     $sharedActions += 'RunSelectedRoadsAction'
   } else {
-    $sharedActions += @('CheckRoads','ReRunFailedRows','OpenImageryForSelection')
+    $sharedActions += @('CheckRoads','ReRunFailedRows')
   }
   # Inspector-only BUTTONS: the map-page builders plus the promoted KML /
   # FIRMette / combined-map-PDF workflow buttons. On the standard product these
   # are either dropdown items (KML/FIRMette/PDF) or absent (map builders).
-  # NOTE: InsertMapImages and ExportCombinedMapPdf are NOT here - they live on
-  # the MapPages sheet's "Map page tools" panel (built at runtime by
-  # PrepareMapPages), so they're absent from a fresh skeleton build.
-  $inspectorActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes')
+  # ExportCombinedMapPdf now has a Start Here button on the inspector (under map
+  # step 5) as well as its MapPages "Map page tools" button. InsertMapImages
+  # remains MapPages-only, so it's absent from a fresh skeleton build.
+  $inspectorActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
   foreach ($a in $sharedActions) {
     if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
   }
@@ -164,6 +166,17 @@ try {
     if (-not [bool]$sites.Columns($c).Hidden) { throw "Reviewer column $c should be hidden on a fresh build (classifier hasn't run)" }
   }
   Write-Host "  reviewer columns 16..22 hidden until first Check Roads" -ForegroundColor Green
+
+  Write-Host "=== Inspector photo/NFC column hiding ===" -ForegroundColor Cyan
+  # Inspector hides Bing(25) + Google Earth(26) outright, and rides NFC Layer(13)
+  # + State NFC App(15) along with the reviewer block (hidden until Check Roads).
+  # Standard shows all four.
+  foreach ($c in @(13, 15, 25, 26)) {
+    $hidden = [bool]$sites.Columns($c).Hidden
+    if ($isInspector -and -not $hidden) { throw "Inspector build should hide column $c on a fresh build" }
+    if (-not $isInspector -and $hidden) { throw "Standard build should show column $c" }
+  }
+  Write-Host ("  Bing/Earth + NFC link columns " + $(if ($isInspector) { 'hidden' } else { 'visible' }) + " as expected") -ForegroundColor Green
 
   Write-Host "=== Sites toolbar retired + export dropdown present ===" -ForegroundColor Cyan
   # The row-1 toolbar was removed; assert no leftover RR_* buttons on Sites.
@@ -232,7 +245,15 @@ try {
     if ($startBlob -match 'NOT AN AUTHORITATIVE') { throw "Inspector Start Here should NOT carry the disclaimer box (it moved to the Check Roads dialog)" }
   } else {
     if ($startBlob -notmatch 'NOT AN AUTHORITATIVE') { throw "Start Here is missing the disclaimer block" }
-    if ($startBlob -notmatch 'eligibility determination') { throw "Start Here disclaimer missing the eligibility clause" }
+    # The body was trimmed to end at "informational only" (the eligibility /
+    # boundary sentences were dropped per user request); the Sources sheet still
+    # carries the long-form version.
+    if ($startBlob -notmatch 'informational\s+only') { throw "Start Here disclaimer missing the 'informational only' clause" }
+    # Match the dropped BODY sentence, not 'eligibility determination' on its own:
+    # the header line ("...FHWA OR ELIGIBILITY DETERMINATION") would match that
+    # under PowerShell's case-insensitive -match and give a false failure.
+    if ($startBlob -match 'do NOT constitute') { throw "Start Here disclaimer should end at 'informational only'" }
+    if ($startBlob -notmatch 'Federal-aid road checker and review tool') { throw "Start Here missing the new subtitle" }
   }
   if ($startBlob -notmatch 'PR #') { throw "Start Here missing the PR/version label" }
   Write-Host "  disclaimer surface + version label correct for product" -ForegroundColor Green
