@@ -242,11 +242,13 @@ Public Const REST_OH_NFC As String = "https://tims.dot.state.oh.us/ags/rest/serv
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-' ---- State selector (F8). MI/IN/WI NFC layers are wired in V1; MN/IL/OH are
-' placeholders and are labeled "(not wired)" in the dropdown so the user can
-' see at a glance which states classify roads vs. ACUB-only. modUtil.BareStateCode
-' strips the "(not wired)" suffix back to the bare 2-letter code for all logic. ----
-Public Const STATE_LIST As String = "WI,IN,MI,MN (not wired),IL (not wired),OH (not wired)"
+' ---- State selector (F8). The dropdown offers ONLY the wired states, per user
+' request - MN/IL/OH used to appear labeled "(not wired)" and just confused the
+' pick. The unwired-state path still exists in modClassify (a pasted or typed
+' MN/IL/OH runs the ACUB-only check and says so in Federal Aid Status), and
+' modUtil.BareStateCode still strips a "(not wired)" suffix, so an older
+' workbook whose cell holds "MN (not wired)" keeps working. ----
+Public Const STATE_LIST As String = "WI,IN,MI"
 
 ' ---- Status-prefix used by the "re-run failed rows" feature (F12). ----
 Public Const STATUS_FAILED_PREFIX As String = "Failed - "

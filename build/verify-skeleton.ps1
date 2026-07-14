@@ -255,8 +255,10 @@ try {
     if ($startBlob -match 'do NOT constitute') { throw "Start Here disclaimer should end at 'informational only'" }
     if ($startBlob -notmatch 'Federal-aid road checker and review tool') { throw "Start Here missing the new subtitle" }
   }
-  if ($startBlob -notmatch 'PR #') { throw "Start Here missing the PR/version label" }
-  Write-Host "  disclaimer surface + version label correct for product" -ForegroundColor Green
+  # The PR/version stamp was removed from Start Here (it lives in the Sources
+  # footer now), so assert it is NOT here rather than that it is.
+  if ($startBlob -match 'PR #') { throw "Start Here should no longer carry the PR/version label" }
+  Write-Host "  disclaimer surface correct for product; no version stamp on Start Here" -ForegroundColor Green
 
   Write-Host "=== Sources sheet content ===" -ForegroundColor Cyan
   $sources = $wb.Worksheets('Sources')

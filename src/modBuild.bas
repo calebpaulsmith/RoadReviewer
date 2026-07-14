@@ -226,9 +226,13 @@ End Sub
 ' out over D/E/F. Excel does NOT auto-fit the height of a merged cell, so the
 ' height is set from an estimated line count (see CHARS_PER_LINE at the top of
 ' the module).
-Private Sub WrapLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+' `perLine` overrides the assumed characters-per-line: a footnote is set in 9pt,
+' so more of it fits on one line than the 11pt body copy CHARS_PER_LINE assumes.
+Private Sub WrapLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String, _
+        Optional ByVal perLine As Long = 0)
     Dim lines As Long
-    lines = (Len(txt) + CHARS_PER_LINE - 1) \ CHARS_PER_LINE
+    If perLine <= 0 Then perLine = CHARS_PER_LINE
+    lines = (Len(txt) + perLine - 1) \ perLine
     If lines < 1 Then lines = 1
     With ws.Range(ws.Cells(r, 2), ws.Cells(r, 3))
         .Merge
@@ -268,7 +272,10 @@ End Sub
 Private Sub FootnoteLine(ByVal ws As Worksheet, ByVal r As Long, ByVal marker As String, ByVal txt As String)
     Dim s As String
     s = marker & "  " & txt
-    WrapLine ws, r, s
+    ' 9pt font: ~100 chars fit on one B:C line, vs CHARS_PER_LINE's 78 at 11pt.
+    ' Without this every footnote was sized for two lines and sat in a double-
+    ' height row.
+    WrapLine ws, r, s, 100
     With ws.Cells(r, 2)
         .Value = s
         .Font.Size = 9
@@ -341,14 +348,9 @@ Private Sub DisclaimerBlock(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal
     Next r
 End Sub
 
-' Small grey build/version stamp so a shared copy is traceable to its PR.
-Private Sub VersionLabel(ByVal ws As Worksheet, ByVal r As Long)
-    With ws.Cells(r, 2)
-        .Value = ProductTitle() & "  -  " & BUILD_REFERENCE
-        .Font.Size = 9
-        .Font.Color = RGB(130, 130, 130)
-    End With
-End Sub
+' The build/version stamp was removed from Start Here per user request. The
+' Sources sheet's footer still carries ProductTitle + BUILD_REFERENCE, so a
+' shared copy is still traceable to the build it came from.
 
 ' ---- Start Here -----------------------------------------------------------
 
@@ -358,9 +360,11 @@ Private Sub BuildStartHere()
     ws.Cells.Interior.Color = RGB(245, 247, 249)
     ' The whole sheet lives in A/B/C - nothing is placed over D/E/F. B is the
     ' label/prose column, C the input column; prose merges across both.
+    ' A and D are matched narrow gutters framing the content.
     ws.Columns("A").ColumnWidth = 2
     ws.Columns("B").ColumnWidth = 32
     ws.Columns("C").ColumnWidth = 52
+    ws.Columns("D").ColumnWidth = 2
     HideGridlines ws
     If ProductIsInspector() Then
         BuildStartHereInspector ws
@@ -394,8 +398,7 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     LabelValue ws, 18, "State", NR_STATE, "MI"
     LabelValue ws, 19, "User-Defined AGOL Layer", NR_AGOLMAP, ""
     LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    FootnoteLine ws, 25, "*", "Search buffer is how far to look for a road / urban boundary when the exact point misses. " & _
-        "250 ft is a good default."
+    FootnoteLine ws, 25, "*", "How far to look for a road / urban boundary when the exact point misses."
 
     SectionLabel ws, 27, "Exports & Handoff"
     LabelValue ws, 29, "Output Folder", NR_OUTFOLDER, ""
@@ -404,7 +407,6 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     SectionLabel ws, 35, "Repair / Reset"
     NoteLine ws, 39, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
-    VersionLabel ws, 41
 
     ' ---- controls (rows are final above this line) ----
     AddStateValidation ws.Cells(18, 3)
@@ -456,11 +458,12 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     LabelValue ws, 9, "Impact (DI #)", NR_DI, "", "*"
     LabelValue ws, 10, "Disaster Number", NR_DISASTER, ""
     LabelValue ws, 11, "Applicant", NR_APPLICANT, ""
-    LabelValue ws, 12, "State", NR_STATE, "MI", "**"
-    LabelValue ws, 13, "Output Folder", NR_OUTFOLDER, "", "***"
+    ' The State dropdown now offers only the wired states (STATE_LIST), so the
+    ' old "MI / IN / WI are wired, others get ACUB only" footnote is gone.
+    LabelValue ws, 12, "State", NR_STATE, "MI"
+    LabelValue ws, 13, "Output Folder", NR_OUTFOLDER, "", "**"
     FootnoteLine ws, 15, "*", "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells."
-    FootnoteLine ws, 16, "**", "MI / IN / WI road-class lookups are wired; other states still get the ACUB check."
-    FootnoteLine ws, 17, "***", "Can stay blank - everything then saves next to this workbook."
+    FootnoteLine ws, 16, "**", "Can stay blank - everything then saves next to this workbook."
 
     ' ---- Location Maps ----
     ' KML + screenshots come BEFORE Prepare Map Pages (steps 2/3 swapped per
@@ -493,8 +496,9 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     LabelValue ws, 48, "User-Defined AGOL Layer", NR_AGOLMAP, ""
     LabelValue ws, 49, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
     NoteLine ws, 54, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
-    FootnoteLine ws, 55, "*", "The fallback radius when no road intersects the exact point (and the floor for the urban-boundary " & _
-        "check, min 250 ft). 250 ft is a good default; lower it for dense grids, raise it for sparse rural networks."
+    ' Trimmed to one line per user request (everything from "250 ft is a good
+    ' default" on was cut), so the row keeps a normal height.
+    FootnoteLine ws, 55, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
 
     ' ---- Exports & Handoff ----
     SectionLabel ws, 57, "Exports & Handoff"
@@ -503,7 +507,6 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     SectionLabel ws, 63, "Repair / Reset"
     NoteLine ws, 67, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
-    VersionLabel ws, 69
 
     ' ---- controls (every row height above is final before this point) ----
     AddStateValidation ws.Cells(12, 3)
