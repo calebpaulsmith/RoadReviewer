@@ -180,20 +180,32 @@ Private Sub SectionLabel(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As St
     ws.Cells(r, 2).Font.Size = 12
 End Sub
 
+' Shared disclaimer wording. Two surfaces use it: the standard product's
+' on-sheet red box (DisclaimerBlock below) and the inspector product's dialog,
+' which modClassify.CheckRoads pops once per session instead of carrying the
+' box on Start Here (per user request). Exposed as functions so both surfaces
+' stay byte-identical. The old "It is not an authoritative source for FHWA
+' functional classification." sentence was dropped per user request.
+Public Function DisclaimerHeaderText() As String
+    DisclaimerHeaderText = "IMPORTANT - NOT AN AUTHORITATIVE FHWA OR ELIGIBILITY DETERMINATION"
+End Function
+
+Public Function DisclaimerBodyText() As String
+    DisclaimerBodyText = "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
+        "candidates for a person to review, and may miss or mis-tag roads. EVERY coordinate must be verified by a human " & _
+        "against the official source map - use each row's NFC Map link and the Sources tab. Results are informational " & _
+        "only and do NOT constitute a federal-aid, funding, or eligibility determination. A point on or near an " & _
+        "urban/rural boundary is deliberately treated as Urban (within the search buffer; see the Sources tab) so " & _
+        "boundary roads are not missed - always confirm these manually."
+End Function
+
 ' Prominent red-bordered disclaimer box spanning B:C over `rowCount` rows.
-' Same wording on both products - this is the "not authoritative" contract
-' the user asked to have front and center. Kept in sync with modSources'
-' echo of it and with web/index.html's on-page disclaimer.
+' Standard product only now - the inspector shows the same text as a dialog on
+' Check Roads. Kept in sync with modSources' echo of it and web/index.html.
 Private Sub DisclaimerBlock(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal rowCount As Long)
     Dim rng As Range, r As Long, hdr As String, body As String
-    hdr = "IMPORTANT - NOT AN AUTHORITATIVE FHWA OR ELIGIBILITY DETERMINATION"
-    body = "This tool does NOT authoritatively identify FHWA federal-aid roads. It flags high-probability " & _
-        "candidates for a person to review, and may miss or mis-tag roads. It is not an authoritative source " & _
-        "for FHWA functional classification. EVERY coordinate must be verified by a human against the official " & _
-        "source map - use each row's NFC Map link and the Sources tab. Results are informational only and do " & _
-        "NOT constitute a federal-aid, funding, or eligibility determination. A point on or near an urban/rural " & _
-        "boundary is deliberately treated as Urban (within the search buffer; see the Sources tab) so boundary " & _
-        "roads are not missed - always confirm these manually."
+    hdr = DisclaimerHeaderText()
+    body = DisclaimerBodyText()
     Set rng = ws.Range(ws.Cells(firstRow, 2), ws.Cells(firstRow + rowCount - 1, 3))
     rng.Merge
     rng.Value = hdr & vbLf & body
@@ -283,54 +295,74 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
 End Sub
 
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
-    TitleBlock ws, "Site Inspector Review Tool", _
-        "FEMA Public Assistance site inspection toolkit - classification, photos, FIRMettes and map pages."
+    ' No subtitle row (row 3 dropped per user request) and no on-sheet
+    ' disclaimer box - the not-authoritative disclaimer is shown as a dialog
+    ' the first time Check Roads runs (modClassify.ShowDisclaimerOnce).
+    With ws.Range("B2")
+        .Value = "Site Inspector Review Tool"
+        .Font.Size = 20
+        .Font.Bold = True
+    End With
 
-    DisclaimerBlock ws, 5, 6
+    StepLine ws, 4, "Fill in the job info, add points on the Sites tab, then work top to bottom."
 
-    StepLine ws, 12, "Fill in the job info, add points on the Sites tab, then run the numbered steps top to bottom."
+    LabelValue ws, 6, "Work Order (WO #)", NR_WO, ""
+    LabelValue ws, 7, "Impact (DI #)", NR_DI, ""
+    LabelValue ws, 8, "Disaster Number", NR_DISASTER, ""
+    LabelValue ws, 9, "Applicant", NR_APPLICANT, ""
+    LabelValue ws, 10, "State", NR_STATE, "MI"
+    LabelValue ws, 11, "Output Folder (optional)", NR_OUTFOLDER, ""
+    LabelValue ws, 12, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 13, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
+    AddStateValidation ws.Cells(10, 3)
+    AddButton ws, ws.Cells(11, 4).Left + 6, ws.Cells(11, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
+    AddBufferValidation ws.Cells(13, 3)
 
-    LabelValue ws, 14, "Work Order (WO #)", NR_WO, ""
-    LabelValue ws, 15, "Impact (DI #)", NR_DI, ""
-    LabelValue ws, 16, "Disaster Number", NR_DISASTER, ""
-    LabelValue ws, 17, "Applicant", NR_APPLICANT, ""
-    LabelValue ws, 18, "State", NR_STATE, "MI"
-    LabelValue ws, 19, "Output Folder (optional)", NR_OUTFOLDER, ""
-    LabelValue ws, 20, "AGOL Webmap URL (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 21, "Search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
-    AddStateValidation ws.Cells(18, 3)
-    AddButton ws, ws.Cells(19, 4).Left + 6, ws.Cells(19, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
-    AddBufferValidation ws.Cells(21, 3)
-
-    NoteLine ws, 23, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
+    NoteLine ws, 15, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
         "Output Folder can stay blank - a OneDrive default is used and shown after each export."
-    NoteLine ws, 24, "Search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
-        "urban-boundary check, min 250 ft). 250 ft is a good default; lower it for dense urban grids, raise it for sparse rural networks."
-    NoteLine ws, 25, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab for every layer + caveat."
+    NoteLine ws, 16, "FHWA search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
+        "urban-boundary check, min 250 ft). 250 ft is a good default; lower it for dense grids, raise it for sparse rural networks."
+    NoteLine ws, 17, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab."
 
-    SectionLabel ws, 27, "1.  Classify Roads"
-    AddButton ws, 18, ws.Rows(28).Top, 200, 32, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, 228, ws.Rows(28).Top, 170, 32, "Re-run Failed Rows", "ReRunFailedRows"
+    ' Classify + photo actions collapse into one dropdown (same pattern as the
+    ' exports picker) so the map/FIRMette workflows below are the visible hero.
+    SectionLabel ws, 19, "Check roads & photos"
+    CreateRoadsPicker ws, 18, ws.Rows(20).Top + 3, 300
+    AddButton ws, 326, ws.Rows(20).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    NoteLine ws, 22, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
 
-    SectionLabel ws, 31, "2.  Review Photos"
-    AddButton ws, 18, ws.Rows(32).Top, 260, 30, "Open Photo Links for Selected Row(s)", "OpenImageryForSelection", CLR_BTN_GO
+    ' ---- Hero workflow 1: FIRMettes ----
+    SectionLabel ws, 24, "FIRMettes  (batch flood-map PDFs)"
+    AddButton ws, 18, ws.Rows(25).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(25).Top, 210, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
+    NoteLine ws, 27, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
 
-    SectionLabel ws, 35, "3.  Maps & FIRMettes"
-    ' FIRMettes and the combined map PDF are exports - they moved to the
-    ' Exports dropdown below. Prepare / Add Blank Map Page stay as buttons:
-    ' they build the sheet, they don't emit a file.
-    AddButton ws, 18, ws.Rows(36).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(36).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    AddButton ws, 418, ws.Rows(36).Top, 190, 30, "Insert Map Images", "InsertMapImages"
+    ' ---- Hero workflow 2: Map pages, step by step ----
+    SectionLabel ws, 29, "Map pages  (build the site location-map PDF)"
+    StepLine ws, 31, "1.  Input site info on the Sites tab - coordinates, site name, WO/DI and category."
+    StepLine ws, 33, "2.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
+    AddButton ws, 18, ws.Rows(34).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(34).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
+    StepLine ws, 37, "3.  Export the sites to KML, open it (Google Earth), and screenshot each site."
+    AddButton ws, 18, ws.Rows(38).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
+    NoteLine ws, 40, "Press Windows+Shift+S, drag a box around the site, and save each image as site_1.png, site_2.png ... " & _
+        "in a 'maps' subfolder of the Output Folder."
+    StepLine ws, 42, "4.  Insert the saved PNGs onto the pages automatically."
+    AddButton ws, 18, ws.Rows(43).Top, 190, 30, "Insert Map Images", "InsertMapImages", CLR_BTN_GO
+    StepLine ws, 46, "5.  Adjust each image to fill the print area if needed - click the image, drag a corner handle; " & _
+        "View > Page Break Preview shows the print edges."
+    StepLine ws, 48, "6.  Export the finished combined map PDF (one PDF, every site page)."
+    AddButton ws, 18, ws.Rows(49).Top, 210, 30, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
 
-    SectionLabel ws, 45, "Exports & hand-off"
-    CreateExportPicker ws, 18, ws.Rows(46).Top + 3, 300
-    AddButton ws, 326, ws.Rows(46).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
-    NoteLine ws, 48, "Pick an export, then click Go. Everything writes to the Output Folder above."
+    ' ---- General hand-off exports ----
+    SectionLabel ws, 53, "Exports & hand-off"
+    CreateExportPicker ws, 18, ws.Rows(54).Top + 3, 300
+    AddButton ws, 326, ws.Rows(54).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+    NoteLine ws, 56, "Pick an export, then click Go. Everything writes to the Output Folder above."
 
-    AddButton ws, 18, ws.Rows(51).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 53, "Build / Reset repairs the layout; your Sites data is preserved."
-    VersionLabel ws, 55
+    AddButton ws, 18, ws.Rows(59).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
+    NoteLine ws, 61, "Build / Reset repairs the layout; your Sites data is preserved."
+    VersionLabel ws, 63
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)
@@ -489,6 +521,7 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     latC = "$" & ColLetter(COL_LAT) & r1
     lonC = "$" & ColLetter(COL_LON) & r1
 
+    SetSiteNumberFormula ws, r1, r2
     SetLinkFormula ws, COL_GMAP, r1, r2, URL_GMAP, "Map", latC, lonC
     SetLinkFormula ws, COL_STREETVIEW, r1, r2, URL_STREETVIEW, "Street", latC, lonC
     SetLinkFormula ws, COL_BING, r1, r2, URL_BING, "Bing", latC, lonC
@@ -508,6 +541,19 @@ Private Sub FillSitesFormulas(ByVal ws As Worksheet)
     ' Viewer, centered on the point (MI = curated webmap to avoid the time
     ' slider; IN/WI = live side-load; others = plain FEMA pin).
     SetNfcAgolFormula ws, r1, r2, latC, lonC
+End Sub
+
+' Site # is auto-numbered by formula (no more "type a site number" step):
+' every row that has a Latitude gets a running 1, 2, 3 ... while blank rows
+' stay blank. Assigning one formula to the whole column lets Excel adjust the
+' relative refs per row (the COUNT window's start stays absolute at row r1).
+' Typing a value into a Site # cell still overrides the formula for that row.
+Private Sub SetSiteNumberFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long)
+    Dim latAbs As String, latRel As String, f As String
+    latAbs = "$" & ColLetter(COL_LAT) & "$" & r1     ' e.g. $E$2 (fixed window start)
+    latRel = "$" & ColLetter(COL_LAT) & r1           ' e.g. $E2  (row-relative)
+    f = "=IF(" & latRel & "="""","""",COUNT(" & latAbs & ":" & latRel & "))"
+    ws.Range(ws.Cells(r1, COL_SITENO), ws.Cells(r2, COL_SITENO)).Formula = f
 End Sub
 
 ' An Excel string literal "s" - used when a full URL (not a {LAT}/{LON}
@@ -644,6 +690,12 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ' Link columns stay white. Conditional-format rules below win over
     ' these static fills when they match, so the verdict colors still show.
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_WO), ws.Cells(r2, COL_WORKCOMP)).Interior.Color = CLR_INPUT
+    ' Site # is a formula now (auto-numbered), not a typed input: tint it grey
+    ' like the other computed columns and center it so it reads as generated.
+    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_SITENO), ws.Cells(r2, COL_SITENO))
+        .Interior.Color = CLR_RESULT
+        .HorizontalAlignment = xlCenter
+    End With
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_GEOCODE), ws.Cells(r2, COL_GEOCODE)).Interior.Color = CLR_RESULT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_REVIEWNOTE)).Interior.Color = CLR_RESULT
     ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_FIRMSTATUS), ws.Cells(r2, COL_MAPSTATUS)).Interior.Color = CLR_RESULT
@@ -700,14 +752,19 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     ws.Columns(COL_FIRMSTATUS).Hidden = hideCols
     ws.Columns(COL_MAPSTATUS).Hidden = hideCols
 
-    ' Optional user-data columns (Description..Work Completion = cols G-K) are
-    ' hidden by default on both products to keep the paste area tight around
-    ' Latitude/Longitude. Unhide to enter them; their values still flow into
-    ' the KML/CSV exports and (inspector) the map-page stamps when present.
-    Dim c As Long
-    For c = COL_DESC To COL_WORKCOMP
-        ws.Columns(c).Hidden = True
-    Next c
+    ' Optional user-data columns. Description (G), Address (H) and Costs (J)
+    ' stay hidden to keep the paste area tight around Latitude/Longitude;
+    ' Category (I) and Work Completion (K) are shown per user request. Hidden
+    ' values still flow into the KML/CSV exports and (inspector) the map-page
+    ' stamps when present.
+    ws.Columns(COL_DESC).Hidden = True        ' G
+    ws.Columns(COL_ADDRESS).Hidden = True     ' H
+    ws.Columns(COL_CATEGORY).Hidden = False   ' I - shown
+    ws.Columns(COL_COSTS).Hidden = True       ' J
+    ws.Columns(COL_WORKCOMP).Hidden = False   ' K - shown
+    ' Geocode Status (L) is hidden per user request - geocode failures also
+    ' surface in the Federal Aid Status column, so nothing is lost by hiding it.
+    ws.Columns(COL_GEOCODE).Hidden = True      ' L
 
     ' Auto-reviewer output columns start hidden. CheckRoads / ReRunFailedRows
     ' reveal them once there is something to show. A Build / Reset on a sheet

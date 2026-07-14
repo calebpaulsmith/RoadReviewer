@@ -160,6 +160,15 @@ Public Sub BuildSourcesSheet()
     Body ws, "Sources verified 2026-07-05 against each service's live metadata. This tool classifies the road, " & _
         "never the project.  " & ProductTitle() & " - " & BUILD_REFERENCE & "."
 
+    mRow = mRow + 1
+    Dim credit As Range
+    Set credit = ws.Cells(mRow, 2)
+    ws.Hyperlinks.Add Anchor:=credit, Address:="mailto:caleb.smith@fema.dhs.gov", _
+        TextToDisplay:="Created by Caleb Smith. Reach out to caleb.smith@fema.dhs.gov for any questions."
+    credit.Font.Size = 11
+    credit.Font.Bold = True
+    mRow = mRow + 1
+
     HideGridlines ws
     ws.Tab.Color = RGB(120, 120, 120)
 End Sub

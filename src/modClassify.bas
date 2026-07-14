@@ -25,11 +25,30 @@ Private Const ACUB_MIN_BUFFER_FEET As Long = 250
 ' after End Sub" rule, §9.3), so it lives up here, not next to its user.
 Private Const CLOSE_ROAD_FEET As Double = 30
 
+' Tracks whether the not-authoritative disclaimer dialog has been shown yet
+' this Excel session. Module-level state must precede every procedure (VBA
+' "Only comments may appear after End Sub" rule, §9.3).
+Private mDisclaimerShown As Boolean
+
 ' The one primary action (friction fix: the old separate Geocode ->
 ' Classify ordering trap is gone). Check Roads geocodes any row that has
 ' an Address but no coordinates, then classifies every row.
 Public Sub CheckRoads()
+    ShowDisclaimerOnce
     ClassifyRows False
+End Sub
+
+' The inspector product carries no on-sheet disclaimer box (it was removed to
+' keep Start Here focused); instead the same not-authoritative text is shown
+' as a dialog the first time Check Roads runs each session. The standard
+' product keeps its on-sheet box, so it doesn't need the dialog.
+Private Sub ShowDisclaimerOnce()
+    If gHeadless Then Exit Sub
+    If mDisclaimerShown Then Exit Sub
+    If Not ProductIsInspector() Then Exit Sub
+    mDisclaimerShown = True
+    MsgBox DisclaimerHeaderText() & vbCrLf & vbCrLf & DisclaimerBodyText(), _
+        vbInformation, "Before you rely on these results"
 End Sub
 
 ' Re-runs only rows whose Federal Aid Status starts with "Failed - ",

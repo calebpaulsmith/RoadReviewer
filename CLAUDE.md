@@ -1708,6 +1708,49 @@ per-state NFC layer in Map Viewer centered on the first site, then pops
 Explorer with the KML for a single drag-drop of all sites onto the layer.
 Same untestable-headless caveat.
 
+### Inspector Start Here polish + auto Site # + column tweaks (PR #32)
+
+Inspector-product UX pass, per user direction (standard product unchanged
+except the shared bits noted):
+
+1. **No subtitle, no on-sheet disclaimer box.** `BuildStartHereInspector`
+   drops the row-3 subtitle and the red `DisclaimerBlock`. The same
+   not-authoritative text now shows as a **dialog the first time Check Roads
+   runs each session** (`modClassify.ShowDisclaimerOnce`, gated on
+   `ProductIsInspector()` + `Not gHeadless` + a module `mDisclaimerShown`
+   once-flag). The standard product keeps its on-sheet box. Both surfaces
+   read from shared `modBuild.DisclaimerHeaderText()` / `DisclaimerBodyText()`;
+   the sentence "It is not an authoritative source for FHWA functional
+   classification." was removed from that text.
+2. **Two action dropdowns.** The classify + photo actions (Check Roads,
+   Re-run Failed Rows, Open Photo Links) collapsed into a **second combo**
+   `RR_RoadsPicker` → `RunSelectedRoadsAction`, mirroring the exports picker,
+   so the map/FIRMette workflows are the visible hero. `modExportMenu` now
+   has a generic `CreatePicker`/`RunPicker` core with two wrappers each.
+   `ExportItems()` is **product-aware**: inspector's export dropdown holds only
+   the general hand-off exports (CSV, GeoJSON, Send-to-AGOL, Open-on-NFC);
+   standard keeps the full list.
+3. **FIRMettes and Map Pages are two separate step-by-step hero workflows**
+   on inspector Start Here. FIRMettes = Download / Re-run Failed buttons.
+   Map Pages = numbered steps 1-6 (input info → Prepare Map Pages → Export
+   Sites to KML + screenshot each site with Win+Shift+S saved as
+   `site_1.png`… → Insert Map Images → adjust to print area → Export Combined
+   Map PDF). KML, FIRMette download/re-run, and combined-map-PDF were
+   **promoted from the exports dropdown to dedicated buttons** here.
+4. **Search-buffer label** is now "FHWA search buffer (feet)".
+5. **Sites columns:** Category (I) and Work Completion (K) now shown;
+   Geocode Status (L) hidden (failures still surface in Federal Aid Status).
+   Description (G), Address (H), Costs (J) stay hidden.
+6. **Site # is auto-numbered by formula** (`SetSiteNumberFormula`): every row
+   with a Latitude gets a running 1,2,3…; blank rows stay blank; typing a
+   value overrides that row. Tinted grey (computed) and centered.
+7. **Sources footer** (both products): a "Created by Caleb Smith / reach out
+   to caleb.smith@fema.dhs.gov" mailto line at the very bottom of the sheet.
+
+`verify-skeleton.ps1` updated to match (product-aware button surface, roads
+picker present on inspector, disclaimer box asserted on standard only).
+Needs the local Windows rebuild + verify pass (§9.2) before hand-off.
+
 ---
 
 ## 8. Design decisions (resolved) and remaining open questions
