@@ -22,16 +22,36 @@ Option Explicit
 ' this module places those PNGs into the MapPages layout. One renderer, one
 ' symbology, no drift between the web tool and the workbook.
 '
-' EXPECTED FILE NAMES (either form, checked in this order):
-'   Site_<SiteNo>.png     e.g. Site_12.png   (preferred - survives reordering)
-'   Page_<n>.png          e.g. Page_3.png    (1-based page index fallback)
+' HOW A FILE IS MATCHED TO A PAGE (resolution order, per page):
+'   1. Page_<n>       e.g. Page_3.png    - explicit, always unique, wins.
+'   2. Site_<SiteNo>  e.g. Site_12.png   - explicit, but ONLY when that Site #
+'                                           appears on a single page. If the same
+'                                           Site # is on several pages (same site,
+'                                           different WO/DI), Site_ is ambiguous
+'                                           and is skipped for those pages.
+'   3. File order     - any page still unmatched is filled from the remaining
+'                       images oldest->newest: natural filename sort (so
+'                       "Screenshot (2)" precedes "(10)"), modified-time as the
+'                       tiebreaker. A file already used by 1/2 is never reused.
 ' Also accepts .jpg / .jpeg for hand-captured screenshots.
+'
+' Per-page manual override: each map page carries a "Select photo" button
+' (modMaps.AddPickButton -> PickImageForPage) that places a chosen file on that
+' exact page, immune to the duplicate-Site# ambiguity because it's bound to the
+' page position, not the name.
 '
 ' Network: none. This module only touches the local filesystem.
 
 Private Const IMG_SUBFOLDER As String = "maps\"
 Private Const SHAPE_PREFIX As String = "MapImage_Page_"
-Private Const IMG_INSET_PTS As Double = 4       ' hairline gap inside the page area
+Private Const IMG_INSET_PTS As Double = 0       ' 0 = image covers the full page area, no gap
+
+' One image file discovered in the folder, for the oldest->newest auto-fill.
+Private Type ImgFile
+    Name As String
+    Path As String
+    Modt As Date
+End Type
 
 ' ---- entry points ---------------------------------------------------------
 
@@ -66,22 +86,67 @@ Public Sub InsertMapImages()
     ' Re-run safe: drop any pictures we previously inserted, keep textboxes.
     RemoveMapImages
 
+    Dim nPages As Long
+    nPages = PageCount(wsMap)
+    If nPages < 1 Then
+        If Not gHeadless Then MsgBox "No map pages found. Click 'Prepare Map Pages' first.", _
+            vbExclamation, "Insert Map Images"
+        Exit Sub
+    End If
+
+    ' Site # for each page, in page order, + which site numbers are duplicated.
     Dim siteRows As Collection
     Set siteRows = MapPageSiteRows(wsSites)
-
-    Dim pageIdx As Long, placed As Long, missing As Long
-    Dim imgPath As String, siteNo As String
-
-    Application.ScreenUpdating = False
-    For pageIdx = 0 To PageCount(wsMap) - 1
-        siteNo = ""
+    Dim pageSite() As String, pageIdx As Long
+    ReDim pageSite(0 To nPages - 1)
+    For pageIdx = 0 To nPages - 1
         If pageIdx < siteRows.Count Then
-            siteNo = Trim$(CStr(wsSites.Cells(CLng(siteRows(pageIdx + 1)), COL_SITENO).Value))
+            pageSite(pageIdx) = Trim$(CStr(wsSites.Cells(CLng(siteRows(pageIdx + 1)), COL_SITENO).Value))
         End If
+    Next pageIdx
 
-        imgPath = FindImageForPage(folder, siteNo, pageIdx + 1)
-        If Len(imgPath) > 0 Then
-            PlaceImageOnPage wsMap, pageIdx, imgPath
+    ' Ordered image list (oldest->newest: natural filename, modified-time tiebreak).
+    Dim imgs() As ImgFile, nImgs As Long
+    CollectImages folder, imgs, nImgs
+
+    Dim consumed() As Boolean, pageImg() As String
+    ReDim pageImg(0 To nPages - 1)
+    If nImgs > 0 Then ReDim consumed(0 To nImgs - 1)
+
+    ' Pass 1 - explicit Page_<n> (always) and Site_<n> (only if that site is unique).
+    For pageIdx = 0 To nPages - 1
+        Dim p As String
+        p = ExplicitOverride(folder, pageSite(pageIdx), pageIdx + 1, _
+                             SiteIsDuplicated(pageSite, pageIdx))
+        If Len(p) > 0 Then
+            pageImg(pageIdx) = p
+            MarkConsumed imgs, nImgs, consumed, p
+        End If
+    Next pageIdx
+
+    ' Pass 2 - fill the rest from remaining images in order.
+    Dim k As Long
+    k = 0
+    For pageIdx = 0 To nPages - 1
+        If Len(pageImg(pageIdx)) = 0 Then
+            Do While k < nImgs
+                If Not consumed(k) Then Exit Do
+                k = k + 1
+            Loop
+            If k < nImgs Then
+                pageImg(pageIdx) = imgs(k).Path
+                consumed(k) = True
+                k = k + 1
+            End If
+        End If
+    Next pageIdx
+
+    ' Place.
+    Dim placed As Long, missing As Long
+    Application.ScreenUpdating = False
+    For pageIdx = 0 To nPages - 1
+        If Len(pageImg(pageIdx)) > 0 Then
+            PlaceImageOnPage wsMap, pageIdx, pageImg(pageIdx)
             placed = placed + 1
             SetStatus "Placing map image " & placed & "..."
             DoEvents
@@ -95,7 +160,11 @@ Public Sub InsertMapImages()
     If Not gHeadless Then
         Dim msg As String
         msg = placed & " map image(s) placed."
-        If missing > 0 Then msg = msg & vbCrLf & missing & " page(s) had no matching file and kept their placeholder."
+        If missing > 0 Then msg = msg & vbCrLf & missing & " page(s) had no image and kept their placeholder."
+        If AnyDuplicateSite(pageSite) Then msg = msg & vbCrLf & vbCrLf & _
+            "Note: a Site # appears on more than one page, so 'Site_<n>' naming " & _
+            "was skipped for it. Use 'Page_<n>' names, file order, or a page's " & _
+            "'Select photo' button to place those."
         MsgBox msg, vbInformation, "Insert Map Images"
     End If
     Exit Sub
@@ -120,6 +189,48 @@ Public Sub RemoveMapImages()
     For i = wsMap.Shapes.Count To 1 Step -1
         Set shp = wsMap.Shapes(i)
         If Left$(shp.Name, Len(SHAPE_PREFIX)) = SHAPE_PREFIX Then shp.Delete
+    Next i
+End Sub
+
+' Wired to each page's "Select photo" button (modMaps.AddPickButton). Reads the
+' page index from the calling shape's name, prompts for one image file, and
+' places it on that exact page - replacing whatever image was there.
+Public Sub PickImageForPage()
+    On Error GoTo Fail
+    If gHeadless Then Exit Sub                       ' interactive-only
+
+    Dim callerName As String, pageIdx As Long
+    callerName = CStr(Application.Caller)
+    If Left$(callerName, Len(MAP_PICKBTN_PREFIX)) <> MAP_PICKBTN_PREFIX Then Exit Sub
+    pageIdx = CLng(Mid$(callerName, Len(MAP_PICKBTN_PREFIX) + 1)) - 1
+    If pageIdx < 0 Then Exit Sub
+
+    Dim fd As Object
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    fd.Title = "Choose the image for this page"
+    fd.AllowMultiSelect = False
+    fd.Filters.Clear
+    fd.Filters.Add "Images", "*.png; *.jpg; *.jpeg"
+    fd.InitialFileName = ResolveOutputFolder()
+    If fd.Show <> -1 Then Exit Sub                   ' cancelled
+
+    Dim wsMap As Worksheet
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    RemoveImageOnPage wsMap, pageIdx
+    PlaceImageOnPage wsMap, pageIdx, fd.SelectedItems(1)
+    Exit Sub
+Fail:
+    MsgBox "Could not place the image:" & vbCrLf & Err.Description, vbExclamation, "Select Photo"
+End Sub
+
+' Delete only the placed picture on one page (leaves the textbox + pick button).
+Private Sub RemoveImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
+    Dim target As String
+    target = SHAPE_PREFIX & CStr(pageIdx + 1)
+    Dim shp As Shape, i As Long
+    For i = wsMap.Shapes.Count To 1 Step -1
+        Set shp = wsMap.Shapes(i)
+        If shp.Name = target Then shp.Delete
     Next i
 End Sub
 
@@ -159,24 +270,157 @@ Private Function FolderHasImages(ByVal folder As String) As Boolean
     If Len(Dir$(folder & "*.jpeg")) > 0 Then FolderHasImages = True
 End Function
 
-' Site_<n>.png preferred, Page_<n>.png fallback; png -> jpg -> jpeg.
-Private Function FindImageForPage(ByVal folder As String, ByVal siteNo As String, _
-                                  ByVal pageNum As Long) As String
-    Dim stems As Variant, exts As Variant, s As Variant, e As Variant, p As String
-
-    If Len(siteNo) > 0 Then
-        stems = Array("Site_" & siteNo, "Page_" & pageNum)
-    Else
-        stems = Array("Page_" & pageNum)
+' Explicit name match for one page: Page_<n> always; Site_<siteNo> only when
+' that Site # is unique across the map pages. Returns "" if neither exists.
+Private Function ExplicitOverride(ByVal folder As String, ByVal siteNo As String, _
+                                  ByVal pageNum As Long, ByVal siteIsDup As Boolean) As String
+    Dim p As String
+    If Len(siteNo) > 0 And Not siteIsDup Then
+        p = FirstExisting(folder, "Site_" & siteNo)
+        If Len(p) > 0 Then ExplicitOverride = p: Exit Function
     End If
-    exts = Array(".png", ".jpg", ".jpeg")
+    ExplicitOverride = FirstExisting(folder, "Page_" & pageNum)
+End Function
 
-    For Each s In stems
-        For Each e In exts
-            p = folder & s & e
-            If Len(Dir$(p)) > 0 Then FindImageForPage = p: Exit Function
-        Next e
-    Next s
+' First of stem.png / stem.jpg / stem.jpeg that exists in the folder.
+Private Function FirstExisting(ByVal folder As String, ByVal stem As String) As String
+    Dim exts As Variant, e As Variant, p As String
+    exts = Array(".png", ".jpg", ".jpeg")
+    For Each e In exts
+        p = folder & stem & e
+        If Len(Dir$(p)) > 0 Then FirstExisting = p: Exit Function
+    Next e
+End Function
+
+' True if the Site # at pageSite(idx) is non-blank and appears on another page too.
+Private Function SiteIsDuplicated(ByRef pageSite() As String, ByVal idx As Long) As Boolean
+    Dim me_ As String, i As Long
+    me_ = pageSite(idx)
+    If Len(me_) = 0 Then Exit Function
+    For i = LBound(pageSite) To UBound(pageSite)
+        If i <> idx Then
+            If StrComp(pageSite(i), me_, vbTextCompare) = 0 Then SiteIsDuplicated = True: Exit Function
+        End If
+    Next i
+End Function
+
+' True if any non-blank Site # is shared by two or more pages.
+Private Function AnyDuplicateSite(ByRef pageSite() As String) As Boolean
+    Dim i As Long
+    For i = LBound(pageSite) To UBound(pageSite)
+        If SiteIsDuplicated(pageSite, i) Then AnyDuplicateSite = True: Exit Function
+    Next i
+End Function
+
+' All png/jpg/jpeg in the folder, sorted oldest->newest: natural filename order
+' (numeric chunks compared as numbers), file modified-time as the tiebreaker.
+Private Sub CollectImages(ByVal folder As String, ByRef imgs() As ImgFile, ByRef n As Long)
+    Dim pats As Variant, pat As Variant, nm As String
+    ReDim imgs(0 To 63)
+    n = 0
+    pats = Array("*.png", "*.jpg", "*.jpeg")
+    Dim pi As Long
+    For pi = LBound(pats) To UBound(pats)
+        pat = pats(pi)
+        nm = Dir$(folder & pat)
+        Do While Len(nm) > 0
+            If Not NameAlreadyListed(imgs, n, nm) Then
+                If n > UBound(imgs) Then ReDim Preserve imgs(0 To UBound(imgs) + 64)
+                imgs(n).Name = nm
+                imgs(n).Path = folder & nm
+                imgs(n).Modt = FileDateTime(folder & nm)
+                n = n + 1
+            End If
+            nm = Dir$()
+        Loop
+    Next pi
+    If n = 0 Then Exit Sub
+
+    ' Insertion sort (small n): natural filename, then modified-time.
+    Dim i As Long, j As Long, tmp As ImgFile
+    For i = 1 To n - 1
+        tmp = imgs(i)
+        j = i - 1
+        Do While j >= 0
+            If ImgLess(tmp, imgs(j)) Then
+                imgs(j + 1) = imgs(j)
+                j = j - 1
+            Else
+                Exit Do
+            End If
+        Loop
+        imgs(j + 1) = tmp
+    Next i
+End Sub
+
+Private Function NameAlreadyListed(ByRef imgs() As ImgFile, ByVal n As Long, ByVal nm As String) As Boolean
+    Dim i As Long
+    For i = 0 To n - 1
+        If StrComp(imgs(i).Name, nm, vbTextCompare) = 0 Then NameAlreadyListed = True: Exit Function
+    Next i
+End Function
+
+' a < b : natural filename order, modified-time as tiebreaker.
+Private Function ImgLess(ByRef a As ImgFile, ByRef b As ImgFile) As Boolean
+    Dim c As Long
+    c = NaturalCompare(a.Name, b.Name)
+    If c <> 0 Then ImgLess = (c < 0): Exit Function
+    ImgLess = (a.Modt < b.Modt)
+End Function
+
+' Mark the folder image whose path matches p (case-insensitive) as consumed, so
+' the file-order pass never reuses a file an explicit name already claimed.
+Private Sub MarkConsumed(ByRef imgs() As ImgFile, ByVal n As Long, _
+                         ByRef consumed() As Boolean, ByVal p As String)
+    Dim i As Long
+    For i = 0 To n - 1
+        If StrComp(imgs(i).Path, p, vbTextCompare) = 0 Then consumed(i) = True: Exit Sub
+    Next i
+End Sub
+
+' Case-insensitive, numeric-aware string compare: -1 / 0 / 1.
+Private Function NaturalCompare(ByVal a As String, ByVal b As String) As Long
+    a = LCase$(a): b = LCase$(b)
+    Dim i As Long, j As Long, la As Long, lb As Long
+    i = 1: j = 1: la = Len(a): lb = Len(b)
+    Do While i <= la And j <= lb
+        Dim ca As String, cb As String
+        ca = Mid$(a, i, 1): cb = Mid$(b, j, 1)
+        If IsDigit(ca) And IsDigit(cb) Then
+            Dim na As String, nb As String
+            na = ""
+            Do While i <= la
+                If Not IsDigit(Mid$(a, i, 1)) Then Exit Do
+                na = na & Mid$(a, i, 1)
+                i = i + 1
+            Loop
+            nb = ""
+            Do While j <= lb
+                If Not IsDigit(Mid$(b, j, 1)) Then Exit Do
+                nb = nb & Mid$(b, j, 1)
+                j = j + 1
+            Loop
+            Dim va As Double, vb As Double
+            va = Val(na): vb = Val(nb)
+            If va < vb Then NaturalCompare = -1: Exit Function
+            If va > vb Then NaturalCompare = 1: Exit Function
+        Else
+            If ca < cb Then NaturalCompare = -1: Exit Function
+            If ca > cb Then NaturalCompare = 1: Exit Function
+            i = i + 1: j = j + 1
+        End If
+    Loop
+    If i > la And j > lb Then
+        NaturalCompare = 0
+    ElseIf i > la Then
+        NaturalCompare = -1
+    Else
+        NaturalCompare = 1
+    End If
+End Function
+
+Private Function IsDigit(ByVal ch As String) As Boolean
+    IsDigit = (ch >= "0" And ch <= "9")
 End Function
 
 ' ---- page geometry --------------------------------------------------------
@@ -212,9 +456,10 @@ End Function
 
 ' ---- placement ------------------------------------------------------------
 
-' Insert the picture, scale it to fit the page area preserving aspect ratio,
-' center it, push it behind the WO/DI textbox, and clear the placeholder text
-' from the merged cell underneath.
+' Insert the picture, CROP it to the page area's aspect ratio (no distortion),
+' then scale the cropped remainder to exactly fill the area edge-to-edge,
+' push it behind the WO/DI textbox, and clear the placeholder text from the
+' merged cell underneath.
 Private Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
                              ByVal imgPath As String)
     Dim areaTop As Double, areaLeft As Double, areaW As Double, areaH As Double
@@ -232,19 +477,42 @@ Private Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
 
     With shp
         .Name = SHAPE_PREFIX & CStr(pageIdx + 1)
-        .LockAspectRatio = msoTrue
+        If .Width <= 0 Or .Height <= 0 Or areaW <= 0 Or areaH <= 0 Then Exit Sub
 
-        ' Fit-inside: scale by the tighter of the two ratios.
-        Dim scaleF As Double
-        If .Width <= 0 Or .Height <= 0 Then Exit Sub
-        scaleF = areaW / .Width
-        If (areaH / .Height) < scaleF Then scaleF = areaH / .Height
+        ' "Cover" crop: trim the picture (in its own native point-space, which
+        ' PictureFormat.Crop* always uses regardless of later resizing) down
+        ' to the page area's aspect ratio, cutting evenly off both sides of
+        ' whichever axis has surplus, then scale the trimmed remainder up to
+        ' fill the area exactly. No stretching/distortion, no letterbox gaps.
+        Dim natW As Double, natH As Double, targetAspect As Double, nativeAspect As Double
+        natW = .Width
+        natH = .Height
+        targetAspect = areaW / areaH
+        nativeAspect = natW / natH
 
-        .Width = .Width * scaleF
-        .Height = .Height * scaleF
+        With .PictureFormat
+            If nativeAspect > targetAspect Then
+                Dim cropW As Double
+                cropW = natW - natH * targetAspect
+                .CropLeft = cropW / 2
+                .CropRight = cropW / 2
+                .CropTop = 0
+                .CropBottom = 0
+            Else
+                Dim cropH As Double
+                cropH = natH - natW / targetAspect
+                .CropTop = cropH / 2
+                .CropBottom = cropH / 2
+                .CropLeft = 0
+                .CropRight = 0
+            End If
+        End With
 
-        .Left = areaLeft + (areaW - .Width) / 2
-        .Top = areaTop + (areaH - .Height) / 2
+        .LockAspectRatio = msoFalse
+        .Width = areaW
+        .Height = areaH
+        .Left = areaLeft
+        .Top = areaTop
 
         .Placement = xlMoveAndSize
         .ZOrder msoSendToBack          ' keep the WO/DI textbox readable on top

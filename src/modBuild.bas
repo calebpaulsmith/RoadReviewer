@@ -69,6 +69,31 @@ Fail:
     End If
 End Sub
 
+' "Reset Everything" button. Unlike BuildWorkbook (which preserves typed Sites
+' data), this deletes the Sites and MapPages sheets outright so the rebuild
+' starts from a blank table - the fix for a Sites sheet that got into a bad
+' state. Destructive, so it confirms first (skipped only under headless
+' automation).
+Public Sub ResetWorkbookFull()
+    If Not gHeadless Then
+        If MsgBox("This ERASES every point on the Sites sheet and rebuilds a blank workbook." & vbCrLf & vbCrLf & _
+            "This cannot be undone. Continue?", _
+            vbExclamation + vbYesNo + vbDefaultButton2, "Reset Everything") <> vbYes Then Exit Sub
+    End If
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = SheetByName(SH_SITES)
+    If Not ws Is Nothing Then ws.Delete
+    Set ws = SheetByName(SH_MAPPAGES)
+    If Not ws Is Nothing Then ws.Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+
+    BuildWorkbook          ' recreates a blank Sites table + relays its own result dialog
+End Sub
+
 ' ---- sheet plumbing -------------------------------------------------------
 
 ' Delete-and-recreate a control sheet (no user data lives on these).
@@ -102,6 +127,21 @@ Private Sub OrderSheets()
     MoveSheet SH_START, 1
     MoveSheet SH_SITES, 2
     MoveSheet SH_SOURCES, 3
+    ' Inspector: hide the Sources tab (it stays in the file - still powers the
+    ' citations echo and service-URL overrides - just isn't shown to the
+    ' inspector). Activate a visible sheet first so we're never hiding the
+    ' active sheet, which Excel rejects.
+    Dim wsSrc As Worksheet
+    Set wsSrc = SheetByName(SH_SOURCES)
+    If wsSrc Is Nothing Then Exit Sub
+    On Error Resume Next
+    If ProductIsInspector() Then
+        SheetByName(SH_START).Activate
+        wsSrc.Visible = xlSheetHidden
+    Else
+        wsSrc.Visible = xlSheetVisible
+    End If
+    On Error GoTo 0
 End Sub
 
 Private Sub MoveSheet(ByVal sheetName As String, ByVal pos As Long)
@@ -288,9 +328,11 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     AddButton ws, 326, ws.Rows(30).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
     NoteLine ws, 32, "Pick an export, then click Go. FIRMettes and map PDFs save to the Output Folder above."
 
-    AddButton ws, 18, ws.Rows(35).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 37, "Output Folder shows where exports save (this workbook's folder); Browse or type to change it. " & _
-        "Build / Reset repairs the layout - your Sites data is preserved."
+    SectionLabel ws, 34, "Repair / reset"
+    AddButton ws, 18, ws.Rows(35).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, 238, ws.Rows(35).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
+    NoteLine ws, 37, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+        "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
     VersionLabel ws, 39
 End Sub
 
@@ -319,40 +361,36 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     AddBufferValidation ws.Cells(13, 3)
 
     NoteLine ws, 15, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
-        "Output Folder can stay blank - a OneDrive default is used and shown after each export."
+        "Output Folder can stay blank - exports save next to this workbook."
     NoteLine ws, 16, "FHWA search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
         "urban-boundary check, min 250 ft). 250 ft is a good default; lower it for dense grids, raise it for sparse rural networks."
-    NoteLine ws, 17, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check. See the Sources tab."
+    NoteLine ws, 17, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check."
 
-    ' Classify + photo actions collapse into one dropdown (same pattern as the
-    ' exports picker) so the map/FIRMette workflows below are the visible hero.
-    SectionLabel ws, 19, "Check roads & photos"
-    CreateRoadsPicker ws, 18, ws.Rows(20).Top + 3, 300
-    AddButton ws, 326, ws.Rows(20).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
-    NoteLine ws, 22, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
+    ' ---- Hero workflow 1: Map pages, step by step ----
+    SectionLabel ws, 19, "Map pages  (build the site location-map PDF)"
+    StepLine ws, 21, "1.  Input site info on the Sites tab - coordinates, site name, WO/DI and category."
+    StepLine ws, 23, "2.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
+    AddButton ws, 18, ws.Rows(24).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(24).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
+    StepLine ws, 27, "3.  Export the sites to KML, open it (Google Earth), and screenshot each site."
+    AddButton ws, 18, ws.Rows(28).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
+    NoteLine ws, 30, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
+        "Output Folder - or use each page's 'Select photo' button."
+    StepLine ws, 32, "4.  On the MapPages tab (right of the pages) use 'Map page tools': click 'Insert Map Images' to drop your " & _
+        "screenshots on, oldest first - or a page's 'Select photo' button to place one by hand."
+    StepLine ws, 34, "5.  Then, right there on the MapPages tab, click 'Export Combined Map PDF' - one PDF, every site page, full-bleed."
 
-    ' ---- Hero workflow 1: FIRMettes ----
-    SectionLabel ws, 24, "FIRMettes  (batch flood-map PDFs)"
-    AddButton ws, 18, ws.Rows(25).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(25).Top, 210, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
-    NoteLine ws, 27, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
+    ' ---- Hero workflow 2: FIRMettes ----
+    SectionLabel ws, 41, "FIRMettes  (batch flood-map PDFs)"
+    AddButton ws, 18, ws.Rows(42).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(42).Top, 210, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
+    NoteLine ws, 44, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
 
-    ' ---- Hero workflow 2: Map pages, step by step ----
-    SectionLabel ws, 29, "Map pages  (build the site location-map PDF)"
-    StepLine ws, 31, "1.  Input site info on the Sites tab - coordinates, site name, WO/DI and category."
-    StepLine ws, 33, "2.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
-    AddButton ws, 18, ws.Rows(34).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(34).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    StepLine ws, 37, "3.  Export the sites to KML, open it (Google Earth), and screenshot each site."
-    AddButton ws, 18, ws.Rows(38).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
-    NoteLine ws, 40, "Press Windows+Shift+S, drag a box around the site, and save each image as site_1.png, site_2.png ... " & _
-        "in a 'maps' subfolder of the Output Folder."
-    StepLine ws, 42, "4.  Insert the saved PNGs onto the pages automatically."
-    AddButton ws, 18, ws.Rows(43).Top, 190, 30, "Insert Map Images", "InsertMapImages", CLR_BTN_GO
-    StepLine ws, 46, "5.  Adjust each image to fill the print area if needed - click the image, drag a corner handle; " & _
-        "View > Page Break Preview shows the print edges."
-    StepLine ws, 48, "6.  Export the finished combined map PDF (one PDF, every site page)."
-    AddButton ws, 18, ws.Rows(49).Top, 210, 30, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
+    ' ---- Check roads & photos: one dropdown (classify / re-run / photo tabs) ----
+    SectionLabel ws, 47, "Check roads & photos"
+    CreateRoadsPicker ws, 18, ws.Rows(48).Top + 3, 300
+    AddButton ws, 326, ws.Rows(48).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    NoteLine ws, 50, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
 
     ' ---- General hand-off exports ----
     SectionLabel ws, 53, "Exports & hand-off"
@@ -360,8 +398,11 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     AddButton ws, 326, ws.Rows(54).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
     NoteLine ws, 56, "Pick an export, then click Go. Everything writes to the Output Folder above."
 
-    AddButton ws, 18, ws.Rows(59).Top, 170, 22, "Build / Reset Workbook", "BuildWorkbook", RGB(150, 150, 150)
-    NoteLine ws, 61, "Build / Reset repairs the layout; your Sites data is preserved."
+    SectionLabel ws, 58, "Repair / reset"
+    AddButton ws, 18, ws.Rows(59).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, 238, ws.Rows(59).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
+    NoteLine ws, 61, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+        "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
     VersionLabel ws, 63
 End Sub
 

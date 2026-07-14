@@ -10,6 +10,10 @@ Option Explicit
 ' so MDOT-style 403s never bite us (browser UA) and every URL ends up in
 ' the trace file when gTracePath is set.
 
+' On-sheet MapPages control shapes (buttons + notes parked right of the print
+' grid). Shared prefix so they're easy to hide as a group during PDF export.
+Private Const MAP_CTRL_PREFIX As String = "MapCtrl_"
+
 ' ---- output folder (§8.9) -------------------------------------------------
 
 Public Sub SelectOutputFolder()
@@ -32,7 +36,12 @@ End Sub
 Public Function ResolveOutputFolder() As String
     Dim v As String
     v = SetupValue(NR_OUTFOLDER)
-    If Len(v) = 0 And Not ProductIsInspector() Then v = WorkbookFolder()
+    ' Both products default to the folder this workbook lives in ("exports save
+    ' next to the file") - the most predictable place for an inspector who found
+    ' exports landing in a hardcoded OneDrive path surprising. The §8.9
+    ' job-folder pattern is only the last resort, for an unsaved workbook or an
+    ' https:// (SharePoint) path a local file can't be written next to.
+    If Len(v) = 0 Then v = WorkbookFolder()
     If Len(v) = 0 Then v = DefaultOutputFolder()
     If Right$(v, 1) <> "\" Then v = v & "\"
     ResolveOutputFolder = v
@@ -66,7 +75,7 @@ Private Function DefaultOutputFolder() As String
     wo = CleanFileName(SetupValue(NR_WO))
     di = CleanFileName(SetupValue(NR_DI))
     jobSeg = JobIds(wo, di, "-", "WO", "DI")
-    DefaultOutputFolder = base & "\Desktop\Script\RoadReviewer\" & _
+    DefaultOutputFolder = base & "\Desktop\Scripts\RoadReviewer\" & _
         IIf(Len(disaster) > 0, disaster & "\", "") & _
         IIf(Len(jobSeg) > 0, jobSeg & "\", "")
 End Function
@@ -291,6 +300,8 @@ Public Sub PrepareMapPages()
     Next r
     pages = pageIdx
 
+    AddMapPageControls wsMap
+
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
     wsMap.Activate
@@ -299,7 +310,8 @@ Public Sub PrepareMapPages()
     If Not gHeadless Then
         MsgBox "Created " & pages & " map page(s) on the '" & SH_MAPPAGES & "' sheet." & vbCrLf & vbCrLf & _
             "Next steps:" & vbCrLf & _
-            "1. Paste a screenshot onto each page using Place in Cell." & vbCrLf & _
+            "1. Save your screenshots in a 'maps' subfolder, then click 'Insert Map Images'" & vbCrLf & _
+            "   (top-right of this sheet) - or use each page's 'Select photo' button." & vbCrLf & _
             "2. Click 'Export Combined Map PDF' when done.", _
             vbInformation, "Map Pages Ready"
     End If
@@ -333,6 +345,7 @@ Public Sub AddMapPage()
     End If
 
     CreateMapPage wsMap, Nothing, 0, pageIdx
+    AddMapPageControls wsMap
     Application.ScreenUpdating = True
     wsMap.Activate
     wsMap.Cells(pageIdx * MAP_ROWS_PER_PAGE + 1, 1).Select
@@ -347,8 +360,82 @@ Fail:
         MsgBox "Add Page failed: " & Err.Description, vbCritical, "Add Page"
 End Sub
 
+' On-sheet control panel, parked to the RIGHT of the printable grid (so it
+' never prints - hidden during export via SetMapEditControlsVisible). Two
+' numbered steps, each a button + a short how-it-works note, top to bottom.
+' Idempotent - safe to call on every PrepareMapPages / AddMapPage.
+Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
+    Const GREEN As Long = 4563272          ' same green as the Start Here "Go" buttons
+    Dim leftPt As Double, shp As Shape, i As Long
+    leftPt = MAP_PAGE_WIDTH_PTS + 28       ' clear of the 792pt-wide print grid
+
+    ' Idempotent: drop any existing control shapes first.
+    For i = wsMap.Shapes.Count To 1 Step -1
+        Set shp = wsMap.Shapes(i)
+        If Left$(shp.Name, Len(MAP_CTRL_PREFIX)) = MAP_CTRL_PREFIX Then shp.Delete
+    Next i
+
+    ' Panel title.
+    Dim title As Shape
+    Set title = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, 8, 260, 24)
+    title.Name = MAP_CTRL_PREFIX & "Title"
+    title.Line.Visible = msoFalse
+    title.Fill.Visible = msoFalse
+    With title.TextFrame2.TextRange
+        .Text = "Map page tools"
+        .Font.Size = 13
+        .Font.Bold = msoTrue
+        .Font.Fill.ForeColor.RGB = RGB(47, 79, 79)
+    End With
+
+    ' Step 1 - Insert Map Images.
+    AddMapControlStep wsMap, "Insert", leftPt, 38, GREEN, _
+        "1.  Insert Map Images", "InsertMapImages", _
+        "Drops the screenshots from the 'maps' subfolder onto the pages, oldest " & _
+        "first - one per page, top to bottom. To place one specific image on a " & _
+        "page, use that page's " & Chr$(147) & "Select photo" & Chr$(148) & " button instead."
+
+    ' Step 2 - Export Combined Map PDF.
+    AddMapControlStep wsMap, "Export", leftPt, 152, GREEN, _
+        "2.  Export Combined Map PDF", "ExportCombinedMapPdf", _
+        "Saves every map page into one PDF in the Output Folder, full-bleed " & _
+        "(no margins). Do this once every page has its image."
+End Sub
+
+' One control-panel step: a green button over a grey note, both MAP_CTRL_PREFIX
+' named so SetMapEditControlsVisible can hide them for export.
+Private Sub AddMapControlStep(ByVal wsMap As Worksheet, ByVal key As String, _
+        ByVal leftPt As Double, ByVal topPt As Double, ByVal fillColor As Long, _
+        ByVal caption As String, ByVal macroName As String, ByVal noteText As String)
+    Dim btn As Shape
+    Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, leftPt, topPt, 230, 34)
+    btn.Name = MAP_CTRL_PREFIX & key
+    btn.Fill.ForeColor.RGB = fillColor
+    btn.Line.Visible = msoFalse
+    btn.Shadow.Visible = msoFalse
+    With btn.TextFrame2.TextRange
+        .Text = caption
+        .Font.Size = 12
+        .Font.Bold = msoTrue
+        .Font.Fill.ForeColor.RGB = vbWhite
+        .ParagraphFormat.Alignment = msoAlignCenter
+    End With
+    btn.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    btn.OnAction = macroName
+
+    Dim note As Shape
+    Set note = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, topPt + 38, 260, 72)
+    note.Name = MAP_CTRL_PREFIX & key & "_Note"
+    note.Line.Visible = msoFalse
+    note.Fill.Visible = msoFalse
+    With note.TextFrame2.TextRange
+        .Text = noteText
+        .Font.Size = 10
+        .Font.Fill.ForeColor.RGB = RGB(70, 70, 70)
+    End With
+End Sub
+
 Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
-    Dim cc As Long
     With wsMap.PageSetup
         .Orientation = xlLandscape
         .PaperSize = xlPaperLetter
@@ -357,14 +444,56 @@ Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
         .HeaderMargin = 0: .FooterMargin = 0
         .CenterHorizontally = True
         .CenterVertically = True
-        .FitToPagesWide = 1
-        .FitToPagesTall = False
+        ' Print 1:1. The grid is sized (below) to exactly one landscape Letter
+        ' page per 4-row block, so NO fit-to-page scaling is wanted - that
+        ' scaling fought the absolute shape positions and left the page
+        ' under-filled with a white margin. Rows are 153pt x 4 = 612pt = the
+        ' printable height; SizeMapColumns fits the 13 columns to the 792pt
+        ' printable width.
+        .Zoom = 100
         .PrintGridlines = False
         .PrintHeadings = False
     End With
+    SizeMapColumns wsMap
+End Sub
+
+' Fit the 13 map columns to the landscape Letter printable width (792pt) so a
+' placed image spans the full page edge-to-edge with no side margin. ColumnWidth
+' is in character units, not points, so we scale by the measured .Width (points)
+' and converge; then guarantee the total never EXCEEDS 792 (an over-width grid
+' spills into a second horizontal page).
+Private Sub SizeMapColumns(ByVal wsMap As Worksheet)
+    Const TARGET As Double = MAP_PAGE_WIDTH_PTS      ' 792
+    Dim cc As Long, total As Double, factor As Double, iter As Long
     For cc = 1 To MAP_COLS_WIDE
         wsMap.Columns(cc).ColumnWidth = 10.5
     Next cc
+    For iter = 1 To 4
+        total = 0
+        For cc = 1 To MAP_COLS_WIDE
+            total = total + wsMap.Columns(cc).Width
+        Next cc
+        If total <= 0 Then Exit Sub
+        If Abs(total - TARGET) < 0.5 Then Exit For
+        factor = TARGET / total
+        For cc = 1 To MAP_COLS_WIDE
+            wsMap.Columns(cc).ColumnWidth = wsMap.Columns(cc).ColumnWidth * factor
+        Next cc
+    Next iter
+
+    ' Trim any residual overage off the last column so total <= 792.
+    total = 0
+    For cc = 1 To MAP_COLS_WIDE
+        total = total + wsMap.Columns(cc).Width
+    Next cc
+    If total > TARGET Then
+        Dim lastW As Double
+        lastW = wsMap.Columns(MAP_COLS_WIDE).Width
+        If lastW > (total - TARGET) Then
+            wsMap.Columns(MAP_COLS_WIDE).ColumnWidth = _
+                wsMap.Columns(MAP_COLS_WIDE).ColumnWidth * ((lastW - (total - TARGET)) / lastW)
+        End If
+    End If
 End Sub
 
 ' Lay out one page (4 merged rows x 13 cols) plus the WO/DI/applicant textbox.
@@ -432,7 +561,7 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         With .TextFrame
             .Characters.Text = txtContent
             .Characters.Font.Name = "Segoe UI"
-            .Characters.Font.Size = 8
+            .Characters.Font.Size = 9
             .Characters.Font.Color = RGB(0, 0, 0)
         End With
         firstLineLen = InStr(1, txtContent, vbLf) - 1
@@ -449,10 +578,56 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         End With
     End With
 
+    ' Per-page "Select photo" button in the top-right of the page area. Bound to
+    ' this page index (not the site #), so it works even when the same Site #
+    ' appears on several pages. Hidden during PDF export (SetMapEditControlsVisible).
+    AddPickButton wsMap, pageIdx, pageTopPts
+
     ' Page break AFTER this page so the next CreateMapPage call lands on a new sheet page.
     On Error Resume Next
     wsMap.HPageBreaks.Add Before:=wsMap.Rows(startRow + MAP_ROWS_PER_PAGE)
     On Error GoTo 0
+End Sub
+
+' Small blue rounded-rectangle button, top-right of the page area, wired to
+' modMapImage.PickImageForPage. Its name encodes the 1-based page number.
+Private Sub AddPickButton(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
+        ByVal pageTopPts As Double)
+    Const BTN_W As Double = 92, BTN_H As Double = 20, PAD As Double = 6
+    Dim btn As Shape
+    Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, _
+        MAP_PAGE_WIDTH_PTS - BTN_W - PAD, pageTopPts + PAD, BTN_W, BTN_H)
+    With btn
+        .Name = MAP_PICKBTN_PREFIX & CStr(pageIdx + 1)
+        .OnAction = "PickImageForPage"
+        .Placement = xlMoveAndSize
+        With .Fill
+            .Visible = msoTrue
+            .ForeColor.RGB = RGB(0, 112, 192)
+        End With
+        .Line.Visible = msoFalse
+        With .TextFrame2.TextRange
+            .Text = "Select photo"
+            .Font.Size = 9
+            .Font.Bold = msoTrue
+            .Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+        End With
+    End With
+End Sub
+
+' Hide/show the on-sheet editing aids (per-page "Select photo" buttons and the
+' off-grid "Insert Map Images" control + its note) - they're editing aids, not
+' print content, and hiding the off-grid control also keeps it out of the used
+' range at export time.
+Public Sub SetMapEditControlsVisible(ByVal wsMap As Worksheet, ByVal vis As Boolean)
+    Dim shp As Shape, vv As Long
+    vv = IIf(vis, msoTrue, msoFalse)
+    For Each shp In wsMap.Shapes
+        If Left$(shp.Name, Len(MAP_PICKBTN_PREFIX)) = MAP_PICKBTN_PREFIX _
+           Or Left$(shp.Name, Len(MAP_CTRL_PREFIX)) = MAP_CTRL_PREFIX Then
+            shp.Visible = vv
+        End If
+    Next shp
 End Sub
 
 ' Build the WO #... / Applicant / Site N / lat,lon / Cat ... / desc textbox stamp.
@@ -540,16 +715,24 @@ Public Sub ExportCombinedMapPdf()
 
     ' Bring text boxes to the front in case the inspector's pasted screenshot covered them.
     EnsureTextboxesOnTop wsMap
+    ' Hide the on-sheet editing aids (per-page "Select photo" buttons + the
+    ' off-grid "Insert Map Images" control) so they don't print. Hiding the
+    ' off-grid control also keeps it out of the used range - the reason we do
+    ' NOT set PageSetup.PrintArea here: assigning PrintArea forces a printer
+    ' query that hangs headless Excel on a machine with no default printer.
+    SetMapEditControlsVisible wsMap, False
 
     On Error GoTo Fail
     wsMap.ExportAsFixedFormat Type:=xlTypePDF, fileName:=fullPath, _
         Quality:=xlQualityStandard, IncludeDocProperties:=False, _
         IgnorePrintAreas:=False, OpenAfterPublish:=False
     On Error GoTo 0
+    SetMapEditControlsVisible wsMap, True
 
     If Not gHeadless Then MsgBox "Combined map PDF exported:" & vbCrLf & fullPath, vbInformation, "Export Map PDF"
     Exit Sub
 Fail:
+    SetMapEditControlsVisible wsMap, True
     If gHeadless Then Err.Raise Err.Number, "ExportCombinedMapPdf", Err.Description Else _
         MsgBox "Export failed: " & Err.Description, vbCritical, "Export Map PDF"
 End Sub

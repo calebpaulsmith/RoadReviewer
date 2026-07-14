@@ -263,8 +263,12 @@ Public Const MAP_ROWS_PER_PAGE As Long = 4
 Public Const MAP_COLS_WIDE As Long = 13
 Public Const MAP_PAGE_HEIGHT_PTS As Double = 612    ' Landscape Letter
 Public Const MAP_PAGE_WIDTH_PTS As Double = 792
-Public Const MAP_TEXTBOX_WIDTH As Double = 230
-Public Const MAP_TEXTBOX_HEIGHT As Double = 80
+Public Const MAP_TEXTBOX_WIDTH As Double = 245
+Public Const MAP_TEXTBOX_HEIGHT As Double = 94
+
+' Per-page "Select photo" picker button (modMapImage.PickImageForPage). One is
+' stamped on each map page by CreateMapPage; hidden during PDF export.
+Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 
 ' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
 ' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,

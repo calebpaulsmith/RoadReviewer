@@ -44,6 +44,13 @@ try {
   if ($missing) { throw ("Missing sheets: " + ($missing -join ', ')) }
   Write-Host "  all expected sheets present" -ForegroundColor Green
 
+  # Sources tab is hidden on the inspector product (still in the file), visible
+  # on the standard product. xlSheetVisible = -1, xlSheetHidden = 0.
+  $srcVisible = [int]$wb.Worksheets('Sources').Visible
+  if ($isInspector -and $srcVisible -ne 0) { throw "Inspector build should hide the Sources tab (Visible=$srcVisible)" }
+  if (-not $isInspector -and $srcVisible -ne -1) { throw "Standard build should show the Sources tab (Visible=$srcVisible)" }
+  Write-Host ("  Sources tab " + $(if ($isInspector) { 'hidden' } else { 'visible' }) + " as expected") -ForegroundColor Green
+
   # Collect every Public Sub name across modules so we can verify button OnActions.
   $publicSubs = @{}
   foreach ($comp in $proj.VBComponents) {
@@ -102,7 +109,10 @@ try {
   # Inspector-only BUTTONS: the map-page builders plus the promoted KML /
   # FIRMette / combined-map-PDF workflow buttons. On the standard product these
   # are either dropdown items (KML/FIRMette/PDF) or absent (map builders).
-  $inspectorActions = @('PrepareMapPages','AddMapPage','InsertMapImages','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
+  # NOTE: InsertMapImages and ExportCombinedMapPdf are NOT here - they live on
+  # the MapPages sheet's "Map page tools" panel (built at runtime by
+  # PrepareMapPages), so they're absent from a fresh skeleton build.
+  $inspectorActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes')
   foreach ($a in $sharedActions) {
     if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
   }
