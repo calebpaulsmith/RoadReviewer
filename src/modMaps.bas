@@ -668,16 +668,23 @@ Private Function BuildMapTextboxString(ByVal wsSites As Worksheet, ByVal r As Lo
     Dim woDiLine As String
     woDiLine = JobIds(wo, di, " ", "WO #", "DI #")     ' "" when both blank
 
-    ' Build the stamp top-down, skipping the WO/DI line entirely when the
-    ' inspector didn't enter either ID. The applicant line still anchors
-    ' the rest of the textbox.
+    ' Build the stamp top-down, skipping the WO/DI line entirely when neither ID
+    ' is set - and likewise the applicant line. Applicant used to be emitted
+    ' unconditionally, so a blank one left an EMPTY first line in the textbox
+    ' (and, since the bold run is "everything before the first vbLf", bolded
+    ' nothing). That hit every RoadReviewer map page - the standard product has
+    ' no Applicant field at all - and any inspector job that left it blank.
+    ' Note WO/DI are NOT inspector-only: the Sites table carries them in cols
+    ' A/B on both products (hidden in the standard one), and the row's own value
+    ' wins over the Start Here field, so a standard-product user who unhides
+    ' them and types an ID still gets it stamped.
     Dim costs As String, workComp As String
     costs = Trim$(CStr(wsSites.Cells(r, COL_COSTS).Value))
     workComp = Trim$(CStr(wsSites.Cells(r, COL_WORKCOMP).Value))
 
     If Len(woDiLine) > 0 Then BuildMapTextboxString = woDiLine & vbLf
+    If Len(applicant) > 0 Then BuildMapTextboxString = BuildMapTextboxString & applicant & vbLf
     BuildMapTextboxString = BuildMapTextboxString & _
-        applicant & vbLf & _
         siteLine & vbLf & _
         lat & ", " & lon
     If Len(catLine) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & catLine
