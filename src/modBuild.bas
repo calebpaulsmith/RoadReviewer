@@ -369,14 +369,18 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
 
     ' ---- Hero workflow 1: Map pages, step by step ----
     SectionLabel ws, 19, "Map pages  (build the site location-map PDF)"
+    ' KML + screenshots come BEFORE Prepare Map Pages (steps 2/3 swapped per
+    ' user request): gather the images first, then build the pages that step 4
+    ' drops them onto. PrepareMapPages doesn't read the images, so either order
+    ' works - this one just matches how the job actually goes.
     StepLine ws, 21, "1.  Input site info on the Sites tab - coordinates, site name, WO/DI and category."
-    StepLine ws, 23, "2.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
-    AddButton ws, 18, ws.Rows(24).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
-    AddButton ws, 218, ws.Rows(24).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    StepLine ws, 27, "3.  Export the sites to KML, open it (Google Earth), and screenshot each site."
-    AddButton ws, 18, ws.Rows(28).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
-    NoteLine ws, 30, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
+    StepLine ws, 23, "2.  Export the sites to KML, open it (Google Earth), and screenshot each site."
+    AddButton ws, 18, ws.Rows(24).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
+    NoteLine ws, 26, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
         "Output Folder - or use each page's 'Select photo' button."
+    StepLine ws, 28, "3.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
+    AddButton ws, 18, ws.Rows(29).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
+    AddButton ws, 218, ws.Rows(29).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
     StepLine ws, 32, "4.  On the MapPages tab (right of the pages) use 'Map page tools': click 'Insert Map Images' to drop your " & _
         "screenshots on, oldest first - or a page's 'Select photo' button to place one by hand."
     ' Step 5's long explanation was dropped per user request - the button says
