@@ -28,24 +28,31 @@ Public Const ROADS_COMBO_NAME As String = "RR_RoadsPicker"
 ' Product-aware: on the inspector product, KML, FIRMettes and the combined
 ' map PDF are dedicated workflow buttons on Start Here, so the dropdown only
 ' carries the general hand-off exports that have no button of their own. The
-' standard product (no map/FIRMette workflow) keeps the full list.
+' standard product (no map/FIRMette buttons) carries the full list, INCLUDING
+' the map-page workflow - it drives the same modMaps subs, so it produces
+' byte-identical pages to the inspector's. (The WO/DI/Applicant stamp lines are
+' simply blank there: SetupValue returns "" for the named ranges the standard
+' product never creates, and JobIds drops the blank pieces.)
 Private Function ExportItems() As Variant
     If ProductIsInspector() Then
         ExportItems = Array( _
             "Sites Table (CSV)|ExportSitesCsv", _
             "Sites to GeoJSON|ExportSitesToGeoJson", _
-            "Send Sites to AGOL Map (KML + open webmap)|SendSitesToAgolMap", _
-            "Open Sites on NFC Layer (AGOL)|OpenSitesOnNfcLayer")
+            "User-Defined AGOL Map|SendSitesToAgolMap", _
+            "Functional Class Webmap|OpenSitesOnNfcLayer")
     Else
         ExportItems = Array( _
             "Sites Table (CSV)|ExportSitesCsv", _
             "Sites to KML|ExportSitesToKML", _
             "Sites to GeoJSON|ExportSitesToGeoJson", _
+            "Prepare Map Pages|PrepareMapPages", _
+            "Add Blank Map Page|AddMapPage", _
+            "Insert Map Images|InsertMapImages", _
             "Combined Map PDF|ExportCombinedMapPdf", _
             "Download FIRMettes|DownloadFirmettes", _
             "Re-run Failed FIRMettes|ReRunFailedFirmettes", _
-            "Send Sites to AGOL Map (KML + open webmap)|SendSitesToAgolMap", _
-            "Open Sites on NFC Layer (AGOL)|OpenSitesOnNfcLayer")
+            "User-Defined AGOL Map|SendSitesToAgolMap", _
+            "Functional Class Webmap|OpenSitesOnNfcLayer")
     End If
 End Function
 

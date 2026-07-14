@@ -431,7 +431,7 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
 
     SectionLabel ws, 16, "Check FHWA Status"
     LabelValue ws, 18, "State", NR_STATE, "MI"
-    LabelValue ws, 19, "User-Defined AGOL Layer", NR_AGOLMAP, ""
+    LabelValue ws, 19, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
     LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
     FootnoteLine ws, 25, "*", "How far to look for a road / urban boundary when the exact point misses."
 
@@ -493,12 +493,11 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     LabelValue ws, 9, "Impact (DI #)", NR_DI, "", "*"
     LabelValue ws, 10, "Disaster Number", NR_DISASTER, ""
     LabelValue ws, 11, "Applicant", NR_APPLICANT, ""
-    ' The State dropdown now offers only the wired states (STATE_LIST), so the
-    ' old "MI / IN / WI are wired, others get ACUB only" footnote is gone.
-    LabelValue ws, 12, "State", NR_STATE, "MI"
-    LabelValue ws, 13, "Output Folder", NR_OUTFOLDER, "", "**"
-    FootnoteLine ws, 15, "*", "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells."
-    FootnoteLine ws, 16, "**", "Can stay blank - everything then saves next to this workbook."
+    ' State lives with Check FHWA Status and Imagery now (it only drives the
+    ' road-class lookup), not in the job block.
+    LabelValue ws, 12, "Output Folder", NR_OUTFOLDER, "", "**"
+    FootnoteLine ws, 14, "*", "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells."
+    FootnoteLine ws, 15, "**", "Can stay blank - everything then saves next to this workbook."
 
     ' ---- Location Maps ----
     ' KML + screenshots come BEFORE Prepare Map Pages (steps 2/3 swapped per
@@ -526,10 +525,11 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     NoteLine ws, 44, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
 
     ' ---- Check FHWA Status and Imagery ----
-    ' The two inputs this section owns sit here, not in the job block up top.
+    ' The three inputs this section owns sit here, not in the job block up top.
     SectionLabel ws, 46, "Check FHWA Status and Imagery"
-    LabelValue ws, 48, "User-Defined AGOL Layer", NR_AGOLMAP, ""
-    LabelValue ws, 49, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    LabelValue ws, 48, "State", NR_STATE, "MI"
+    LabelValue ws, 49, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 50, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
     NoteLine ws, 54, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
     ' Trimmed to one line per user request (everything from "250 ft is a good
     ' default" on was cut), so the row keeps a normal height.
@@ -544,9 +544,9 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (every row height above is final before this point) ----
-    AddStateValidation ws.Cells(12, 3)
-    AddBrowseButton ws, 13
-    AddBufferValidation ws.Cells(49, 3)
+    AddStateValidation ws.Cells(48, 3)
+    AddBrowseButton ws, 12
+    AddBufferValidation ws.Cells(50, 3)
 
     AddButton ws, BODY_LEFT_PT, ws.Rows(24).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
     AddButton ws, BODY_LEFT_PT, ws.Rows(30).Top, 190, 28, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
