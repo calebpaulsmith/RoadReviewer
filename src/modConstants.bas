@@ -272,6 +272,27 @@ Public Const MAP_TEXTBOX_HEIGHT As Double = 94
 ' stamped on each map page by CreateMapPage; hidden during PDF export.
 Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 
+' ---- MapPages job panel ----
+' MapPages is now a PERMANENT sheet built by BuildWorkbook (it used to be
+' created - and deleted - by PrepareMapPages). It hosts the job inputs so the
+' inspector fills WO/DI/Disaster/Applicant/Output Folder on the same sheet the
+' pages live on, instead of bouncing back to Start Here.
+'
+' The page rows are ~153pt tall (4 of them = one landscape page), and a row
+' height is a whole-row property - so input cells sitting beside the pages would
+' be 153pt tall too. Hence a band of SHORT rows above the pages: rows
+' 1..MAP_HEADER_ROWS hold the panel, and page 1 starts at MAP_FIRST_PAGE_ROW.
+' The pages' print area starts there too, so the panel never prints.
+Public Const MAP_HEADER_ROWS As Long = 12
+Public Const MAP_FIRST_PAGE_ROW As Long = MAP_HEADER_ROWS + 1
+Public Const MAP_HEADER_ROW_HEIGHT As Double = 18
+' Job-block cells inside that band. Labels merge A:B, values merge C:G (the page
+' columns are only ~61pt wide each, so a single cell is too narrow for a label).
+Public Const MAP_JOB_LABEL_COL As Long = 1      ' A (merged A:B)
+Public Const MAP_JOB_VALUE_COL As Long = 3      ' C (merged C:G)
+Public Const MAP_JOB_VALUE_LAST_COL As Long = 7 ' G
+Public Const MAP_JOB_FIRST_ROW As Long = 3      ' WO # ... Output Folder run 3..7
+
 ' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
 ' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,
 ' dFunctionalClass domain) and Wisconsin (FED_FC_CD, plus the local-roads

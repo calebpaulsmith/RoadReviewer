@@ -13,7 +13,10 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
-$expectedSheets = @('Start Here', 'Sites', 'Sources')
+# MapPages is a PERMANENT sheet now (built by BuildWorkbook, not created and
+# deleted by PrepareMapPages) - it hosts the inspector's job inputs and their
+# named ranges, so it must exist in a fresh build on both products.
+$expectedSheets = @('Start Here', 'Sites', 'MapPages', 'Sources')
 
 # Canonical Sites layout: row 1 IS the header, data from row 2. The row-1
 # toolbar was retired; all actions live on Start Here.
@@ -69,7 +72,11 @@ try {
   Write-Host ("  found " + $publicSubs.Count + " callable subs across modules")
 
   Write-Host "=== Buttons ===" -ForegroundColor Cyan
-  $btnCount = 0; $orphans = @(); $onActions = @{}
+  # $onActions = every button in the file; $startActions = Start Here only. The
+  # product-surface assertions below key off Start Here, because the MapPages
+  # tools panel (Prepare / Insert / Update Stamps / Export) now exists on BOTH
+  # products - it's the map workflow's home, not an inspector-only feature.
+  $btnCount = 0; $orphans = @(); $onActions = @{}; $startActions = @{}
   foreach ($ws in $wb.Worksheets) {
     foreach ($sh in $ws.Shapes) {
       $oa = ""
@@ -77,6 +84,7 @@ try {
       if ($oa) {
         $btnCount++
         $onActions[$oa] = $true
+        if ($ws.Name -eq 'Start Here') { $startActions[$oa] = $true }
         $resolved = $publicSubs[$oa]
         $caption = $sh.TextFrame2.TextRange.Text
         $status = if ($resolved) { "OK   ($resolved)" } else { "ORPHAN"; $orphans += "$($ws.Name)::$caption -> $oa" }
@@ -108,21 +116,22 @@ try {
   } else {
     $sharedActions += @('CheckRoads','ReRunFailedRows')
   }
-  # Inspector-only BUTTONS: the map-page builders plus the promoted KML /
-  # FIRMette / combined-map-PDF workflow buttons. On the standard product these
-  # are either dropdown items (KML/FIRMette/PDF) or absent (map builders).
-  # ExportCombinedMapPdf now has a Start Here button on the inspector (under map
-  # step 5) as well as its MapPages "Map page tools" button. InsertMapImages
-  # remains MapPages-only, so it's absent from a fresh skeleton build.
-  $inspectorActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
+  # Inspector-only START HERE buttons. On the standard product these actions are
+  # reachable, just from the export dropdown (KML / FIRMettes / map pages) rather
+  # than a dedicated button.
+  $inspectorStartActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
   foreach ($a in $sharedActions) {
-    if (-not $onActions.ContainsKey($a)) { throw "Missing expected button for: $a" }
+    if (-not $startActions.ContainsKey($a)) { throw "Missing expected Start Here button for: $a" }
   }
-  foreach ($a in $inspectorActions) {
-    if ($isInspector -and -not $onActions.ContainsKey($a)) { throw "Inspector build missing button for: $a" }
-    if (-not $isInspector -and $onActions.ContainsKey($a)) { throw "Standard build must NOT have a button for: $a" }
+  foreach ($a in $inspectorStartActions) {
+    if ($isInspector -and -not $startActions.ContainsKey($a)) { throw "Inspector Start Here missing button for: $a" }
+    if (-not $isInspector -and $startActions.ContainsKey($a)) { throw "Standard Start Here must NOT have a button for: $a" }
   }
-  Write-Host "  product button surface correct" -ForegroundColor Green
+  # The MapPages tools panel exists on BOTH products.
+  foreach ($a in @('PrepareMapPages','InsertMapImages','UpdateMapStamps','ExportCombinedMapPdf')) {
+    if (-not $onActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
+  }
+  Write-Host "  product button surface correct (Start Here + MapPages tools panel)" -ForegroundColor Green
 
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
   $sharedNames = @('JobState','JobOutputFolder','JobAgolMap','JobBufferFeet')

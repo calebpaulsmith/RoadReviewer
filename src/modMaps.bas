@@ -220,6 +220,43 @@ Private Function FirmetteFileName(ByVal wo As String, ByVal di As String, _
     FirmetteFileName = CleanFileName(s)
 End Function
 
+' Live example of what DownloadFirmettes will name its files, built from the
+' FIRST site row and the current job info. Used as a worksheet formula
+' (=FirmettePreview()) on Start Here's FIRMette section, so the inspector can
+' see the effect of the WO/DI/Disaster fields - which now live over on MapPages
+' - without leaving Start Here. Application.Volatile so it recalculates when
+' any of those cells change.
+Public Function FirmettePreview() As String
+    Application.Volatile
+    Dim ws As Worksheet, last As Long, r As Long
+    Dim wo As String, di As String, siteName As String
+
+    On Error GoTo Fallback
+    Set ws = SitesSheet()
+    If ws Is Nothing Then GoTo Fallback
+    last = SitesLastRow()
+
+    For r = SITES_FIRST_DATA_ROW To last
+        If HasValidCoords(ws, r) Then
+            wo = Trim$(CStr(ws.Cells(r, COL_WO).Value))
+            di = Trim$(CStr(ws.Cells(r, COL_DI).Value))
+            If Len(wo) = 0 Then wo = SetupValue(NR_WO)
+            If Len(di) = 0 Then di = SetupValue(NR_DI)
+            siteName = Trim$(CStr(ws.Cells(r, COL_SITENAME).Value))
+            If Len(siteName) = 0 Then siteName = "Site " & CStr(r - SITES_FIRST_DATA_ROW + 1)
+            FirmettePreview = FirmetteFileName(wo, di, SetupValue(NR_DISASTER), siteName)
+            Exit Function
+        End If
+    Next r
+
+Fallback:
+    ' No site rows yet - show the shape of the name using the job info alone.
+    ' NB: no angle brackets in the placeholder - CleanFileName strips them to
+    ' underscores, which read as part of the file name.
+    FirmettePreview = FirmetteFileName(SetupValue(NR_WO), SetupValue(NR_DI), _
+        SetupValue(NR_DISASTER), "(site name)")
+End Function
+
 ' Submit → poll → fetch OutputFile → download. Returns True on success.
 Private Function DownloadOneFirmette(ByVal lat As String, ByVal lon As String, _
         ByVal fullPath As String, ByRef errMsg As String) As Boolean
@@ -269,6 +306,54 @@ End Function
 
 ' ---- Map Pages (Workflow 3, ported from prototype) ------------------------
 
+' Create the MapPages sheet if it doesn't exist and (re)write its header band:
+' the job inputs + the tools panel. Called by BuildWorkbook, so the sheet - and
+' the JobWO/JobDI/... named ranges the inspector product parks on it - ALWAYS
+' exist, even before any page has been built.
+'
+' Idempotent and non-destructive: existing pages and existing job values are
+' left alone, so Repair Layout and a re-run of Prepare Map Pages are both safe.
+Public Sub EnsureMapPagesSheet()
+    Dim wsMap As Worksheet, isNew As Boolean
+
+    If SheetExists(SH_MAPPAGES) Then
+        Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    Else
+        Set wsMap = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        wsMap.Name = SH_MAPPAGES
+        isNew = True
+    End If
+
+    ConfigureMapPageSetup wsMap
+    BuildMapHeaderBand wsMap
+    AddMapPageControls wsMap
+    SetMapPrintArea wsMap
+    wsMap.Tab.Color = RGB(60, 60, 60)
+End Sub
+
+' Restrict printing to the page columns, from the first page row down - so the
+' header band (job inputs) and the tools panel never land in the PDF. Without a
+' PrintArea the panel cells would spill onto extra pages.
+Private Sub SetMapPrintArea(ByVal wsMap As Worksheet)
+    Dim lastRow As Long
+    lastRow = MAP_FIRST_PAGE_ROW + (MapPageCount(wsMap) * MAP_ROWS_PER_PAGE) - 1
+    If lastRow < MAP_FIRST_PAGE_ROW Then lastRow = MAP_FIRST_PAGE_ROW
+    On Error Resume Next
+    wsMap.PageSetup.PrintArea = wsMap.Range( _
+        wsMap.Cells(MAP_FIRST_PAGE_ROW, 1), wsMap.Cells(lastRow, MAP_COLS_WIDE)).Address
+    On Error GoTo 0
+End Sub
+
+' Pages present = one "Textbox_Page_N" per page. Counting the shapes is exact;
+' the old HPageBreaks.Count+1 trick breaks once a PrintArea is set.
+Public Function MapPageCount(ByVal wsMap As Worksheet) As Long
+    Dim shp As Shape, n As Long
+    For Each shp In wsMap.Shapes
+        If Left$(shp.Name, Len("Textbox_Page_")) = "Textbox_Page_" Then n = n + 1
+    Next shp
+    MapPageCount = n
+End Function
+
 Public Sub PrepareMapPages()
     Dim wsSites As Worksheet, wsMap As Worksheet, last As Long, r As Long
     Dim pageIdx As Long, pages As Long
@@ -284,11 +369,11 @@ Public Sub PrepareMapPages()
     Application.DisplayAlerts = False
     On Error GoTo Fail
 
-    ' Delete and recreate the MapPages sheet.
-    If SheetExists(SH_MAPPAGES) Then ThisWorkbook.Worksheets(SH_MAPPAGES).Delete
-    Set wsMap = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-    wsMap.Name = SH_MAPPAGES
-    ConfigureMapPageSetup wsMap
+    ' The sheet is NO LONGER deleted and recreated - it now holds the job inputs
+    ' and their named ranges. Only the pages themselves are cleared and rebuilt.
+    EnsureMapPagesSheet
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    ClearMapPages wsMap
 
     pageIdx = 0
     For r = SITES_FIRST_DATA_ROW To last
@@ -301,6 +386,7 @@ Public Sub PrepareMapPages()
     pages = pageIdx
 
     AddMapPageControls wsMap
+    SetMapPrintArea wsMap
 
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
@@ -310,9 +396,10 @@ Public Sub PrepareMapPages()
     If Not gHeadless Then
         MsgBox "Created " & pages & " map page(s) on the '" & SH_MAPPAGES & "' sheet." & vbCrLf & vbCrLf & _
             "Next steps:" & vbCrLf & _
-            "1. Save your screenshots in a 'maps' subfolder, then click 'Insert Map Images'" & vbCrLf & _
-            "   (top-right of this sheet) - or use each page's 'Select photo' button." & vbCrLf & _
-            "2. Click 'Export Combined Map PDF' when done.", _
+            "1. Fill in the job info at the top of this sheet (WO/DI, Applicant, Output Folder)," & vbCrLf & _
+            "   then click 'Update Stamps' to write it onto every page." & vbCrLf & _
+            "2. Click 'Insert Map Images' - or use a page's 'Select photo' button." & vbCrLf & _
+            "3. Click 'Export Combined Map PDF' when done.", _
             vbInformation, "Map Pages Ready"
     End If
     Exit Sub
@@ -326,6 +413,79 @@ Fail:
     End If
 End Sub
 
+' Wipe the pages (shapes + merged grid) WITHOUT touching the header band, the
+' job inputs or the tools panel.
+Private Sub ClearMapPages(ByVal wsMap As Worksheet)
+    Dim shp As Shape, i As Long, nm As String
+    For i = wsMap.Shapes.Count To 1 Step -1
+        Set shp = wsMap.Shapes(i)
+        nm = shp.Name
+        If Left$(nm, Len("Textbox_Page_")) = "Textbox_Page_" _
+            Or Left$(nm, Len(MAP_PICKBTN_PREFIX)) = MAP_PICKBTN_PREFIX _
+            Or shp.Type = msoPicture Then
+            shp.Delete
+        End If
+    Next i
+
+    Dim lastRow As Long
+    lastRow = wsMap.Cells(wsMap.Rows.Count, 1).End(xlUp).Row
+    If lastRow < MAP_FIRST_PAGE_ROW Then lastRow = MAP_FIRST_PAGE_ROW
+    With wsMap.Range(wsMap.Cells(MAP_FIRST_PAGE_ROW, 1), wsMap.Cells(lastRow + MAP_ROWS_PER_PAGE, MAP_COLS_WIDE))
+        .UnMerge
+        .Clear
+    End With
+End Sub
+
+' Rewrite every page's stamp from the CURRENT Sites row + job values, leaving
+' the pasted images alone. The stamp is static text baked into a shape when the
+' page is built, so without this, editing WO/DI (or the Applicant) after the
+' fact would change nothing on the pages. Each stamp remembers its Sites row in
+' the shape's AlternativeText.
+Public Sub UpdateMapStamps()
+    Dim wsMap As Worksheet, wsSites As Worksheet, shp As Shape
+    Dim siteRow As Long, txt As String, n As Long, firstLineLen As Long
+
+    If Not SheetExists(SH_MAPPAGES) Then
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet yet. Click 'Prepare Map Pages' first.", _
+            vbExclamation, "Update Stamps"
+        Exit Sub
+    End If
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    Set wsSites = SitesSheet()
+
+    Application.ScreenUpdating = False
+    On Error GoTo Fail
+    For Each shp In wsMap.Shapes
+        If Left$(shp.Name, Len("Textbox_Page_")) = "Textbox_Page_" Then
+            siteRow = 0
+            On Error Resume Next
+            siteRow = CLng(Val(shp.AlternativeText))
+            On Error GoTo Fail
+            If siteRow >= SITES_FIRST_DATA_ROW Then
+                txt = BuildMapTextboxString(wsSites, siteRow)
+                With shp.TextFrame
+                    .Characters.Text = txt
+                    .Characters.Font.Name = "Segoe UI"
+                    .Characters.Font.Size = 9
+                    .Characters.Font.Color = RGB(0, 0, 0)
+                End With
+                firstLineLen = InStr(1, txt, vbLf) - 1
+                If firstLineLen > 0 Then shp.TextFrame.Characters(1, firstLineLen).Font.Bold = True
+                n = n + 1
+            End If
+        End If
+    Next shp
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+
+    If Not gHeadless Then MsgBox "Updated the stamp on " & n & " page(s).", vbInformation, "Update Stamps"
+    Exit Sub
+Fail:
+    Application.ScreenUpdating = True
+    If gHeadless Then Err.Raise Err.Number, "UpdateMapStamps", Err.Description Else _
+        MsgBox "Update Stamps failed: " & Err.Description, vbCritical, "Update Stamps"
+End Sub
+
 ' Append one blank page (no Sites row). Useful when an inspector wants
 ' an extra overview page after the per-site pages.
 Public Sub AddMapPage()
@@ -333,22 +493,18 @@ Public Sub AddMapPage()
 
     Application.ScreenUpdating = False
     On Error GoTo Fail
-    If Not SheetExists(SH_MAPPAGES) Then
-        Set wsMap = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-        wsMap.Name = SH_MAPPAGES
-        ConfigureMapPageSetup wsMap
-        pageIdx = 0
-    Else
-        Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
-        ' Pages already present = HPageBreaks.Count + 1 (the last page has no break after it).
-        pageIdx = wsMap.HPageBreaks.Count + 1
-    End If
+    EnsureMapPagesSheet
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    ' Count the page stamps, not HPageBreaks - a PrintArea is set now, which
+    ' makes the old HPageBreaks.Count+1 trick wrong.
+    pageIdx = MapPageCount(wsMap)
 
     CreateMapPage wsMap, Nothing, 0, pageIdx
     AddMapPageControls wsMap
+    SetMapPrintArea wsMap
     Application.ScreenUpdating = True
     wsMap.Activate
-    wsMap.Cells(pageIdx * MAP_ROWS_PER_PAGE + 1, 1).Select
+    wsMap.Cells(MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE, 1).Select
 
     If Not gHeadless Then
         MsgBox "Added blank page " & (pageIdx + 1) & ".", vbInformation, "Add Page"
@@ -360,12 +516,78 @@ Fail:
         MsgBox "Add Page failed: " & Err.Description, vbCritical, "Add Page"
 End Sub
 
+' The job-info band above the pages: WO / DI / Disaster / Applicant / Output
+' Folder, in SHORT rows so the fields aren't 153pt tall like the page rows.
+' These cells carry the JobWO/JobDI/... named ranges on the inspector product,
+' so the whole map workflow (fill in the job, stamp it, export) happens on this
+' one sheet. Values already typed are preserved on a rebuild.
+'
+' Standard product: no job block (it has no WO/DI/Disaster/Applicant fields at
+' all; its Output Folder stays on Start Here under Exports & Handoff).
+Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
+    Dim r As Long
+
+    For r = 1 To MAP_HEADER_ROWS
+        wsMap.Rows(r).RowHeight = MAP_HEADER_ROW_HEIGHT
+    Next r
+    wsMap.Range(wsMap.Cells(1, 1), wsMap.Cells(MAP_HEADER_ROWS, MAP_COLS_WIDE)).Interior.Color = RGB(245, 247, 249)
+
+    With wsMap.Cells(1, MAP_JOB_LABEL_COL)
+        .Value = IIf(ProductIsInspector(), "Job info  (stamped onto every page)", "Map pages")
+        .Font.Size = 13
+        .Font.Bold = True
+        .Font.Color = RGB(47, 79, 79)
+    End With
+
+    If Not ProductIsInspector() Then Exit Sub
+
+    r = MAP_JOB_FIRST_ROW
+    MapJobField wsMap, r + 0, "Work Order (WO #)", NR_WO
+    MapJobField wsMap, r + 1, "Impact (DI #)", NR_DI
+    MapJobField wsMap, r + 2, "Disaster Number", NR_DISASTER
+    MapJobField wsMap, r + 3, "Applicant", NR_APPLICANT
+    MapJobField wsMap, r + 4, "Output Folder", NR_OUTFOLDER
+
+    ' The WO/DI precedence note the inspector asked for. NB the direction: the
+    ' Sites row wins, and these only FILL IN rows that left their own cells blank.
+    With wsMap.Range(wsMap.Cells(r + 6, MAP_JOB_LABEL_COL), wsMap.Cells(r + 6, MAP_COLS_WIDE))
+        .Merge
+        .Value = "WO # and DI # above fill in any Sites row whose own WO # (column A) or DI # (column B) is blank - " & _
+                 "a value typed into the row itself wins. Click 'Update Stamps' after editing."
+        .Font.Size = 9
+        .Font.Italic = True
+        .Font.Color = RGB(120, 120, 120)
+        .HorizontalAlignment = xlLeft
+    End With
+End Sub
+
+' One label + input cell in the header band. Never overwrites a value the user
+' already typed (BuildWorkbook / Repair Layout re-runs this).
+Private Sub MapJobField(ByVal wsMap As Worksheet, ByVal r As Long, _
+        ByVal label As String, ByVal namedRange As String)
+    With wsMap.Range(wsMap.Cells(r, MAP_JOB_LABEL_COL), wsMap.Cells(r, MAP_JOB_LABEL_COL + 1))
+        .Merge
+        .Value = label
+        .Font.Bold = True
+        .HorizontalAlignment = xlLeft
+    End With
+    With wsMap.Range(wsMap.Cells(r, MAP_JOB_VALUE_COL), wsMap.Cells(r, MAP_JOB_VALUE_LAST_COL))
+        .Merge
+        .Interior.Color = RGB(255, 255, 204)     ' same input yellow as Start Here
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(200, 200, 200)
+        .HorizontalAlignment = xlLeft
+    End With
+    AddNameForCell wsMap.Cells(r, MAP_JOB_VALUE_COL), namedRange
+End Sub
+
 ' On-sheet control panel, parked to the RIGHT of the printable grid (so it
-' never prints - hidden during export via SetMapEditControlsVisible). Two
-' numbered steps, each a button + a short how-it-works note, top to bottom.
-' Idempotent - safe to call on every PrepareMapPages / AddMapPage.
+' never prints - hidden during export via SetMapEditControlsVisible). Numbered
+' steps, each a button + a short how-it-works note, top to bottom.
+' Idempotent - safe to call on every EnsureMapPagesSheet / PrepareMapPages.
 Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     Const GREEN As Long = 4563272          ' same green as the Start Here "Go" buttons
+    Const BLUE As Long = 12419407          ' same steel blue as the secondary buttons
     Dim leftPt As Double, shp As Shape, i As Long
     leftPt = MAP_PAGE_WIDTH_PTS + 28       ' clear of the 792pt-wide print grid
 
@@ -388,17 +610,46 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         .Font.Fill.ForeColor.RGB = RGB(47, 79, 79)
     End With
 
-    ' Step 1 - Insert Map Images.
-    AddMapControlStep wsMap, "Insert", leftPt, 38, GREEN, _
-        "1.  Insert Map Images", "InsertMapImages", _
-        "Drops the screenshots from the 'maps' subfolder onto the pages, oldest " & _
-        "first - one per page, top to bottom. To place one specific image on a " & _
-        "page, use that page's " & Chr$(147) & "Select photo" & Chr$(148) & " button instead."
+    ' The whole page workflow now lives on this sheet, in order.
+    AddMapControlStep wsMap, "Prepare", leftPt, 38, GREEN, _
+        "1.  Prepare Map Pages", "PrepareMapPages", _
+        "One landscape page per site on the Sites tab. Re-run any time - it " & _
+        "rebuilds the pages and keeps the job info above."
 
-    ' Step 2 - Export Combined Map PDF. No note: the caption says it (the long
-    ' explanation was dropped per user request, same as Start Here's step 5).
-    AddMapControlStep wsMap, "Export", leftPt, 152, GREEN, _
-        "2.  Export Combined Map PDF", "ExportCombinedMapPdf", ""
+    AddMapControlStep wsMap, "Insert", leftPt, 130, GREEN, _
+        "2.  Insert Map Images", "InsertMapImages", _
+        "Drops the screenshots from the 'maps' subfolder onto the pages, oldest " & _
+        "first - one per page. To place one specific image, use that page's " & _
+        Chr$(147) & "Select photo" & Chr$(148) & " button instead."
+
+    AddMapControlStep wsMap, "Stamps", leftPt, 236, BLUE, _
+        "3.  Update Stamps", "UpdateMapStamps", _
+        "Rewrites every page's WO/DI/Applicant/site stamp from the job info " & _
+        "above and the Sites tab. The images stay put."
+
+    AddMapControlStep wsMap, "Export", leftPt, 330, GREEN, _
+        "4.  Export Combined Map PDF", "ExportCombinedMapPdf", ""
+
+    ' Browse-for-folder, next to the Output Folder field in the job band.
+    If ProductIsInspector() Then
+        Dim r As Long, btn As Shape
+        r = MAP_JOB_FIRST_ROW + 4                     ' the Output Folder row
+        Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, _
+            wsMap.Cells(r, MAP_JOB_VALUE_LAST_COL + 1).Left + 4, wsMap.Cells(r, 1).Top + 1, 50, 15)
+        btn.Name = MAP_CTRL_PREFIX & "Browse"
+        btn.Fill.ForeColor.RGB = BLUE
+        btn.Line.Visible = msoFalse
+        btn.Shadow.Visible = msoFalse
+        With btn.TextFrame2.TextRange
+            .Text = "Browse"
+            .Font.Size = 9
+            .Font.Bold = msoTrue
+            .Font.Fill.ForeColor.RGB = vbWhite
+            .ParagraphFormat.Alignment = msoAlignCenter
+        End With
+        btn.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        btn.OnAction = "SelectOutputFolder"
+    End If
 End Sub
 
 ' One control-panel step: a green button over a grey note, both MAP_CTRL_PREFIX
@@ -506,7 +757,8 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
     Dim txtBox As Shape, txtContent As String, firstLineLen As Long
 
     rowH = MAP_PAGE_HEIGHT_PTS / MAP_ROWS_PER_PAGE
-    startRow = pageIdx * MAP_ROWS_PER_PAGE + 1
+    ' Pages start BELOW the header band (which holds the job inputs).
+    startRow = MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE
 
     For rr = startRow To startRow + MAP_ROWS_PER_PAGE - 1
         wsMap.Rows(rr).RowHeight = rowH
@@ -553,6 +805,9 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         5, pageTopPts + 5, MAP_TEXTBOX_WIDTH, MAP_TEXTBOX_HEIGHT)
     With txtBox
         .Name = "Textbox_Page_" & CStr(pageIdx + 1)
+        ' Remember which Sites row this page came from, so UpdateMapStamps can
+        ' re-derive the stamp after the job info changes. Blank pages get "0".
+        .AlternativeText = CStr(IIf(wsSites Is Nothing, 0, siteRow))
         With .TextFrame2
             .WordWrap = msoTrue
             .MarginLeft = 5:  .MarginRight = 5
