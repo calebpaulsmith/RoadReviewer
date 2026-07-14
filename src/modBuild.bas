@@ -354,13 +354,47 @@ End Sub
 
 ' ---- Start Here -----------------------------------------------------------
 
+' Turn the tinted background into an actual CARD: the tint is kept only over
+' A:D down to the last used row, and everything outside that is cleared to
+' white. Before this the whole sheet was tinted, so there was no visible edge at
+' all - the "border" was just wherever the content happened to stop, which put
+' column C's inputs flush against it. Now the card's right edge falls at the
+' right of column D, and A/D are the matching gutters inside it.
+'
+' The last row has to account for the buttons, which are free-floating shapes
+' and so are NOT part of UsedRange.
+Private Sub ApplyStartHereCard(ByVal ws As Worksheet)
+    Const CARD_LAST_COL As Long = 4          ' D
+    Dim lastRow As Long, shp As Shape, r As Long
+
+    lastRow = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+    For Each shp In ws.Shapes
+        r = shp.BottomRightCell.Row
+        If r > lastRow Then lastRow = r
+    Next shp
+    lastRow = lastRow + 1                    ' one row of breathing space at the foot
+
+    ' Clear the tint everywhere outside the card.
+    ws.Range(ws.Columns(CARD_LAST_COL + 1), ws.Columns(ws.Columns.Count)).Interior.ColorIndex = xlNone
+    If lastRow < ws.Rows.Count Then
+        ws.Range(ws.Rows(lastRow + 1), ws.Rows(ws.Rows.Count)).Interior.ColorIndex = xlNone
+    End If
+
+    ' Print/preview the card, not an arbitrary used range.
+    On Error Resume Next
+    ws.PageSetup.PrintArea = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, CARD_LAST_COL)).Address
+    On Error GoTo 0
+End Sub
+
 Private Sub BuildStartHere()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_START)
     ws.Cells.Interior.Color = RGB(245, 247, 249)
     ' The whole sheet lives in A/B/C - nothing is placed over D/E/F. B is the
     ' label/prose column, C the input column; prose merges across both.
-    ' A and D are matched narrow gutters framing the content.
+    ' A and D are matched narrow gutters framing the content, so nothing in C
+    ' runs up against the card's right edge (ApplyStartHereCard draws that edge
+    ' at the RIGHT of column D).
     ws.Columns("A").ColumnWidth = 2
     ws.Columns("B").ColumnWidth = 32
     ws.Columns("C").ColumnWidth = 52
@@ -371,6 +405,7 @@ Private Sub BuildStartHere()
     Else
         BuildStartHereStandard ws
     End If
+    ApplyStartHereCard ws
     ws.Tab.Color = RGB(47, 79, 79)
 End Sub
 
