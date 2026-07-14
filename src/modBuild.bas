@@ -32,7 +32,16 @@ Private Const CLR_RESULT As Long = 15921906      ' RGB(242,242,242) light grey
 ' section heading: buttons and dropdowns. Matches the one-level cell indent
 ' StepLine/NoteLine apply, so a section's text and its buttons share a margin
 ' while the heading itself stays flush left.
-Private Const BODY_LEFT_PT As Single = 30
+Private Const BODY_LEFT_PT As Single = 24
+
+' Wrapped prose (WrapLine): column B + column C hold roughly this many
+' characters per line at 11pt Calibri, and a merged cell needs its height set by
+' hand (Excel won't auto-fit one).
+' NOTE: these MUST live here, above every procedure - a module-level Const
+' between two Subs is a VBA compile error ("Only comments may appear after End
+' Sub"), which pops a modal that hangs a headless build. See CLAUDE.md 9.3.
+Private Const CHARS_PER_LINE As Long = 78
+Private Const LINE_HEIGHT_PTS As Double = 15
 
 Public Sub BuildWorkbook()
     Dim hadSites As Boolean
@@ -180,6 +189,9 @@ Private Function AddButton(ByVal ws As Worksheet, ByVal leftPt As Single, ByVal 
     sh.TextFrame2.VerticalAnchor = msoAnchorMiddle
     sh.TextFrame2.HorizontalAnchor = msoAnchorCenter
     sh.OnAction = macroName
+    ' Free-floating: buttons are positioned from ws.Rows(N).Top AFTER every row
+    ' height is final, so they must not drift if a row is later resized.
+    sh.Placement = xlFreeFloating
     Set AddButton = sh
 End Function
 
@@ -209,10 +221,29 @@ Private Sub TitleBlock(ByVal ws As Worksheet, ByVal title As String, ByVal subti
     End With
 End Sub
 
+' Every prose line on Start Here (steps, notes, footnotes, the intro) is merged
+' across B:C and wrapped, so it stays inside the A/B/C frame instead of running
+' out over D/E/F. Excel does NOT auto-fit the height of a merged cell, so the
+' height is set from an estimated line count (see CHARS_PER_LINE at the top of
+' the module).
+Private Sub WrapLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    Dim lines As Long
+    lines = (Len(txt) + CHARS_PER_LINE - 1) \ CHARS_PER_LINE
+    If lines < 1 Then lines = 1
+    With ws.Range(ws.Cells(r, 2), ws.Cells(r, 3))
+        .Merge
+        .WrapText = True
+        .VerticalAlignment = xlTop
+        .HorizontalAlignment = xlLeft
+    End With
+    ws.Rows(r).RowHeight = lines * LINE_HEIGHT_PTS + 2
+End Sub
+
 ' Body copy under a section heading. Indented one level so it reads as
-' belonging to the heading above it (BODY_INDENT_PT keeps the buttons on the
-' same left edge as this text).
+' belonging to the heading above it (BODY_LEFT_PT puts the buttons on the same
+' left edge as this text).
 Private Sub NoteLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    WrapLine ws, r, txt
     With ws.Cells(r, 2)
         .Value = txt
         .Font.Italic = True
@@ -222,9 +253,27 @@ Private Sub NoteLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String
 End Sub
 
 Private Sub StepLine(ByVal ws As Worksheet, ByVal r As Long, ByVal txt As String)
+    WrapLine ws, r, txt
     With ws.Cells(r, 2)
         .Value = txt
         .Font.Color = RGB(70, 70, 70)
+        .IndentLevel = 1
+    End With
+End Sub
+
+' A footnote: smaller and greyer than a NoteLine, led by the same asterisk
+' marker that tags the input it explains (e.g. "*  WO/DI default onto ...").
+' Keeps the long explanations out of the input block while still anchoring each
+' one to its field.
+Private Sub FootnoteLine(ByVal ws As Worksheet, ByVal r As Long, ByVal marker As String, ByVal txt As String)
+    Dim s As String
+    s = marker & "  " & txt
+    WrapLine ws, r, s
+    With ws.Cells(r, 2)
+        .Value = s
+        .Font.Size = 9
+        .Font.Italic = True
+        .Font.Color = RGB(120, 120, 120)
         .IndentLevel = 1
     End With
 End Sub
@@ -307,9 +356,11 @@ Private Sub BuildStartHere()
     Dim ws As Worksheet
     Set ws = FreshSheet(SH_START)
     ws.Cells.Interior.Color = RGB(245, 247, 249)
+    ' The whole sheet lives in A/B/C - nothing is placed over D/E/F. B is the
+    ' label/prose column, C the input column; prose merges across both.
     ws.Columns("A").ColumnWidth = 2
-    ws.Columns("B").ColumnWidth = 26
-    ws.Columns("C").ColumnWidth = 62
+    ws.Columns("B").ColumnWidth = 32
+    ws.Columns("C").ColumnWidth = 52
     HideGridlines ws
     If ProductIsInspector() Then
         BuildStartHereInspector ws
@@ -319,6 +370,14 @@ Private Sub BuildStartHere()
     ws.Tab.Color = RGB(47, 79, 79)
 End Sub
 
+' RoadReviewer (standard). The hero is FHWA + imagery, so State / AGOL / buffer
+' sit WITH the Check FHWA Status section that consumes them; Output Folder moved
+' down to Exports & Handoff, the only thing that writes files here.
+'
+' Layout contract for both builders: every cell write happens FIRST (prose rows
+' merge B:C and get an explicit height), then buttons are positioned from
+' ws.Rows(N).Top. Placing a button before a row above it is resized would leave
+' it hanging in the wrong place.
 Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     TitleBlock ws, "RoadReviewer", "Federal-aid road checker and review tool"
 
@@ -326,48 +385,60 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     ' only"), so the box shrinks to fit rather than carrying dead space.
     DisclaimerBlock ws, 5, 4
 
-    SectionLabel ws, 12, "How To Use"
-    StepLine ws, 13, "1.  Pick your state below."
-    StepLine ws, 14, "2.  Paste your Latitude and Longitude on the Sites tab (the yellow columns)."
-    StepLine ws, 15, "3.  Come back here and click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
+    SectionLabel ws, 10, "How To Use"
+    StepLine ws, 12, "1.  Pick your state below."
+    StepLine ws, 13, "2.  Paste your Latitude and Longitude on the Sites tab (the yellow columns)."
+    StepLine ws, 14, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
-    LabelValue ws, 17, "State", NR_STATE, "MI"
-    LabelValue ws, 18, "Output Folder", NR_OUTFOLDER, ""
+    SectionLabel ws, 16, "Check FHWA Status"
+    LabelValue ws, 18, "State", NR_STATE, "MI"
     LabelValue ws, 19, "User-Defined AGOL Layer", NR_AGOLMAP, ""
-    ' Same label as the inspector's - the old "Road/boundary search buffer
-    ' (feet)" overran column B and got clipped by the yellow input cell.
-    LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
-    AddStateValidation ws.Cells(17, 3)
-    SetOutputFolderDefault ws.Cells(18, 3)
-    AddButton ws, ws.Cells(18, 4).Left + 6, ws.Cells(18, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
-    AddBufferValidation ws.Cells(20, 3)
+    LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    FootnoteLine ws, 25, "*", "Search buffer is how far to look for a road / urban boundary when the exact point misses. " & _
+        "250 ft is a good default."
 
-    NoteLine ws, 23, "Search buffer is how far to look for a road / urban boundary when the exact point misses."
+    SectionLabel ws, 27, "Exports & Handoff"
+    LabelValue ws, 29, "Output Folder", NR_OUTFOLDER, ""
+    NoteLine ws, 33, "Pick an export, then click Go. Everything saves to the Output Folder above."
 
-    ' Actions live here now, not on a Sites row-1 toolbar (row 1 is the header
-    ' row). Same macros, same order the old toolbar used. The "Photo Links
-    ' (selected rows)" button was dropped per user request; OpenImageryForSelection
-    ' is still a live macro (and still reachable from the inspector's roads
-    ' dropdown), so the button can be restored here without touching modImagery.
-    ' Section titles mirror the inspector's (no parentheticals) - the standard
-    ' product has no imagery button, so its check section is FHWA-status only.
-    SectionLabel ws, 25, "Check FHWA Status"
-    AddButton ws, BODY_LEFT_PT, ws.Rows(26).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 210, ws.Rows(26).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
-
-    SectionLabel ws, 29, "Exports & Handoff"
-    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(30).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(30).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
-    NoteLine ws, 32, "Pick an export, then click Go. FIRMettes and map PDFs save to the Output Folder above."
-
-    SectionLabel ws, 34, "Repair / Reset"
-    AddButton ws, BODY_LEFT_PT, ws.Rows(35).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(35).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
-    NoteLine ws, 37, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    SectionLabel ws, 35, "Repair / Reset"
+    NoteLine ws, 39, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
-    VersionLabel ws, 39
+    VersionLabel ws, 41
+
+    ' ---- controls (rows are final above this line) ----
+    AddStateValidation ws.Cells(18, 3)
+    AddBufferValidation ws.Cells(20, 3)
+    SetOutputFolderDefault ws.Cells(29, 3)
+    AddBrowseButton ws, 29
+
+    ' The "Photo Links (selected rows)" button was dropped per user request;
+    ' OpenImageryForSelection is still a live macro (and still reachable from the
+    ' inspector's roads dropdown), so it can be restored without touching modImagery.
+    AddButton ws, BODY_LEFT_PT, ws.Rows(22).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT + 210, ws.Rows(22).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
+
+    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(31).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(31).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+
+    AddButton ws, BODY_LEFT_PT, ws.Rows(37).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(37).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
+' Small "Browse" button parked at the RIGHT end of column B, on the label's own
+' row. It used to sit in column D at 140pt wide ("Browse for folder..."), which
+' pushed the sheet's frame out past C.
+Private Sub AddBrowseButton(ByVal ws As Worksheet, ByVal r As Long)
+    Dim sh As Shape, leftPt As Double
+    leftPt = ws.Cells(r, 3).Left - 54       ' 54pt button, flush to column C's left edge
+    Set sh = AddButton(ws, leftPt, ws.Cells(r, 2).Top + 1, 50, 15, "Browse", "SelectOutputFolder")
+    sh.TextFrame2.TextRange.Font.Size = 9   ' 11pt (AddButton's default) overflows a 50x15 button
+End Sub
+
+' Site Inspector Review Tool. The hero is the map/FIRMette production work, so
+' those sections come first; FHWA classification is still fully available, just
+' further down - and the two inputs only IT uses (AGOL layer, search buffer) now
+' live in that section rather than in the job block at the top.
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     ' No subtitle row (row 3 dropped per user request) and no on-sheet
     ' disclaimer box - the not-authoritative disclaimer is shown as a dialog
@@ -377,73 +448,84 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
         .Font.Size = 20
         .Font.Bold = True
     End With
-
     StepLine ws, 4, "Fill in the job info, add points on the Sites tab, then work top to bottom."
 
-    LabelValue ws, 6, "Work Order (WO #)", NR_WO, ""
-    LabelValue ws, 7, "Impact (DI #)", NR_DI, ""
-    LabelValue ws, 8, "Disaster Number", NR_DISASTER, ""
-    LabelValue ws, 9, "Applicant", NR_APPLICANT, ""
-    LabelValue ws, 10, "State", NR_STATE, "MI"
-    LabelValue ws, 11, "Output Folder (optional)", NR_OUTFOLDER, ""
-    LabelValue ws, 12, "User-Defined AGOL Layer", NR_AGOLMAP, ""
-    LabelValue ws, 13, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET)
-    AddStateValidation ws.Cells(10, 3)
-    AddButton ws, ws.Cells(11, 4).Left + 6, ws.Cells(11, 4).Top - 2, 140, 22, "Browse for folder...", "SelectOutputFolder"
-    AddBufferValidation ws.Cells(13, 3)
-
-    NoteLine ws, 15, "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells. " & _
-        "Output Folder can stay blank - exports save next to this workbook."
-    NoteLine ws, 16, "FHWA search buffer is the fallback radius when no road intersects the exact point (and the floor for the " & _
-        "urban-boundary check, min 250 ft). 250 ft is a good default; lower it for dense grids, raise it for sparse rural networks."
-    NoteLine ws, 17, "MI / IN / WI road-class lookups are wired; other states still get the ACUB check."
+    ' ---- Job Information ----
+    SectionLabel ws, 6, "Job Information"
+    LabelValue ws, 8, "Work Order (WO #)", NR_WO, "", "*"
+    LabelValue ws, 9, "Impact (DI #)", NR_DI, "", "*"
+    LabelValue ws, 10, "Disaster Number", NR_DISASTER, ""
+    LabelValue ws, 11, "Applicant", NR_APPLICANT, ""
+    LabelValue ws, 12, "State", NR_STATE, "MI", "**"
+    LabelValue ws, 13, "Output Folder", NR_OUTFOLDER, "", "***"
+    FootnoteLine ws, 15, "*", "WO/DI default onto every Sites row; override per row by typing in the row's WO/DI cells."
+    FootnoteLine ws, 16, "**", "MI / IN / WI road-class lookups are wired; other states still get the ACUB check."
+    FootnoteLine ws, 17, "***", "Can stay blank - everything then saves next to this workbook."
 
     ' ---- Location Maps ----
     ' KML + screenshots come BEFORE Prepare Map Pages (steps 2/3 swapped per
     ' user request): gather the images first, then build the pages that step 4
     ' drops them onto. PrepareMapPages doesn't read the images, so either order
     ' works - this one just matches how the job actually goes.
+    ' Spacing rule, applied to every section on both products: ONE blank row
+    ' under a heading, and a button sits on the row immediately below the step
+    ' or input it belongs to (no gap between a step and its button).
     SectionLabel ws, 19, "Location Maps"
     StepLine ws, 21, "1.  Input site info on the Sites tab - coordinates, site name, WO/DI and category."
     StepLine ws, 23, "2.  Export the sites to KML, open it (Google Earth), and screenshot each site."
-    AddButton ws, BODY_LEFT_PT, ws.Rows(24).Top, 190, 30, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
-    NoteLine ws, 26, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
+    NoteLine ws, 27, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
         "Output Folder - or use each page's 'Select photo' button."
-    StepLine ws, 28, "3.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
-    AddButton ws, BODY_LEFT_PT, ws.Rows(29).Top, 190, 30, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(29).Top, 190, 30, "Add Blank Map Page", "AddMapPage"
-    StepLine ws, 32, "4.  On the MapPages tab (right of the pages) use 'Map page tools': click 'Insert Map Images' to drop your " & _
+    StepLine ws, 29, "3.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
+    StepLine ws, 33, "4.  On the MapPages tab (right of the pages) use 'Map page tools': click 'Insert Map Images' to drop your " & _
         "screenshots on, oldest first - or a page's 'Select photo' button to place one by hand."
     ' Step 5's long explanation was dropped per user request - the button says
     ' what it does. The same button also lives on the MapPages "Map page tools"
     ' panel, so the inspector can export from either sheet.
-    StepLine ws, 34, "5.  Export the combined map PDF."
-    AddButton ws, BODY_LEFT_PT, ws.Rows(35).Top, 230, 30, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
+    StepLine ws, 35, "5.  Export the combined map PDF."
 
     ' ---- FIRMette ----
     SectionLabel ws, 39, "FIRMette"
-    AddButton ws, BODY_LEFT_PT, ws.Rows(40).Top, 190, 30, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(40).Top, 210, 30, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
-    NoteLine ws, 42, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
+    NoteLine ws, 44, "Downloads the FEMA FIRMette PDF for every site to the Output Folder. Re-run only retries failed rows."
 
-    ' ---- Check FHWA Status and Imagery: one dropdown (classify / re-run / photo tabs) ----
-    SectionLabel ws, 45, "Check FHWA Status and Imagery"
-    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(46).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(46).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
-    NoteLine ws, 48, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
+    ' ---- Check FHWA Status and Imagery ----
+    ' The two inputs this section owns sit here, not in the job block up top.
+    SectionLabel ws, 46, "Check FHWA Status and Imagery"
+    LabelValue ws, 48, "User-Defined AGOL Layer", NR_AGOLMAP, ""
+    LabelValue ws, 49, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    NoteLine ws, 54, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
+    FootnoteLine ws, 55, "*", "The fallback radius when no road intersects the exact point (and the floor for the urban-boundary " & _
+        "check, min 250 ft). 250 ft is a good default; lower it for dense grids, raise it for sparse rural networks."
 
     ' ---- Exports & Handoff ----
-    SectionLabel ws, 51, "Exports & Handoff"
-    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(52).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(52).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
-    NoteLine ws, 54, "Pick an export, then click Go. Everything writes to the Output Folder above."
+    SectionLabel ws, 57, "Exports & Handoff"
+    NoteLine ws, 61, "Pick an export, then click Go. Everything writes to the Output Folder above."
 
-    SectionLabel ws, 57, "Repair / Reset"
-    AddButton ws, BODY_LEFT_PT, ws.Rows(58).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(58).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
-    NoteLine ws, 60, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    SectionLabel ws, 63, "Repair / Reset"
+    NoteLine ws, 67, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
-    VersionLabel ws, 62
+    VersionLabel ws, 69
+
+    ' ---- controls (every row height above is final before this point) ----
+    AddStateValidation ws.Cells(12, 3)
+    AddBrowseButton ws, 13
+    AddBufferValidation ws.Cells(49, 3)
+
+    AddButton ws, BODY_LEFT_PT, ws.Rows(24).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT, ws.Rows(30).Top, 190, 28, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(30).Top, 190, 28, "Add Blank Map Page", "AddMapPage"
+    AddButton ws, BODY_LEFT_PT, ws.Rows(36).Top, 230, 28, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
+
+    AddButton ws, BODY_LEFT_PT, ws.Rows(41).Top, 190, 28, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(41).Top, 210, 28, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
+
+    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(51).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(51).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+
+    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(59).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(59).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+
+    AddButton ws, BODY_LEFT_PT, ws.Rows(65).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(65).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)
@@ -484,8 +566,11 @@ Private Sub SetOutputFolderDefault(ByVal cell As Range)
     cell.Font.Italic = True
 End Sub
 
+' `marker` (optional) tags the label with a footnote asterisk - "*", "**", ... -
+' matching a FootnoteLine below the input block.
 Private Sub LabelValue(ByVal ws As Worksheet, ByVal r As Long, ByVal label As String, _
-        ByVal namedRange As String, ByVal defaultVal As String)
+        ByVal namedRange As String, ByVal defaultVal As String, Optional ByVal marker As String = "")
+    If Len(marker) > 0 Then label = label & "  " & marker
     ws.Cells(r, 2).Value = label
     ws.Cells(r, 2).Font.Bold = True
     With ws.Cells(r, 3)
