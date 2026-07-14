@@ -63,7 +63,15 @@ Public Sub BuildWorkbook()
 
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    SheetByName(SH_START).Activate
+    ' Land on the product's opening sheet: Map Pages (inspector) or Start Here
+    ' (standard). Start Here is hidden on the inspector, so don't activate it there.
+    On Error Resume Next
+    If ProductIsInspector() Then
+        SheetByName(SH_MAPPAGES).Activate
+    Else
+        SheetByName(SH_START).Activate
+    End If
+    On Error GoTo 0
 
     ' Skip the confirmation MsgBox when driven headlessly by the build script
     ' (which sets gHeadless before calling). The in-Excel "Build / Reset
@@ -141,38 +149,41 @@ Private Sub RemoveStrayDefaultSheets()
     Next i
 End Sub
 
+' Sheet order + visibility, per product.
+'   Inspector: MapPages is the LANDING (map/FIRMette work is the whole job).
+'     Start Here demotes to a hidden "Tools & Exports" utility sheet reached via
+'     a button on MapPages; Sources hidden. Visible tabs: Map Pages, Sites.
+'   Standard: Start Here is the hub/landing; MapPages hidden (opt-in); Sources
+'     visible. Visible tabs: Start Here, Sites, Sources.
 Private Sub OrderSheets()
-    MoveSheet SH_START, 1
-    MoveSheet SH_SITES, 2
-    MoveSheet SH_MAPPAGES, 3
-    MoveSheet SH_SOURCES, 4
-    ' Inspector: hide the Sources tab (it stays in the file - still powers the
-    ' citations echo and service-URL overrides - just isn't shown to the
-    ' inspector). Activate a visible sheet first so we're never hiding the
-    ' active sheet, which Excel rejects.
-    Dim wsSrc As Worksheet
-    Set wsSrc = SheetByName(SH_SOURCES)
-    If wsSrc Is Nothing Then Exit Sub
-    On Error Resume Next
     If ProductIsInspector() Then
-        SheetByName(SH_START).Activate
-        wsSrc.Visible = xlSheetHidden
+        MoveSheet SH_MAPPAGES, 1
+        MoveSheet SH_SITES, 2
+        MoveSheet SH_START, 3
+        MoveSheet SH_SOURCES, 4
     Else
-        wsSrc.Visible = xlSheetVisible
+        MoveSheet SH_START, 1
+        MoveSheet SH_SITES, 2
+        MoveSheet SH_MAPPAGES, 3
+        MoveSheet SH_SOURCES, 4
     End If
 
-    ' MapPages: the inspector's hero workspace, so it's shown there. On the
-    ' STANDARD product it ships HIDDEN - map pages are opt-in; any map action
-    ' (modMaps.ShowMapPages, called from Prepare/Insert/Export/...) reveals it.
-    Dim wsMap As Worksheet
+    On Error Resume Next
+    Dim wsStart As Worksheet, wsMap As Worksheet, wsSrc As Worksheet
+    Set wsStart = SheetByName(SH_START)
     Set wsMap = SheetByName(SH_MAPPAGES)
-    If Not wsMap Is Nothing Then
-        If ProductIsInspector() Then
-            wsMap.Visible = xlSheetVisible
-        Else
-            SheetByName(SH_START).Activate
-            wsMap.Visible = xlSheetHidden
-        End If
+    Set wsSrc = SheetByName(SH_SOURCES)
+
+    If ProductIsInspector() Then
+        ' Activate the visible landing (Map Pages) BEFORE hiding the rest - Excel
+        ' rejects hiding the active sheet.
+        If Not wsMap Is Nothing Then wsMap.Visible = xlSheetVisible: wsMap.Activate
+        If Not wsStart Is Nothing Then wsStart.Visible = xlSheetHidden
+        If Not wsSrc Is Nothing Then wsSrc.Visible = xlSheetHidden
+    Else
+        If Not wsStart Is Nothing Then wsStart.Visible = xlSheetVisible: wsStart.Activate
+        If Not wsSrc Is Nothing Then wsSrc.Visible = xlSheetVisible
+        If Not wsMap Is Nothing Then wsMap.Visible = xlSheetHidden
     End If
     On Error GoTo 0
 End Sub
@@ -490,54 +501,50 @@ Private Sub AddBrowseButton(ByVal ws As Worksheet, ByVal r As Long)
     sh.TextFrame2.TextRange.Font.Size = 9   ' 11pt (AddButton's default) overflows a 50x15 button
 End Sub
 
-' Site Inspector Review Tool - a slim landing/admin page. The production work
-' (map pages + FIRMettes) all lives on the MapPages tab now, so Start Here is
-' just: a jump to that tab, the general hand-off exports, an OPTIONAL demoted
-' FHWA-status section (kept so the classify feature and its named ranges survive
-' - "demote, don't delete"), and Repair/Reset.
+' Site Inspector "Tools & Exports" - a HIDDEN utility sheet (the workbook lands
+' on Map Pages now). Reached via the "Exports & other tools" button on Map Pages.
+' Holds the general hand-off exports, an OPTIONAL demoted FHWA-status section
+' (kept so the classify feature and its named ranges survive - "demote, don't
+' delete"), and Repair/Reset. The sheet is still internally named SH_START; only
+' its role and on-sheet title changed.
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     With ws.Range("B2")
-        .Value = "Site Inspector Review Tool"
+        .Value = "Tools & Exports"
         .Font.Size = 20
         .Font.Bold = True
     End With
-    StepLine ws, 4, "Add your points on the Sites tab, then open the Map Pages tab - that's where the work happens."
-
-    ' ---- Map Pages & FIRMettes: just a door to the MapPages tab ----
-    SectionLabel ws, 6, "Map Pages & FIRMettes"
-    NoteLine ws, 8, "Building location-map pages and downloading FIRMettes both live on the Map Pages tab, " & _
-        "start to finish. Click below to go there."
+    StepLine ws, 4, "A utility sheet - the main workflow is on the Map Pages tab. Use the button to jump back."
 
     ' ---- Exports & Handoff ----
-    SectionLabel ws, 12, "Exports & Handoff"
-    NoteLine ws, 16, "Pick an export, then click Go. Hand-off files (CSV / GeoJSON / KML) save to the Output Folder set on Map Pages."
+    SectionLabel ws, 7, "Exports & Handoff"
+    NoteLine ws, 11, "Pick an export, then click Go. Hand-off files (CSV / GeoJSON / KML) save to the Output Folder set on Map Pages."
 
     ' ---- Check FHWA status (optional, demoted) ----
-    SectionLabel ws, 20, "Check FHWA Status  (optional)"
-    LabelValue ws, 22, "State", NR_STATE, "MI"
-    LabelValue ws, 23, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 24, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    NoteLine ws, 28, "Optional road-classification / photo-link check. Pick an action, then click Go."
-    FootnoteLine ws, 29, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+    SectionLabel ws, 14, "Check FHWA Status  (optional)"
+    LabelValue ws, 16, "State", NR_STATE, "MI"
+    LabelValue ws, 17, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 18, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    NoteLine ws, 22, "Optional road-classification / photo-link check. Pick an action, then click Go."
+    FootnoteLine ws, 23, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
 
-    SectionLabel ws, 32, "Repair / Reset"
-    NoteLine ws, 36, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    SectionLabel ws, 26, "Repair / Reset"
+    NoteLine ws, 30, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (every row height above is final before this point) ----
-    AddStateValidation ws.Cells(22, 3)
-    AddBufferValidation ws.Cells(24, 3)
+    AddStateValidation ws.Cells(16, 3)
+    AddBufferValidation ws.Cells(18, 3)
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(9).Top, 230, 32, "Open Map Pages tab", "GoToMapPages", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT, ws.Rows(5).Top, 200, 22, ChrW$(8592) & " Back to Map Pages", "GoToMapPages", CLR_BTN_GO
 
-    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(14).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(14).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(9).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(9).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
 
-    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(26).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(26).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(20).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(20).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(34).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(34).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
+    AddButton ws, BODY_LEFT_PT, ws.Rows(28).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(28).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)

@@ -130,16 +130,28 @@ try {
   foreach ($a in @('ExportSitesToKML','PrepareMapPages','InsertMapImages','ExportCombinedMapPdf','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
     if (-not $mapActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
   }
-  if ($isInspector -and -not $mapActions.ContainsKey('SelectOutputFolder')) { throw "Inspector MapPages missing the Output-Folder Browse" }
+  if ($isInspector) {
+    if (-not $mapActions.ContainsKey('SelectOutputFolder')) { throw "Inspector MapPages missing the Output-Folder Browse" }
+    # MapPages is the landing on the inspector; it carries the door to the hidden
+    # Tools & Exports (SH_START) sheet.
+    if (-not $mapActions.ContainsKey('GoToOtherTools')) { throw "Inspector MapPages missing the 'Exports & other tools' button" }
+  }
   Write-Host "  product button surface correct (Start Here + MapPages tools)" -ForegroundColor Green
 
-  Write-Host "=== MapPages visibility ===" -ForegroundColor Cyan
-  # Inspector: MapPages is the hero, shown. Standard: hidden until the user opts
-  # into map pages (any map action calls modMaps.ShowMapPages).
+  Write-Host "=== Sheet roles / visibility ===" -ForegroundColor Cyan
+  # Inspector: Map Pages is the landing (visible), Start Here demotes to a HIDDEN
+  # Tools & Exports sheet. Standard: Start Here is the hub (visible), MapPages
+  # hidden until opted in.
   $mpVisible = [int]$wb.Worksheets('MapPages').Visible
-  if ($isInspector -and $mpVisible -ne -1) { throw "Inspector should show MapPages (Visible=$mpVisible)" }
-  if (-not $isInspector -and $mpVisible -eq -1) { throw "Standard should ship MapPages hidden (Visible=$mpVisible)" }
-  Write-Host ("  MapPages " + $(if ($isInspector) { 'visible' } else { 'hidden (opt-in)' }) + " as expected") -ForegroundColor Green
+  $shVisible = [int]$wb.Worksheets('Start Here').Visible
+  if ($isInspector) {
+    if ($mpVisible -ne -1) { throw "Inspector should show MapPages (Visible=$mpVisible)" }
+    if ($shVisible -eq -1) { throw "Inspector should hide Start Here / Tools (Visible=$shVisible)" }
+  } else {
+    if ($mpVisible -eq -1) { throw "Standard should ship MapPages hidden (Visible=$mpVisible)" }
+    if ($shVisible -ne -1) { throw "Standard should show Start Here (Visible=$shVisible)" }
+  }
+  Write-Host ("  " + $(if ($isInspector) { 'Map Pages landing (visible); Start Here hidden (Tools)' } else { 'Start Here landing (visible); Map Pages hidden (opt-in)' })) -ForegroundColor Green
 
   Write-Host "=== Named ranges ===" -ForegroundColor Cyan
   # All eight job named ranges now exist on BOTH products (the job block lives on

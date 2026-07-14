@@ -339,13 +339,27 @@ Public Sub ShowMapPages()
     On Error GoTo 0
 End Sub
 
-' The "Open Map Pages tab" button on the inspector's Start Here landing page:
-' reveal + jump to the map workspace where the whole map/FIRMette workflow lives.
+' "Back to Map Pages" on the inspector's hidden Tools sheet - reveal + jump to
+' the map workspace where the whole map/FIRMette workflow lives.
 Public Sub GoToMapPages()
     EnsureMapPagesSheet
     ShowMapPages
     On Error Resume Next
     ThisWorkbook.Worksheets(SH_MAPPAGES).Activate
+    On Error GoTo 0
+End Sub
+
+' "Exports & other tools" on the Map Pages band (inspector) - reveal + jump to
+' the SH_START utility sheet (hand-off exports, optional FHWA, Repair/Reset),
+' which ships hidden so the inspector opens straight onto Map Pages.
+Public Sub GoToOtherTools()
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(SH_START)
+    If Not ws Is Nothing Then
+        ws.Visible = xlSheetVisible
+        ws.Activate
+    End If
     On Error GoTo 0
 End Sub
 
@@ -652,6 +666,26 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
 
     ' Title.
     MapCtrlLabel wsMap, "Title", 8, 5, 300, 22, "Map Pages", 15, True, RGB(47, 79, 79)
+
+    ' Top-right: door to the hidden "Tools & Exports" sheet (inspector only - the
+    ' standard product keeps Start Here visible as its own hub).
+    If ProductIsInspector() Then
+        Dim tbtn As Shape
+        Set tbtn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 620, 6, 165, 20)
+        tbtn.Name = MAP_CTRL_PREFIX & "Tools"
+        tbtn.Fill.ForeColor.RGB = RGB(120, 120, 120)
+        tbtn.Line.Visible = msoFalse
+        tbtn.Shadow.Visible = msoFalse
+        With tbtn.TextFrame2.TextRange
+            .Text = "Exports & other tools  " & ChrW$(8594)
+            .Font.Size = 9
+            .Font.Bold = msoTrue
+            .Font.Fill.ForeColor.RGB = vbWhite
+            .ParagraphFormat.Alignment = msoAlignCenter
+        End With
+        tbtn.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        tbtn.OnAction = "GoToOtherTools"
+    End If
 
     ' ---- the 4-step ribbon: one line, evenly spaced across the print width ----
     Const RIB_TOP As Double = 34, BTN_H As Double = 30, BTN_W As Double = 182, GAP As Double = 8
