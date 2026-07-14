@@ -331,6 +331,24 @@ Public Sub EnsureMapPagesSheet()
     wsMap.Tab.Color = RGB(60, 60, 60)
 End Sub
 
+' Reveal MapPages. On the standard product it ships HIDDEN (map pages are an
+' opt-in there); any user-triggered map action unhides it. Idempotent.
+Public Sub ShowMapPages()
+    On Error Resume Next
+    If SheetExists(SH_MAPPAGES) Then ThisWorkbook.Worksheets(SH_MAPPAGES).Visible = xlSheetVisible
+    On Error GoTo 0
+End Sub
+
+' The "Open Map Pages tab" button on the inspector's Start Here landing page:
+' reveal + jump to the map workspace where the whole map/FIRMette workflow lives.
+Public Sub GoToMapPages()
+    EnsureMapPagesSheet
+    ShowMapPages
+    On Error Resume Next
+    ThisWorkbook.Worksheets(SH_MAPPAGES).Activate
+    On Error GoTo 0
+End Sub
+
 ' Restrict printing to the page columns, from the first page row down - so the
 ' header band (job inputs) and the tools panel never land in the PDF. Without a
 ' PrintArea the panel cells would spill onto extra pages.
@@ -372,6 +390,7 @@ Public Sub PrepareMapPages()
     ' The sheet is NO LONGER deleted and recreated - it now holds the job inputs
     ' and their named ranges. Only the pages themselves are cleared and rebuilt.
     EnsureMapPagesSheet
+    ShowMapPages                 ' opt-in reveal on the standard product
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
     ClearMapPages wsMap
 
@@ -452,6 +471,7 @@ Public Sub UpdateMapStamps()
     End If
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
     Set wsSites = SitesSheet()
+    ShowMapPages
 
     Application.ScreenUpdating = False
     On Error GoTo Fail
@@ -466,7 +486,7 @@ Public Sub UpdateMapStamps()
                 With shp.TextFrame
                     .Characters.Text = txt
                     .Characters.Font.Name = "Segoe UI"
-                    .Characters.Font.Size = 9
+                    .Characters.Font.Size = MAP_STAMP_FONT
                     .Characters.Font.Color = RGB(0, 0, 0)
                 End With
                 firstLineLen = InStr(1, txt, vbLf) - 1
@@ -494,6 +514,7 @@ Public Sub AddMapPage()
     Application.ScreenUpdating = False
     On Error GoTo Fail
     EnsureMapPagesSheet
+    ShowMapPages                 ' opt-in reveal on the standard product
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
     ' Count the page stamps, not HPageBreaks - a PrintArea is set now, which
     ' makes the old HPageBreaks.Count+1 trick wrong.
@@ -516,14 +537,12 @@ Fail:
         MsgBox "Add Page failed: " & Err.Description, vbCritical, "Add Page"
 End Sub
 
-' The job-info band above the pages: WO / DI / Disaster / Applicant / Output
-' Folder, in SHORT rows so the fields aren't 153pt tall like the page rows.
-' These cells carry the JobWO/JobDI/... named ranges on the inspector product,
-' so the whole map workflow (fill in the job, stamp it, export) happens on this
-' one sheet. Values already typed are preserved on a rebuild.
-'
-' Standard product: no job block (it has no WO/DI/Disaster/Applicant fields at
-' all; its Output Folder stays on Start Here under Exports & Handoff).
+' The header band above the pages. Two cell-based regions (job info + the
+' precedence note); the buttons themselves are absolute-positioned shapes added
+' by AddMapPageControls, so they're free of the tall page-row heights. Job cells
+' carry the JobWO/... named ranges on BOTH products now (the standard product's
+' MapPages is hidden until the user opts into map pages, then has the full
+' workflow). Values already typed are preserved on a rebuild.
 Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     Dim r As Long
 
@@ -532,32 +551,65 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     Next r
     wsMap.Range(wsMap.Cells(1, 1), wsMap.Cells(MAP_HEADER_ROWS, MAP_COLS_WIDE)).Interior.Color = RGB(245, 247, 249)
 
-    With wsMap.Cells(1, MAP_JOB_LABEL_COL)
-        .Value = IIf(ProductIsInspector(), "Job info  (stamped onto every page)", "Map pages")
-        .Font.Size = 13
-        .Font.Bold = True
-        .Font.Color = RGB(47, 79, 79)
-    End With
-
-    If Not ProductIsInspector() Then Exit Sub
+    ' Section labels (the buttons that go with them are added later, as shapes).
+    HeaderLabel wsMap, MAP_JOB_FIRST_ROW - 1, MAP_JOB_LABEL_COL, "Job info  (stamped onto every map page)"
 
     r = MAP_JOB_FIRST_ROW
     MapJobField wsMap, r + 0, "Work Order (WO #)", NR_WO
     MapJobField wsMap, r + 1, "Impact (DI #)", NR_DI
     MapJobField wsMap, r + 2, "Disaster Number", NR_DISASTER
     MapJobField wsMap, r + 3, "Applicant", NR_APPLICANT
-    MapJobField wsMap, r + 4, "Output Folder", NR_OUTFOLDER
+    ' Output Folder is canonical HERE for the inspector (its Start Here is thin).
+    ' For the standard product it's canonical on Start Here, so MapPages shows a
+    ' read-only mirror instead of a second input that would fight for the name.
+    If ProductIsInspector() Then
+        MapJobField wsMap, r + 4, "Output Folder", NR_OUTFOLDER
+    Else
+        With wsMap.Range(wsMap.Cells(r + 4, MAP_JOB_LABEL_COL), wsMap.Cells(r + 4, MAP_JOB_LABEL_COL + 1))
+            .Merge
+            .Value = "Output Folder"
+            .Font.Bold = True
+        End With
+        With wsMap.Range(wsMap.Cells(r + 4, MAP_JOB_VALUE_COL), wsMap.Cells(r + 4, MAP_JOB_VALUE_LAST_COL))
+            .Merge
+            .Formula = "=IF(" & NR_OUTFOLDER & "="""",""(set on Start Here)""," & NR_OUTFOLDER & ")"
+            .Font.Color = RGB(90, 90, 90)
+            .Font.Italic = True
+        End With
+    End If
 
-    ' The WO/DI precedence note the inspector asked for. NB the direction: the
-    ' Sites row wins, and these only FILL IN rows that left their own cells blank.
-    With wsMap.Range(wsMap.Cells(r + 6, MAP_JOB_LABEL_COL), wsMap.Cells(r + 6, MAP_COLS_WIDE))
+    ' WO/DI precedence note - stated the RIGHT way round: the Sites row wins, and
+    ' these only FILL IN rows that left their own cells blank. Kept to cols A:G so
+    ' it clears the FIRMette block (cols I+).
+    With wsMap.Range(wsMap.Cells(r + 6, MAP_JOB_LABEL_COL), wsMap.Cells(r + 6, 7))
         .Merge
-        .Value = "WO # and DI # above fill in any Sites row whose own WO # (column A) or DI # (column B) is blank - " & _
-                 "a value typed into the row itself wins. Click 'Update Stamps' after editing."
+        .Value = "WO # / DI # here fill in any Sites row whose own WO # (col A) or DI # (col B) is blank; a value typed into the row wins."
         .Font.Size = 9
         .Font.Italic = True
         .Font.Color = RGB(120, 120, 120)
         .HorizontalAlignment = xlLeft
+        .WrapText = False
+    End With
+
+    ' FIRMette filename example (what Download FIRMettes names the first file),
+    ' under the FIRMette block. FirmettePreview() is volatile, so it tracks the
+    ' WO/DI/Disaster job cells above as they're typed.
+    With wsMap.Range(wsMap.Cells(r + 5, 9), wsMap.Cells(r + 5, MAP_COLS_WIDE))
+        .Merge
+        .Formula = "=""e.g.  ""&FirmettePreview()"
+        .Font.Size = 8
+        .Font.Italic = True
+        .Font.Color = RGB(120, 120, 120)
+        .HorizontalAlignment = xlLeft
+    End With
+End Sub
+
+Private Sub HeaderLabel(ByVal wsMap As Worksheet, ByVal r As Long, ByVal c As Long, ByVal txt As String)
+    With wsMap.Cells(r, c)
+        .Value = txt
+        .Font.Size = 11
+        .Font.Bold = True
+        .Font.Color = RGB(47, 79, 79)
     End With
 End Sub
 
@@ -581,15 +633,16 @@ Private Sub MapJobField(ByVal wsMap As Worksheet, ByVal r As Long, _
     AddNameForCell wsMap.Cells(r, MAP_JOB_VALUE_COL), namedRange
 End Sub
 
-' On-sheet control panel, parked to the RIGHT of the printable grid (so it
-' never prints - hidden during export via SetMapEditControlsVisible). Numbered
-' steps, each a button + a short how-it-works note, top to bottom.
+' Everything actionable in the header band, all shapes (MAP_CTRL_PREFIX named).
 ' Idempotent - safe to call on every EnsureMapPagesSheet / PrepareMapPages.
+' Layout, top to bottom, all ABOVE the print area so none of it prints:
+'   - a horizontal 4-step workflow ribbon (the hero: KML -> Prepare -> Insert -> PDF)
+'   - by the job boxes: a small "Re-stamp pages" ghost button (secondary) + Browse
+'   - a FIRMettes block (Download / Re-run) to the right of the job info
 Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
-    Const GREEN As Long = 4563272          ' same green as the Start Here "Go" buttons
-    Const BLUE As Long = 12419407          ' same steel blue as the secondary buttons
-    Dim leftPt As Double, shp As Shape, i As Long
-    leftPt = MAP_PAGE_WIDTH_PTS + 28       ' clear of the 792pt-wide print grid
+    Const GREEN As Long = 4563272          ' primary (matches the Start Here "Go")
+    Const BLUE As Long = 12419407          ' Browse / secondary action on a field
+    Dim shp As Shape, i As Long
 
     ' Idempotent: drop any existing control shapes first.
     For i = wsMap.Shapes.Count To 1 Step -1
@@ -597,75 +650,114 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         If Left$(shp.Name, Len(MAP_CTRL_PREFIX)) = MAP_CTRL_PREFIX Then shp.Delete
     Next i
 
-    ' Panel title.
-    Dim title As Shape
-    Set title = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, 8, 260, 24)
-    title.Name = MAP_CTRL_PREFIX & "Title"
-    title.Line.Visible = msoFalse
-    title.Fill.Visible = msoFalse
-    With title.TextFrame2.TextRange
-        .Text = "Map page tools"
-        .Font.Size = 13
+    ' Title.
+    MapCtrlLabel wsMap, "Title", 8, 5, 300, 22, "Map Pages", 15, True, RGB(47, 79, 79)
+
+    ' ---- the 4-step ribbon: one line, evenly spaced across the print width ----
+    Const RIB_TOP As Double = 34, BTN_H As Double = 30, BTN_W As Double = 182, GAP As Double = 8
+    Dim x0 As Double
+    x0 = 8
+    MapRibbonStep wsMap, "KML", x0 + 0 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "1.  Export to KML", "ExportSitesToKML", "Open in Google Earth, screenshot each site."
+    MapRibbonStep wsMap, "Prepare", x0 + 1 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "2.  Prepare Pages", "PrepareMapPages", "One landscape page per site. Safe to re-run."
+    MapRibbonStep wsMap, "Insert", x0 + 2 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "3.  Insert Images", "InsertMapImages", "Pick a folder; fill in order, or name Page_1, Page_2..."
+    MapRibbonStep wsMap, "Export", x0 + 3 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "4.  Export PDF", "ExportCombinedMapPdf", "One PDF, every page, full-bleed."
+
+    ' ---- by the job boxes ----
+    ' Re-stamp: a GHOST button (white fill, grey outline+text) so it reads as a
+    ' secondary refresh, distinct from the green steps and the blue Browse. It
+    ' is NOT part of the numbered flow: filling the boxes BEFORE Prepare already
+    ' stamps correctly; this is only for edits made AFTER the pages exist.
+    Dim reTop As Double, reLeft As Double
+    reLeft = wsMap.Cells(MAP_JOB_FIRST_ROW, MAP_JOB_VALUE_LAST_COL + 1).Left + 6
+    reTop = wsMap.Cells(MAP_JOB_FIRST_ROW, 1).Top
+    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, reLeft, reTop, 120, 18)
+    shp.Name = MAP_CTRL_PREFIX & "Restamp"
+    shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
+    shp.Line.Visible = msoTrue
+    shp.Line.ForeColor.RGB = RGB(150, 150, 150)
+    shp.Line.Weight = 0.75
+    shp.Shadow.Visible = msoFalse
+    With shp.TextFrame2.TextRange
+        .Text = ChrW$(8635) & " Re-stamp pages"     ' U+21BB clockwise arrow (ChrW$, not Chr$: >255)
+        .Font.Size = 9
         .Font.Bold = msoTrue
-        .Font.Fill.ForeColor.RGB = RGB(47, 79, 79)
+        .Font.Fill.ForeColor.RGB = RGB(90, 90, 90)
+        .ParagraphFormat.Alignment = msoAlignCenter
     End With
+    shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    shp.OnAction = "UpdateMapStamps"
+    MapCtrlLabel wsMap, "RestampNote", reLeft, reTop + 20, 200, 28, _
+        "only after editing the job info once pages exist", 8, False, RGB(140, 140, 140)
 
-    ' The whole page workflow now lives on this sheet, in order.
-    AddMapControlStep wsMap, "Prepare", leftPt, 38, GREEN, _
-        "1.  Prepare Map Pages", "PrepareMapPages", _
-        "One landscape page per site on the Sites tab. Re-run any time - it " & _
-        "rebuilds the pages and keeps the job info above."
-
-    AddMapControlStep wsMap, "Insert", leftPt, 130, GREEN, _
-        "2.  Insert Map Images", "InsertMapImages", _
-        "Drops the screenshots from the 'maps' subfolder onto the pages, oldest " & _
-        "first - one per page. To place one specific image, use that page's " & _
-        Chr$(147) & "Select photo" & Chr$(148) & " button instead."
-
-    AddMapControlStep wsMap, "Stamps", leftPt, 236, BLUE, _
-        "3.  Update Stamps", "UpdateMapStamps", _
-        "Rewrites every page's WO/DI/Applicant/site stamp from the job info " & _
-        "above and the Sites tab. The images stay put."
-
-    AddMapControlStep wsMap, "Export", leftPt, 330, GREEN, _
-        "4.  Export Combined Map PDF", "ExportCombinedMapPdf", ""
-
-    ' Browse-for-folder, next to the Output Folder field in the job band.
+    ' Browse next to the Output Folder value - inspector only (Output Folder is
+    ' canonical on MapPages there). The standard product browses on Start Here.
     If ProductIsInspector() Then
-        Dim r As Long, btn As Shape
-        r = MAP_JOB_FIRST_ROW + 4                     ' the Output Folder row
-        Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, _
-            wsMap.Cells(r, MAP_JOB_VALUE_LAST_COL + 1).Left + 4, wsMap.Cells(r, 1).Top + 1, 50, 15)
-        btn.Name = MAP_CTRL_PREFIX & "Browse"
-        btn.Fill.ForeColor.RGB = BLUE
-        btn.Line.Visible = msoFalse
-        btn.Shadow.Visible = msoFalse
-        With btn.TextFrame2.TextRange
+        Dim brTop As Double
+        brTop = wsMap.Cells(MAP_JOB_FIRST_ROW + 4, 1).Top + 1
+        Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, reLeft, brTop, 52, 15)
+        shp.Name = MAP_CTRL_PREFIX & "Browse"
+        shp.Fill.ForeColor.RGB = BLUE
+        shp.Line.Visible = msoFalse
+        shp.Shadow.Visible = msoFalse
+        With shp.TextFrame2.TextRange
             .Text = "Browse"
             .Font.Size = 9
             .Font.Bold = msoTrue
             .Font.Fill.ForeColor.RGB = vbWhite
             .ParagraphFormat.Alignment = msoAlignCenter
         End With
-        btn.TextFrame2.VerticalAnchor = msoAnchorMiddle
-        btn.OnAction = "SelectOutputFolder"
+        shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        shp.OnAction = "SelectOutputFolder"
     End If
+
+    ' ---- FIRMettes block, to the right of the job info ----
+    Dim fx As Double, fy As Double
+    fx = 540: fy = wsMap.Cells(MAP_JOB_FIRST_ROW - 1, 1).Top
+    MapCtrlLabel wsMap, "FirmLabel", fx, fy, 240, 18, "FIRMettes  (FEMA flood maps)", 11, True, RGB(47, 79, 79)
+    MapRibbonStep wsMap, "Firm", fx, fy + 22, 180, 28, GREEN, _
+        "Download FIRMettes", "DownloadFirmettes", "One FEMA FIRMette PDF per site."
+    MapRibbonStep wsMap, "FirmRe", fx, fy + 74, 180, 24, BLUE, _
+        "Re-run Failed FIRMettes", "ReRunFailedFirmettes", ""
 End Sub
 
-' One control-panel step: a green button over a grey note, both MAP_CTRL_PREFIX
-' named so SetMapEditControlsVisible can hide them for export.
-Private Sub AddMapControlStep(ByVal wsMap As Worksheet, ByVal key As String, _
-        ByVal leftPt As Double, ByVal topPt As Double, ByVal fillColor As Long, _
-        ByVal caption As String, ByVal macroName As String, ByVal noteText As String)
+' A non-interactive text label in the header band.
+Private Sub MapCtrlLabel(ByVal wsMap As Worksheet, ByVal key As String, _
+        ByVal leftPt As Double, ByVal topPt As Double, ByVal w As Double, ByVal h As Double, _
+        ByVal txt As String, ByVal sz As Double, ByVal bold As Boolean, ByVal clr As Long)
+    Dim lbl As Shape
+    Set lbl = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, topPt, w, h)
+    lbl.Name = MAP_CTRL_PREFIX & key
+    lbl.Line.Visible = msoFalse
+    lbl.Fill.Visible = msoFalse
+    With lbl.TextFrame2
+        .MarginLeft = 0: .MarginRight = 0: .MarginTop = 0: .MarginBottom = 0
+        With .TextRange
+            .Text = txt
+            .Font.Size = sz
+            .Font.Bold = IIf(bold, msoTrue, msoFalse)
+            .Font.Fill.ForeColor.RGB = clr
+        End With
+    End With
+End Sub
+
+' One workflow button + a tiny one-line caption below it. Button and caption are
+' both MAP_CTRL_PREFIX named so SetMapEditControlsVisible can hide them.
+Private Sub MapRibbonStep(ByVal wsMap As Worksheet, ByVal key As String, _
+        ByVal leftPt As Double, ByVal topPt As Double, ByVal w As Double, ByVal h As Double, _
+        ByVal fillColor As Long, ByVal caption As String, ByVal macroName As String, ByVal noteText As String)
     Dim btn As Shape
-    Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, leftPt, topPt, 230, 34)
+    Set btn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, leftPt, topPt, w, h)
     btn.Name = MAP_CTRL_PREFIX & key
     btn.Fill.ForeColor.RGB = fillColor
     btn.Line.Visible = msoFalse
     btn.Shadow.Visible = msoFalse
     With btn.TextFrame2.TextRange
         .Text = caption
-        .Font.Size = 12
+        .Font.Size = 11
         .Font.Bold = msoTrue
         .Font.Fill.ForeColor.RGB = vbWhite
         .ParagraphFormat.Alignment = msoAlignCenter
@@ -673,18 +765,8 @@ Private Sub AddMapControlStep(ByVal wsMap As Worksheet, ByVal key As String, _
     btn.TextFrame2.VerticalAnchor = msoAnchorMiddle
     btn.OnAction = macroName
 
-    If Len(noteText) = 0 Then Exit Sub      ' button-only step (no explainer)
-
-    Dim note As Shape
-    Set note = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPt, topPt + 38, 260, 72)
-    note.Name = MAP_CTRL_PREFIX & key & "_Note"
-    note.Line.Visible = msoFalse
-    note.Fill.Visible = msoFalse
-    With note.TextFrame2.TextRange
-        .Text = noteText
-        .Font.Size = 10
-        .Font.Fill.ForeColor.RGB = RGB(70, 70, 70)
-    End With
+    If Len(noteText) = 0 Then Exit Sub
+    MapCtrlLabel wsMap, key & "_Note", leftPt + 2, topPt + h + 2, w - 2, 22, noteText, 8, False, RGB(110, 110, 110)
 End Sub
 
 Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
@@ -766,9 +848,12 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
 
     wsMap.Range(wsMap.Cells(startRow, 1), wsMap.Cells(startRow + MAP_ROWS_PER_PAGE - 1, MAP_COLS_WIDE)).Merge
 
-    ' Placeholder text in the merged cell.
+    ' Faint placeholder = just which page this is. The old "Paste screenshot here
+    ' (Place in Cell)" line was dropped per user request - Place-in-Cell paste
+    ' isn't the real path (Insert Map Images / Select photo are), so the hint was
+    ' misleading. Images cover this text once inserted.
     If wsSites Is Nothing Then
-        placeholderTxt = "New Page" & vbCrLf & vbCrLf & "Paste screenshot here (Place in Cell)"
+        placeholderTxt = "New Page"
     Else
         sNum = Trim$(CStr(wsSites.Cells(siteRow, COL_SITENO).Value))
         sNam = Trim$(CStr(wsSites.Cells(siteRow, COL_SITENAME).Value))
@@ -777,12 +862,11 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         Else
             placeholderTxt = sNam
         End If
-        placeholderTxt = placeholderTxt & vbCrLf & vbCrLf & "Paste screenshot here (Place in Cell)"
     End If
     With wsMap.Cells(startRow, 1)
         .Value = placeholderTxt
-        .Font.Color = RGB(200, 200, 200)
-        .Font.Size = 18
+        .Font.Color = RGB(210, 210, 210)
+        .Font.Size = 16
         .Font.Italic = True
         .HorizontalAlignment = xlCenter
         .VerticalAlignment = xlCenter
@@ -817,7 +901,7 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         With .TextFrame
             .Characters.Text = txtContent
             .Characters.Font.Name = "Segoe UI"
-            .Characters.Font.Size = 9
+            .Characters.Font.Size = MAP_STAMP_FONT
             .Characters.Font.Color = RGB(0, 0, 0)
         End With
         firstLineLen = InStr(1, txtContent, vbLf) - 1
@@ -957,6 +1041,7 @@ Public Sub ExportCombinedMapPdf()
         Exit Sub
     End If
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    ShowMapPages
 
     folder = ResolveOutputFolder()
     If Not EnsureFolderExists(folder) Then

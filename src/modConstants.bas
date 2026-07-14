@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #33"
+Public Const BUILD_REFERENCE As String = "PR #34"
 
 ' ---- Sheet names ----
 Public Const SH_START As String = "Start Here"
@@ -265,8 +265,11 @@ Public Const MAP_ROWS_PER_PAGE As Long = 4
 Public Const MAP_COLS_WIDE As Long = 13
 Public Const MAP_PAGE_HEIGHT_PTS As Double = 612    ' Landscape Letter
 Public Const MAP_PAGE_WIDTH_PTS As Double = 792
-Public Const MAP_TEXTBOX_WIDTH As Double = 245
-Public Const MAP_TEXTBOX_HEIGHT As Double = 94
+Public Const MAP_TEXTBOX_WIDTH As Double = 260
+Public Const MAP_TEXTBOX_HEIGHT As Double = 104
+' Stamp font size (WO/DI/Applicant/Site/coords textbox on each page). Bumped
+' from 9 for legibility on the printed page.
+Public Const MAP_STAMP_FONT As Double = 11
 
 ' Per-page "Select photo" picker button (modMapImage.PickImageForPage). One is
 ' stamped on each map page by CreateMapPage; hidden during PDF export.
@@ -281,17 +284,20 @@ Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 ' The page rows are ~153pt tall (4 of them = one landscape page), and a row
 ' height is a whole-row property - so input cells sitting beside the pages would
 ' be 153pt tall too. Hence a band of SHORT rows above the pages: rows
-' 1..MAP_HEADER_ROWS hold the panel, and page 1 starts at MAP_FIRST_PAGE_ROW.
-' The pages' print area starts there too, so the panel never prints.
-Public Const MAP_HEADER_ROWS As Long = 12
+' 1..MAP_HEADER_ROWS hold the header (workflow ribbon + job info + FIRMettes),
+' and page 1 starts at MAP_FIRST_PAGE_ROW. The pages' print area starts there
+' too, so the header never prints. Buttons are absolute-positioned shapes over
+' this band, so they're free of the tall page-row heights.
+Public Const MAP_HEADER_ROWS As Long = 16
 Public Const MAP_FIRST_PAGE_ROW As Long = MAP_HEADER_ROWS + 1
-Public Const MAP_HEADER_ROW_HEIGHT As Double = 18
-' Job-block cells inside that band. Labels merge A:B, values merge C:G (the page
+Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
+' Job-block cells inside that band. Labels merge A:B, values merge C:F (the page
 ' columns are only ~61pt wide each, so a single cell is too narrow for a label).
 Public Const MAP_JOB_LABEL_COL As Long = 1      ' A (merged A:B)
-Public Const MAP_JOB_VALUE_COL As Long = 3      ' C (merged C:G)
-Public Const MAP_JOB_VALUE_LAST_COL As Long = 7 ' G
-Public Const MAP_JOB_FIRST_ROW As Long = 3      ' WO # ... Output Folder run 3..7
+Public Const MAP_JOB_VALUE_COL As Long = 3      ' C (merged C:F)
+Public Const MAP_JOB_VALUE_LAST_COL As Long = 6 ' F
+' The job block sits under the workflow ribbon (which occupies rows ~3-6).
+Public Const MAP_JOB_FIRST_ROW As Long = 8      ' WO # ... Output Folder run 8..12
 
 ' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
 ' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,

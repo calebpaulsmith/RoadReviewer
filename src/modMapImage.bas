@@ -64,6 +64,7 @@ Public Sub InsertMapImages()
             vbExclamation, "Insert Map Images"
         Exit Sub
     End If
+    ShowMapPages
 
     Dim folder As String
     folder = ResolveMapImageFolder()

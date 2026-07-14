@@ -76,7 +76,7 @@ try {
   # product-surface assertions below key off Start Here, because the MapPages
   # tools panel (Prepare / Insert / Update Stamps / Export) now exists on BOTH
   # products - it's the map workflow's home, not an inspector-only feature.
-  $btnCount = 0; $orphans = @(); $onActions = @{}; $startActions = @{}
+  $btnCount = 0; $orphans = @(); $onActions = @{}; $startActions = @{}; $mapActions = @{}
   foreach ($ws in $wb.Worksheets) {
     foreach ($sh in $ws.Shapes) {
       $oa = ""
@@ -85,6 +85,7 @@ try {
         $btnCount++
         $onActions[$oa] = $true
         if ($ws.Name -eq 'Start Here') { $startActions[$oa] = $true }
+        if ($ws.Name -eq 'MapPages')   { $mapActions[$oa] = $true }
         $resolved = $publicSubs[$oa]
         $caption = $sh.TextFrame2.TextRange.Text
         $status = if ($resolved) { "OK   ($resolved)" } else { "ORPHAN"; $orphans += "$($ws.Name)::$caption -> $oa" }
@@ -100,56 +101,55 @@ try {
     Write-Host ("  $btnCount buttons, every OnAction resolves") -ForegroundColor Green
   }
 
-  # Product button surface. The general hand-off exports are dispatched from
-  # the Start Here "Export" dropdown (RunSelectedExport), so only the surviving
-  # buttons are asserted here; the dropdown menu is checked separately below.
-  #
-  # On the INSPECTOR product the classify + photo actions were collapsed into a
-  # second dropdown (RunSelectedRoadsAction), and KML / FIRMettes / combined map
-  # PDF were promoted to dedicated map-workflow buttons. On the STANDARD product
-  # Check Roads / Re-run remain standalone buttons. The standard "Photo Links"
-  # button was removed (the OpenImageryForSelection macro is still live - it is
-  # reachable from the inspector's roads dropdown - it just has no button here).
-  $sharedActions = @('RunSelectedExport','BuildWorkbook')
+  # Product button surface (Start Here).
+  #   Standard Start Here = the FHWA + imagery hub: Check Roads, Re-run, the
+  #     export dropdown Go, its own Output-Folder Browse, Build/Reset.
+  #   Inspector Start Here = a slim landing page: an "Open Map Pages tab" jump
+  #     (GoToMapPages), a roads dropdown Go (demoted optional FHWA), an export
+  #     dropdown Go, Build/Reset. The map/FIRMette buttons are on MapPages now.
+  $sharedStart = @('RunSelectedExport','BuildWorkbook','ResetWorkbookFull')
   if ($isInspector) {
-    $sharedActions += 'RunSelectedRoadsAction'
+    $inspectorStart = @('GoToMapPages','RunSelectedRoadsAction')
+    $forbiddenStart = @('PrepareMapPages','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf','InsertMapImages')
+    foreach ($a in ($sharedStart + $inspectorStart)) {
+      if (-not $startActions.ContainsKey($a)) { throw "Inspector Start Here missing button for: $a" }
+    }
+    foreach ($a in $forbiddenStart) {
+      if ($startActions.ContainsKey($a)) { throw "Inspector Start Here should NOT have $a (it moved to MapPages)" }
+    }
   } else {
-    $sharedActions += @('CheckRoads','ReRunFailedRows')
-  }
-  # Inspector-only START HERE buttons. On the standard product these actions are
-  # reachable, just from the export dropdown (KML / FIRMettes / map pages) rather
-  # than a dedicated button.
-  $inspectorStartActions = @('PrepareMapPages','AddMapPage','ExportSitesToKML','DownloadFirmettes','ReRunFailedFirmettes','ExportCombinedMapPdf')
-  foreach ($a in $sharedActions) {
-    if (-not $startActions.ContainsKey($a)) { throw "Missing expected Start Here button for: $a" }
-  }
-  foreach ($a in $inspectorStartActions) {
-    if ($isInspector -and -not $startActions.ContainsKey($a)) { throw "Inspector Start Here missing button for: $a" }
-    if (-not $isInspector -and $startActions.ContainsKey($a)) { throw "Standard Start Here must NOT have a button for: $a" }
-  }
-  # The MapPages tools panel exists on BOTH products.
-  foreach ($a in @('PrepareMapPages','InsertMapImages','UpdateMapStamps','ExportCombinedMapPdf')) {
-    if (-not $onActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
-  }
-  Write-Host "  product button surface correct (Start Here + MapPages tools panel)" -ForegroundColor Green
-
-  Write-Host "=== Named ranges ===" -ForegroundColor Cyan
-  $sharedNames = @('JobState','JobOutputFolder','JobAgolMap','JobBufferFeet')
-  $inspectorNames = @('JobWO','JobDI','JobDisaster','JobApplicant')
-  foreach ($n in $sharedNames) {
-    try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
-  }
-  foreach ($n in $inspectorNames) {
-    $found = $true
-    try { $r = $wb.Names($n) } catch { $found = $false }
-    if ($isInspector) {
-      if (-not $found) { throw "Inspector build missing named range: $n" }
-      Write-Host ("  " + $n + " -> " + $r.RefersTo)
-    } else {
-      if ($found) { throw "Standard build must NOT have named range: $n" }
+    $standardStart = @('CheckRoads','ReRunFailedRows','SelectOutputFolder')
+    foreach ($a in ($sharedStart + $standardStart)) {
+      if (-not $startActions.ContainsKey($a)) { throw "Standard Start Here missing button for: $a" }
     }
   }
-  Write-Host "  product named-range surface correct" -ForegroundColor Green
+  # The map workflow lives on MapPages for BOTH products (hidden until opted-in
+  # on standard). Output-Folder Browse is the one that differs: on the inspector
+  # it's on MapPages (Output Folder is canonical there); on the standard product
+  # it's on Start Here, so its MapPages has no Browse.
+  foreach ($a in @('ExportSitesToKML','PrepareMapPages','InsertMapImages','ExportCombinedMapPdf','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
+    if (-not $mapActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
+  }
+  if ($isInspector -and -not $mapActions.ContainsKey('SelectOutputFolder')) { throw "Inspector MapPages missing the Output-Folder Browse" }
+  Write-Host "  product button surface correct (Start Here + MapPages tools)" -ForegroundColor Green
+
+  Write-Host "=== MapPages visibility ===" -ForegroundColor Cyan
+  # Inspector: MapPages is the hero, shown. Standard: hidden until the user opts
+  # into map pages (any map action calls modMaps.ShowMapPages).
+  $mpVisible = [int]$wb.Worksheets('MapPages').Visible
+  if ($isInspector -and $mpVisible -ne -1) { throw "Inspector should show MapPages (Visible=$mpVisible)" }
+  if (-not $isInspector -and $mpVisible -eq -1) { throw "Standard should ship MapPages hidden (Visible=$mpVisible)" }
+  Write-Host ("  MapPages " + $(if ($isInspector) { 'visible' } else { 'hidden (opt-in)' }) + " as expected") -ForegroundColor Green
+
+  Write-Host "=== Named ranges ===" -ForegroundColor Cyan
+  # All eight job named ranges now exist on BOTH products (the job block lives on
+  # MapPages, which the standard product also has - just hidden). Their homes
+  # differ: State/AGOL/Buffer on Start Here; WO/DI/Disaster/Applicant on MapPages;
+  # Output Folder on Start Here (standard) or MapPages (inspector).
+  foreach ($n in @('JobState','JobOutputFolder','JobAgolMap','JobBufferFeet','JobWO','JobDI','JobDisaster','JobApplicant')) {
+    try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
+  }
+  Write-Host "  all job named ranges present" -ForegroundColor Green
 
   Write-Host "=== Sites headers (row $HeaderRow) ===" -ForegroundColor Cyan
   $sites = $wb.Worksheets('Sites')

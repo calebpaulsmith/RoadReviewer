@@ -160,6 +160,20 @@ Private Sub OrderSheets()
     Else
         wsSrc.Visible = xlSheetVisible
     End If
+
+    ' MapPages: the inspector's hero workspace, so it's shown there. On the
+    ' STANDARD product it ships HIDDEN - map pages are opt-in; any map action
+    ' (modMaps.ShowMapPages, called from Prepare/Insert/Export/...) reveals it.
+    Dim wsMap As Worksheet
+    Set wsMap = SheetByName(SH_MAPPAGES)
+    If Not wsMap Is Nothing Then
+        If ProductIsInspector() Then
+            wsMap.Visible = xlSheetVisible
+        Else
+            SheetByName(SH_START).Activate
+            wsMap.Visible = xlSheetHidden
+        End If
+    End If
     On Error GoTo 0
 End Sub
 
@@ -476,109 +490,54 @@ Private Sub AddBrowseButton(ByVal ws As Worksheet, ByVal r As Long)
     sh.TextFrame2.TextRange.Font.Size = 9   ' 11pt (AddButton's default) overflows a 50x15 button
 End Sub
 
-' Site Inspector Review Tool. The hero is the map/FIRMette production work, so
-' those sections come first; FHWA classification is still fully available, just
-' further down - and the two inputs only IT uses (AGOL layer, search buffer) now
-' live in that section rather than in the job block at the top.
+' Site Inspector Review Tool - a slim landing/admin page. The production work
+' (map pages + FIRMettes) all lives on the MapPages tab now, so Start Here is
+' just: a jump to that tab, the general hand-off exports, an OPTIONAL demoted
+' FHWA-status section (kept so the classify feature and its named ranges survive
+' - "demote, don't delete"), and Repair/Reset.
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
-    ' No subtitle row (row 3 dropped per user request) and no on-sheet
-    ' disclaimer box - the not-authoritative disclaimer is shown as a dialog
-    ' the first time Check Roads runs (modClassify.ShowDisclaimerOnce).
     With ws.Range("B2")
         .Value = "Site Inspector Review Tool"
         .Font.Size = 20
         .Font.Bold = True
     End With
-    StepLine ws, 4, "Add points on the Sites tab, then work top to bottom."
+    StepLine ws, 4, "Add your points on the Sites tab, then open the Map Pages tab - that's where the work happens."
 
-    ' ---- Location Maps ----
-    ' The job info (WO/DI/Disaster/Applicant/Output Folder) is NOT here anymore -
-    ' it lives on the MapPages sheet, where the inspector can see it land in the
-    ' page stamps. Everything after "prepare the pages" happens over there too,
-    ' so there's no more hopping back and forth.
-    ' Spacing rule, applied to every section on both products: ONE blank row
-    ' under a heading, and a button sits on the row immediately below the step
-    ' or input it belongs to (no gap between a step and its button).
-    SectionLabel ws, 6, "Location Maps"
-    StepLine ws, 8, "1.  Input site info on the Sites tab - coordinates, site name and category."
-    StepLine ws, 10, "2.  Export the sites to KML, open it (Google Earth), and screenshot each site."
-    NoteLine ws, 14, "Press Windows+Shift+S, drag a box around the site, and save each image in a 'maps' subfolder of the " & _
-        "Output Folder - or use each page's 'Select photo' button."
-    StepLine ws, 16, "3.  Prepare the map pages - one landscape page per site (opens the MapPages tab)."
-    NoteLine ws, 20, "Everything else happens on the MapPages tab: fill in the job info at the top (WO/DI, Disaster, " & _
-        "Applicant, Output Folder), insert your images, click Update Stamps, then Export Combined Map PDF."
-    StepLine ws, 22, "4.  Export the combined map PDF (this button is also on the MapPages tab)."
-
-    ' ---- FIRMette ----
-    SectionLabel ws, 27, "FIRMette"
-    NoteLine ws, 32, "Downloads the FEMA FIRMette PDF for every site. Re-run only retries failed rows."
-    ' The job info lives on MapPages now, so instead of mirroring those fields
-    ' here we show what they PRODUCE: the file name the first site will get.
-    ' FirmettePreview() is volatile, so it tracks edits made over on MapPages.
-    LabelOnly ws, 34, "Example file name"
-    FormulaValue ws, 34, "=FirmettePreview()"
-    LabelOnly ws, 35, "Output folder"
-    FormulaValue ws, 35, "=IF(" & NR_OUTFOLDER & "="""",""(not set - saves next to this workbook)""," & NR_OUTFOLDER & ")"
-
-    ' ---- Check FHWA Status and Imagery ----
-    SectionLabel ws, 38, "Check FHWA Status and Imagery"
-    LabelValue ws, 40, "State", NR_STATE, "MI"
-    LabelValue ws, 41, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 42, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    NoteLine ws, 46, "Pick an action, then click Go: classify roads, re-run failed rows, or open photo tabs for the selected row(s)."
-    ' Trimmed to one line per user request (everything from "250 ft is a good
-    ' default" on was cut), so the row keeps a normal height.
-    FootnoteLine ws, 47, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+    ' ---- Map Pages & FIRMettes: just a door to the MapPages tab ----
+    SectionLabel ws, 6, "Map Pages & FIRMettes"
+    NoteLine ws, 8, "Building location-map pages and downloading FIRMettes both live on the Map Pages tab, " & _
+        "start to finish. Click below to go there."
 
     ' ---- Exports & Handoff ----
-    SectionLabel ws, 49, "Exports & Handoff"
-    NoteLine ws, 53, "Pick an export, then click Go. Everything writes to the Output Folder above."
+    SectionLabel ws, 12, "Exports & Handoff"
+    NoteLine ws, 16, "Pick an export, then click Go. Hand-off files (CSV / GeoJSON / KML) save to the Output Folder set on Map Pages."
 
-    SectionLabel ws, 55, "Repair / Reset"
-    NoteLine ws, 59, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    ' ---- Check FHWA status (optional, demoted) ----
+    SectionLabel ws, 20, "Check FHWA Status  (optional)"
+    LabelValue ws, 22, "State", NR_STATE, "MI"
+    LabelValue ws, 23, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 24, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    NoteLine ws, 28, "Optional road-classification / photo-link check. Pick an action, then click Go."
+    FootnoteLine ws, 29, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+
+    SectionLabel ws, 32, "Repair / Reset"
+    NoteLine ws, 36, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (every row height above is final before this point) ----
-    AddStateValidation ws.Cells(40, 3)
-    AddBufferValidation ws.Cells(42, 3)
+    AddStateValidation ws.Cells(22, 3)
+    AddBufferValidation ws.Cells(24, 3)
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(11).Top, 190, 28, "Export Sites to KML", "ExportSitesToKML", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT, ws.Rows(17).Top, 190, 28, "Prepare Map Pages", "PrepareMapPages", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(17).Top, 190, 28, "Add Blank Map Page", "AddMapPage"
-    AddButton ws, BODY_LEFT_PT, ws.Rows(23).Top, 230, 28, "Export Combined Map PDF", "ExportCombinedMapPdf", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT, ws.Rows(9).Top, 230, 32, "Open Map Pages tab", "GoToMapPages", CLR_BTN_GO
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(29).Top, 190, 28, "Download FIRMettes", "DownloadFirmettes", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 200, ws.Rows(29).Top, 210, 28, "Re-run Failed FIRMettes", "ReRunFailedFirmettes"
-    ' Same JobOutputFolder cell as the one on MapPages - one named range, so
-    ' browsing from either sheet updates both views.
-    AddBrowseButton ws, 35
+    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(14).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(14).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
 
-    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(43).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(43).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(26).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(26).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
 
-    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(51).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(51).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
-
-    AddButton ws, BODY_LEFT_PT, ws.Rows(57).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(57).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
-End Sub
-
-' A bold label in column B with no input cell beside it (the value is a
-' read-only formula written by FormulaValue).
-Private Sub LabelOnly(ByVal ws As Worksheet, ByVal r As Long, ByVal label As String)
-    ws.Cells(r, 2).Value = label
-    ws.Cells(r, 2).Font.Bold = True
-End Sub
-
-' A computed, read-only display cell in column C: grey and italic so it doesn't
-' look like somewhere to type.
-Private Sub FormulaValue(ByVal ws As Worksheet, ByVal r As Long, ByVal f As String)
-    With ws.Cells(r, 3)
-        .Formula = f
-        .Font.Color = RGB(90, 90, 90)
-        .Font.Italic = True
-        .HorizontalAlignment = xlLeft
-    End With
+    AddButton ws, BODY_LEFT_PT, ws.Rows(34).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(34).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)
