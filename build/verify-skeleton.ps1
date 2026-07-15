@@ -228,6 +228,10 @@ try {
   $wb.Close($false)
   $wb = $excel.Workbooks.Open($XlsmPath, $false, $false)
   $sites = $wb.Worksheets('Sites')
+  # State ships BLANK now, which would make the NFC columns show the "Set State"
+  # prompt; set it so the state-dependent links resolve for this resolution check
+  # (the blank-State placeholder is exercised separately below).
+  $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $sites.Cells($FirstDataRow, 4).Value2 = 'Test - Kalamazoo'   # Site Name
   $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536      # Lat
   $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon

@@ -474,7 +474,9 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     StepLine ws, 14, "3.  Click Check Roads. Rows tint red (federal aid), green (non-federal aid) or yellow (review)."
 
     SectionLabel ws, 16, "Check FHWA Status"
-    LabelValue ws, 18, "State", NR_STATE, "MI"
+    ' State blank by default (per user): forces an explicit pick, and the NFC
+    ' link columns show the "Set State" prompt until one is chosen.
+    LabelValue ws, 18, "State", NR_STATE, ""
     LabelValue ws, 19, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
     LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
     FootnoteLine ws, 25, "*", "How far to look for a road / urban boundary when the exact point misses."
@@ -536,7 +538,8 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
 
     ' ---- Check FHWA status (optional, demoted) ----
     SectionLabel ws, 14, "Check FHWA Status  (optional)"
-    LabelValue ws, 16, "State", NR_STATE, "MI"
+    ' State blank by default (per user) - see the standard product's note.
+    LabelValue ws, 16, "State", NR_STATE, ""
     LabelValue ws, 17, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
     LabelValue ws, 18, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
     NoteLine ws, 22, "Optional road-classification / photo-link check. Pick an action, then click Go."
