@@ -28,7 +28,7 @@ Public Sub ExportSitesCsv()
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export CSV"
         Exit Sub
     End If
-    file = folder & ProductTitle() & " Sites.csv"
+    file = folder & CleanFileName(JobFileStem() & " - Sites.csv")
 
     If Not WriteCsvFile(file, csv) Then
         If Not gHeadless Then MsgBox "Could not write the CSV (is it open in another program?).", vbExclamation, "Export CSV"

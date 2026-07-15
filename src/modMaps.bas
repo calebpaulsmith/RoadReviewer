@@ -171,7 +171,7 @@ Private Sub FirmetteRunRows(ByVal onlyFailed As Boolean)
 
         lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
         lon = InvariantNum(ws.Cells(r, COL_LON).Value)
-        fileName = FirmetteFileName(wo, di, disaster, siteName)
+        fileName = FirmetteFileName(siteName)
         fullPath = folder & fileName
 
         msg = ""
@@ -208,16 +208,10 @@ Private Function ShouldRunFirmetteRow(ByVal ws As Worksheet, ByVal r As Long, _
     End If
 End Function
 
-' "WO123 DI456 - DR-TEST - SiteName FIRMette.pdf" — each piece omitted
-' when blank, so no dangling "WO " or trailing " - " ever appears.
-Private Function FirmetteFileName(ByVal wo As String, ByVal di As String, _
-        ByVal disaster As String, ByVal siteName As String) As String
-    Dim s As String, jobs As String
-    jobs = JobIds(wo, di, " ", "WO", "DI")
-    If Len(jobs) > 0 Then s = jobs & " - "
-    If Len(disaster) > 0 Then s = s & disaster & " - "
-    s = s & siteName & " FIRMette.pdf"
-    FirmetteFileName = CleanFileName(s)
+' "WO123 DI5 - DR-4882-IN - SiteName FIRMette.pdf" - the shared JobFileStem
+' (WO/DI/Disaster-State, or a date-time when all blank) plus the per-site name.
+Private Function FirmetteFileName(ByVal siteName As String) As String
+    FirmetteFileName = CleanFileName(JobFileStem() & " - " & siteName & " FIRMette.pdf")
 End Function
 
 ' Live example of what DownloadFirmettes will name its files, built from the
@@ -228,8 +222,7 @@ End Function
 ' any of those cells change.
 Public Function FirmettePreview() As String
     Application.Volatile
-    Dim ws As Worksheet, last As Long, r As Long
-    Dim wo As String, di As String, siteName As String
+    Dim ws As Worksheet, last As Long, r As Long, siteName As String
 
     On Error GoTo Fallback
     Set ws = SitesSheet()
@@ -238,23 +231,17 @@ Public Function FirmettePreview() As String
 
     For r = SITES_FIRST_DATA_ROW To last
         If HasValidCoords(ws, r) Then
-            wo = Trim$(CStr(ws.Cells(r, COL_WO).Value))
-            di = Trim$(CStr(ws.Cells(r, COL_DI).Value))
-            If Len(wo) = 0 Then wo = SetupValue(NR_WO)
-            If Len(di) = 0 Then di = SetupValue(NR_DI)
             siteName = Trim$(CStr(ws.Cells(r, COL_SITENAME).Value))
             If Len(siteName) = 0 Then siteName = "Site " & CStr(r - SITES_FIRST_DATA_ROW + 1)
-            FirmettePreview = FirmetteFileName(wo, di, SetupValue(NR_DISASTER), siteName)
+            FirmettePreview = FirmetteFileName(siteName)
             Exit Function
         End If
     Next r
 
 Fallback:
-    ' No site rows yet - show the shape of the name using the job info alone.
-    ' NB: no angle brackets in the placeholder - CleanFileName strips them to
-    ' underscores, which read as part of the file name.
-    FirmettePreview = FirmetteFileName(SetupValue(NR_WO), SetupValue(NR_DI), _
-        SetupValue(NR_DISASTER), "(site name)")
+    ' No site rows yet - show the shape of the name with a placeholder site.
+    ' NB: no angle brackets - CleanFileName turns them into underscores.
+    FirmettePreview = FirmetteFileName("(site name)")
 End Function
 
 ' Submit → poll → fetch OutputFile → download. Returns True on success.
@@ -566,56 +553,74 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     wsMap.Range(wsMap.Cells(1, 1), wsMap.Cells(MAP_HEADER_ROWS, MAP_COLS_WIDE)).Interior.Color = RGB(245, 247, 249)
 
     ' Section labels (the buttons that go with them are added later, as shapes).
-    HeaderLabel wsMap, MAP_JOB_FIRST_ROW - 1, MAP_JOB_LABEL_COL, "Job info  (stamped onto every map page)"
+    HeaderLabel wsMap, MAP_JOB_FIRST_ROW - 1, MAP_JOB_LABEL_COL, "Job info  (stamped onto every map page + used in file names)"
 
-    r = MAP_JOB_FIRST_ROW
-    MapJobField wsMap, r + 0, "Work Order (WO #)", NR_WO
-    MapJobField wsMap, r + 1, "Impact (DI #)", NR_DI
-    MapJobField wsMap, r + 2, "Disaster Number", NR_DISASTER
-    MapJobField wsMap, r + 3, "Applicant", NR_APPLICANT
-    ' Output Folder is canonical HERE for the inspector (its Start Here is thin).
-    ' For the standard product it's canonical on Start Here, so MapPages shows a
-    ' read-only mirror instead of a second input that would fight for the name.
+    Dim rr As Long
+    rr = MAP_JOB_FIRST_ROW
+    MapJobField wsMap, rr, "Work Order (WO #)", NR_WO:                 rr = rr + 1
+    MapJobField wsMap, rr, "Impact (DI #)", NR_DI:                     rr = rr + 1
+    MapJobField wsMap, rr, "Disaster (e.g. 4882)", NR_DISASTER:        rr = rr + 1
+    ' State lives HERE for the inspector (Map Pages is its landing) - it drives
+    ' road classification AND is appended to the disaster in file names
+    ' ("DR-4882-IN"). On the standard product State stays on Start Here (its hub),
+    ' so it's not repeated here.
     If ProductIsInspector() Then
-        MapJobField wsMap, r + 4, "Output Folder", NR_OUTFOLDER
+        MapJobField wsMap, rr, "State", NR_STATE
+        AddMapStateValidation wsMap.Cells(rr, MAP_JOB_VALUE_COL)
+        rr = rr + 1
+    End If
+    MapJobField wsMap, rr, "Applicant", NR_APPLICANT:                  rr = rr + 1
+    ' Output Folder: canonical here for the inspector; a read-only mirror on the
+    ' standard product (canonical on its Start Here) so the name isn't defined twice.
+    If ProductIsInspector() Then
+        MapJobField wsMap, rr, "Output Folder", NR_OUTFOLDER
     Else
-        With wsMap.Range(wsMap.Cells(r + 4, MAP_JOB_LABEL_COL), wsMap.Cells(r + 4, MAP_JOB_LABEL_COL + 1))
-            .Merge
-            .Value = "Output Folder"
-            .Font.Bold = True
+        With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_JOB_LABEL_COL + 1))
+            .Merge: .Value = "Output Folder": .Font.Bold = True
         End With
-        With wsMap.Range(wsMap.Cells(r + 4, MAP_JOB_VALUE_COL), wsMap.Cells(r + 4, MAP_JOB_VALUE_LAST_COL))
+        With wsMap.Range(wsMap.Cells(rr, MAP_JOB_VALUE_COL), wsMap.Cells(rr, MAP_JOB_VALUE_LAST_COL))
             .Merge
             .Formula = "=IF(" & NR_OUTFOLDER & "="""",""(set on Start Here)""," & NR_OUTFOLDER & ")"
-            .Font.Color = RGB(90, 90, 90)
-            .Font.Italic = True
+            .Font.Color = RGB(90, 90, 90): .Font.Italic = True
         End With
     End If
+    rr = rr + 1
 
-    ' WO/DI precedence note - stated the RIGHT way round: the Sites row wins, and
-    ' these only FILL IN rows that left their own cells blank. Kept to cols A:G so
-    ' it clears the FIRMette block (cols I+).
-    With wsMap.Range(wsMap.Cells(r + 6, MAP_JOB_LABEL_COL), wsMap.Cells(r + 6, 7))
+    ' Live file-name preview (updates as the job cells change; FirmettePreview is
+    ' volatile). Same JobFileStem every export uses, so this is exactly what the
+    ' FIRMette / Location Map / KML / CSV files will be called.
+    With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_COLS_WIDE))
         .Merge
-        .Value = "WO # / DI # here fill in any Sites row whose own WO # (col A) or DI # (col B) is blank; a value typed into the row wins."
+        .Formula = "=""File name:   ""&FirmettePreview()"
+        .Font.Size = 9
+        .Font.Italic = True
+        .Font.Color = RGB(90, 90, 90)
+        .HorizontalAlignment = xlLeft
+    End With
+    rr = rr + 1
+
+    ' WO/DI note (user wording): they fill in blank WO#/DI# on the Sites rows.
+    With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_COLS_WIDE))
+        .Merge
+        .Value = "WO # and DI # here fill in blank WO #/DI # cells on the Sites tab (a value typed on the row wins)."
         .Font.Size = 9
         .Font.Italic = True
         .Font.Color = RGB(120, 120, 120)
         .HorizontalAlignment = xlLeft
         .WrapText = False
     End With
+End Sub
 
-    ' FIRMette filename example (what Download FIRMettes names the first file),
-    ' under the FIRMette block. FirmettePreview() is volatile, so it tracks the
-    ' WO/DI/Disaster job cells above as they're typed.
-    With wsMap.Range(wsMap.Cells(r + 5, 9), wsMap.Cells(r + 5, MAP_COLS_WIDE))
-        .Merge
-        .Formula = "=""e.g.  ""&FirmettePreview()"
-        .Font.Size = 8
-        .Font.Italic = True
-        .Font.Color = RGB(120, 120, 120)
-        .HorizontalAlignment = xlLeft
+' State dropdown validation for the Map Pages State cell (mirrors modBuild's).
+Private Sub AddMapStateValidation(ByVal cell As Range)
+    On Error Resume Next
+    With cell.Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=STATE_LIST
+        .IgnoreBlank = True
+        .InCellDropdown = True
     End With
+    On Error GoTo 0
 End Sub
 
 Private Sub HeaderLabel(ByVal wsMap As Worksheet, ByVal r As Long, ByVal c As Long, ByVal txt As String)
@@ -692,13 +697,15 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     Dim x0 As Double
     x0 = 8
     MapRibbonStep wsMap, "KML", x0 + 0 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "1.  Export to KML", "ExportSitesToKML", "Open in Google Earth, screenshot each site."
+        "1.  Export to KML", "ExportSitesToKML", _
+        "Opens KML in Google Earth Desktop." & vbLf & "Zoom in and screenshot each site (Windows key + Shift + S)."
     MapRibbonStep wsMap, "Prepare", x0 + 1 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "2.  Prepare Pages", "PrepareMapPages", "One landscape page per site. Safe to re-run."
+        "2.  Prepare Pages", "PrepareMapPages", "One page per site. Re-run if you add sites."
     MapRibbonStep wsMap, "Insert", x0 + 2 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "3.  Insert Images", "InsertMapImages", "Pick a folder; fill in order, or name Page_1, Page_2..."
+        "3.  Insert Images", "InsertMapImages", _
+        "Pick a folder with screenshots - auto-orders oldest to newest, or rename each to match: Site_1, Site_2..."
     MapRibbonStep wsMap, "Export", x0 + 3 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "4.  Export PDF", "ExportCombinedMapPdf", "One PDF, every page, full-bleed."
+        "4.  Export PDF", "ExportCombinedMapPdf", "Exports Location Maps as a single PDF."
 
     ' ---- by the job boxes ----
     ' Re-stamp: a GHOST button (white fill, grey outline+text) so it reads as a
@@ -730,8 +737,10 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     ' Browse next to the Output Folder value - inspector only (Output Folder is
     ' canonical on MapPages there). The standard product browses on Start Here.
     If ProductIsInspector() Then
+        ' Output Folder is the last job field: WO,DI,Disaster,State,Applicant,
+        ' Output Folder = MAP_JOB_FIRST_ROW+5 on the inspector.
         Dim brTop As Double
-        brTop = wsMap.Cells(MAP_JOB_FIRST_ROW + 4, 1).Top + 1
+        brTop = wsMap.Cells(MAP_JOB_FIRST_ROW + 5, 1).Top + 1
         Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, reLeft, brTop, 52, 15)
         shp.Name = MAP_CTRL_PREFIX & "Browse"
         shp.Fill.ForeColor.RGB = BLUE
@@ -800,7 +809,8 @@ Private Sub MapRibbonStep(ByVal wsMap As Worksheet, ByVal key As String, _
     btn.OnAction = macroName
 
     If Len(noteText) = 0 Then Exit Sub
-    MapCtrlLabel wsMap, key & "_Note", leftPt + 2, topPt + h + 2, w - 2, 22, noteText, 8, False, RGB(110, 110, 110)
+    ' 34pt tall so a two-line caption (e.g. the KML step) fits.
+    MapCtrlLabel wsMap, key & "_Note", leftPt + 2, topPt + h + 2, w - 2, 34, noteText, 8, False, RGB(110, 110, 110)
 End Sub
 
 Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
@@ -1082,17 +1092,7 @@ Public Sub ExportCombinedMapPdf()
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export Map PDF"
         Exit Sub
     End If
-    disaster = SetupValue(NR_DISASTER)
-    wo = SetupValue(NR_WO)
-    di = SetupValue(NR_DI)
-
-    Dim jobs As String
-    jobs = JobIds(wo, di, " ", "WO", "DI")
-    fileName = ""
-    If Len(jobs) > 0 Then fileName = jobs & " - "
-    If Len(disaster) > 0 Then fileName = fileName & disaster & " - "
-    fileName = fileName & "Location Map.pdf"
-    fileName = CleanFileName(fileName)
+    fileName = CleanFileName(JobFileStem() & " - Location Map.pdf")
     fullPath = folder & fileName
 
     ' Bring text boxes to the front in case the inspector's pasted screenshot covered them.
@@ -1282,7 +1282,7 @@ Private Function WriteSitesKml(ByRef filePath As String, ByRef placemarkCount As
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, dialogTitle
         Exit Function
     End If
-    file = folder & ProductTitle() & " Sites.kml"
+    file = folder & CleanFileName(JobFileStem() & " - Sites.kml")
 
     If Not WriteTextFile(file, kml) Then
         If Not gHeadless Then MsgBox "Could not write the KML file.", vbExclamation, dialogTitle
@@ -1469,7 +1469,7 @@ Private Function WriteSitesGeoJson(ByRef filePath As String, ByRef featureCount 
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, dialogTitle
         Exit Function
     End If
-    file = folder & ProductTitle() & " Sites.geojson"
+    file = folder & CleanFileName(JobFileStem() & " - Sites.geojson")
 
     If Not WriteTextFile(file, js) Then
         If Not gHeadless Then MsgBox "Could not write the GeoJSON file.", vbExclamation, dialogTitle

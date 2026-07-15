@@ -256,6 +256,49 @@ Public Function JobIds(ByVal wo As String, ByVal di As String, _
     JobIds = out
 End Function
 
+' The disaster tag used in file names, pairing the Disaster Number with the
+' State (per user's "DR-4882-IN" convention). A bare number is assumed to be a
+' major-disaster DR ("4882" -> "DR-4882"); an explicit prefix (DR-/EM-/...) is
+' kept as typed. State is appended when set. Empty when there's no disaster.
+Public Function DisasterTag() As String
+    Dim d As String, st As String
+    d = Trim$(SetupValue(NR_DISASTER))
+    st = BareStateCode(SetupValue(NR_STATE))
+    If Len(d) = 0 Then Exit Function
+    If IsAllDigits(d) Then d = "DR-" & d
+    DisasterTag = d
+    If Len(st) > 0 Then DisasterTag = DisasterTag & "-" & st
+End Function
+
+Private Function IsAllDigits(ByVal s As String) As Boolean
+    Dim i As Long
+    If Len(s) = 0 Then Exit Function
+    For i = 1 To Len(s)
+        If Mid$(s, i, 1) < "0" Or Mid$(s, i, 1) > "9" Then Exit Function
+    Next i
+    IsAllDigits = True
+End Function
+
+' The SHARED file-name stem for every export (Location Map PDF, FIRMettes, KML,
+' CSV, GeoJSON, ...), so they're named consistently and never collide:
+'   "WO123 DI5 - DR-4882-IN"   (whatever job info is set)
+' When no WO/DI/Disaster is set, falls back to a date-time stamp so repeated
+' exports don't overwrite one another. Each export appends its own suffix, e.g.
+'   JobFileStem() & " - Location Map.pdf"
+'   JobFileStem() & " - Sites.kml"
+Public Function JobFileStem() As String
+    Dim jobs As String, tag As String, stem As String
+    jobs = JobIds(SetupValue(NR_WO), SetupValue(NR_DI), " ", "WO", "DI")
+    tag = DisasterTag()
+    stem = jobs
+    If Len(tag) > 0 Then
+        If Len(stem) > 0 Then stem = stem & " - "
+        stem = stem & tag
+    End If
+    If Len(stem) = 0 Then stem = Format$(Now(), "yyyy-mm-dd HHmm")
+    JobFileStem = CleanFileName(stem)
+End Function
+
 ' Strip characters that are illegal in Windows file names.
 Public Function CleanFileName(ByVal s As String) As String
     Dim bad As Variant, ch As Variant

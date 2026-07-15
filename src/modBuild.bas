@@ -537,29 +537,28 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     NoteLine ws, 11, "Pick an export, then click Go. Hand-off files (CSV / GeoJSON / KML) save to the Output Folder set on Map Pages."
 
     ' ---- Check FHWA status (optional, demoted) ----
+    ' State is NOT here - it lives on Map Pages now (it drives classification AND
+    ' the file-name convention). Only the AGOL layer + buffer knobs remain.
     SectionLabel ws, 14, "Check FHWA Status  (optional)"
-    ' State blank by default (per user) - see the standard product's note.
-    LabelValue ws, 16, "State", NR_STATE, ""
-    LabelValue ws, 17, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
-    LabelValue ws, 18, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    NoteLine ws, 22, "Optional road-classification / photo-link check. Pick an action, then click Go."
-    FootnoteLine ws, 23, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+    LabelValue ws, 16, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
+    LabelValue ws, 17, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
+    NoteLine ws, 21, "Optional road-classification / photo-link check (uses the State set on Map Pages). Pick an action, then Go."
+    FootnoteLine ws, 22, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
 
     SectionLabel ws, 26, "Repair / Reset"
     NoteLine ws, 30, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (every row height above is final before this point) ----
-    AddStateValidation ws.Cells(16, 3)
-    AddBufferValidation ws.Cells(18, 3)
+    AddBufferValidation ws.Cells(17, 3)
 
     AddButton ws, BODY_LEFT_PT, ws.Rows(5).Top, 200, 22, ChrW$(8592) & " Back to Map Pages", "GoToMapPages", CLR_BTN_GO
 
     CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(9).Top + 3, 300
     AddButton ws, BODY_LEFT_PT + 308, ws.Rows(9).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
 
-    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(20).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(20).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(19).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(19).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
 
     AddButton ws, BODY_LEFT_PT, ws.Rows(28).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
     AddButton ws, BODY_LEFT_PT + 220, ws.Rows(28).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
@@ -834,11 +833,10 @@ End Sub
 '     pointing at the "Exports & other tools" button that reveals that sheet.
 Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVal urlExpr As String) As String
     Dim ph As String, phCell As String
-    If ProductIsInspector() Then
-        ph = ExcelStr("Set State (Exports & other tools)")
-    Else
-        ph = "HYPERLINK(" & ExcelStr("#" & NR_STATE) & "," & ExcelStr("Set State " & ChrW$(8594)) & ")"
-    End If
+    ' State is on a VISIBLE sheet for both products now (Map Pages on the
+    ' inspector, Start Here on the standard), so the directive can be a real
+    ' hyperlink that jumps to the State cell.
+    ph = "HYPERLINK(" & ExcelStr("#" & NR_STATE) & "," & ExcelStr("Set State " & ChrW$(8594)) & ")"
     ' First data row only; every other row blank when State is blank.
     phCell = "IF(ROW()=" & SITES_FIRST_DATA_ROW & "," & ph & ","""")"
     NfcLinkFormula = "=IF(OR(" & latC & "=""""," & lonC & "=""""),""""," & _

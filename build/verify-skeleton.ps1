@@ -224,9 +224,12 @@ try {
   Write-Host "  no leftover Sites toolbar; action dropdown(s) present on Start Here" -ForegroundColor Green
 
   Write-Host "=== Sites hyperlink resolution (test coord) ===" -ForegroundColor Cyan
-  # Use the Kalamazoo test coord. We have to open in r/w to write cells; reopen.
+  # Use the Kalamazoo test coord. Reopen READONLY - cell/name edits below happen
+  # in memory (readonly only blocks SAVE), and Close($false) discards them, so
+  # this can never persist test values (e.g. JobState='MI') into the committed
+  # workbook the way an r/w reopen could under OneDrive.
   $wb.Close($false)
-  $wb = $excel.Workbooks.Open($XlsmPath, $false, $false)
+  $wb = $excel.Workbooks.Open($XlsmPath, $false, $true)
   $sites = $wb.Worksheets('Sites')
   # State ships BLANK now, which would make the NFC columns show the "Set State"
   # prompt; set it so the state-dependent links resolve for this resolution check

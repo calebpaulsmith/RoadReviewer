@@ -293,7 +293,7 @@ Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 ' and page 1 starts at MAP_FIRST_PAGE_ROW. The pages' print area starts there
 ' too, so the header never prints. Buttons are absolute-positioned shapes over
 ' this band, so they're free of the tall page-row heights.
-Public Const MAP_HEADER_ROWS As Long = 16
+Public Const MAP_HEADER_ROWS As Long = 18
 Public Const MAP_FIRST_PAGE_ROW As Long = MAP_HEADER_ROWS + 1
 Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
 ' Job-block cells inside that band. Labels merge A:B, values merge C:F (the page
