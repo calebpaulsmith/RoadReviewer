@@ -817,17 +817,16 @@ Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
     With wsMap.PageSetup
         .Orientation = xlLandscape
         .PaperSize = xlPaperLetter
-        .LeftMargin = 0:  .RightMargin = 0
-        .TopMargin = 0:   .BottomMargin = 0
+        ' A real margin, not 0: see MAP_PRINT_MARGIN_PTS in modConstants - the
+        ' content blocks are sized 756x576 to sit inside this frame, which is
+        ' what makes the export exactly one PDF page per map page on ANY
+        ' printer driver. Print 1:1 (no fit-to scaling - it ignores the manual
+        ' page breaks and shrinks the content into loose whitespace).
+        .LeftMargin = MAP_PRINT_MARGIN_PTS:  .RightMargin = MAP_PRINT_MARGIN_PTS
+        .TopMargin = MAP_PRINT_MARGIN_PTS:   .BottomMargin = MAP_PRINT_MARGIN_PTS
         .HeaderMargin = 0: .FooterMargin = 0
         .CenterHorizontally = True
         .CenterVertically = True
-        ' Print 1:1. The grid is sized (below) to exactly one landscape Letter
-        ' page per 4-row block, so NO fit-to-page scaling is wanted - that
-        ' scaling fought the absolute shape positions and left the page
-        ' under-filled with a white margin. Rows are 153pt x 4 = 612pt = the
-        ' printable height; SizeMapColumns fits the 13 columns to the 792pt
-        ' printable width.
         .Zoom = 100
         .PrintGridlines = False
         .PrintHeadings = False
@@ -835,13 +834,13 @@ Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
     SizeMapColumns wsMap
 End Sub
 
-' Fit the 13 map columns to the landscape Letter printable width (792pt) so a
-' placed image spans the full page edge-to-edge with no side margin. ColumnWidth
-' is in character units, not points, so we scale by the measured .Width (points)
-' and converge; then guarantee the total never EXCEEDS 792 (an over-width grid
-' spills into a second horizontal page).
+' Fit the 13 map columns to the map-block width (MAP_PAGE_WIDTH_PTS = the Letter
+' width minus the print margins). ColumnWidth is in character units, not points,
+' so we scale by the measured .Width (points) and converge; then guarantee the
+' total never EXCEEDS the target (an over-width grid spills into a second
+' horizontal page).
 Private Sub SizeMapColumns(ByVal wsMap As Worksheet)
-    Const TARGET As Double = MAP_PAGE_WIDTH_PTS      ' 792
+    Const TARGET As Double = MAP_PAGE_WIDTH_PTS
     Dim cc As Long, total As Double, factor As Double, iter As Long
     For cc = 1 To MAP_COLS_WIDE
         wsMap.Columns(cc).ColumnWidth = 10.5
@@ -1101,17 +1100,18 @@ Public Sub ExportCombinedMapPdf()
     ' off-grid controls) so they don't print.
     SetMapEditControlsVisible wsMap, False
 
-    ' Force exactly ONE printed page per map page. At Zoom=100 a 792x612 map page
-    ' slightly overflows the printer's hard margins and spills to a 2x2 = 4-page
-    ' block (the "40 pages for 10 sites" bug), so scale-to-fit instead: 1 page
-    ' wide x (page count) tall. Excel uses the smaller of the two scale factors,
-    ' so nothing distorts and the result is exactly N pages.
+    ' Re-assert the page setup (landscape Letter, the 0.25" margin frame the
+    ' 756x576 blocks are sized for, zoom 100) and the print area right before
+    ' export, so a stray manual page-setup change can't break the pagination.
+    ' See MAP_PRINT_MARGIN_PTS in modConstants for why the frame exists: Excel
+    ' cannot print true edge-to-edge on ANY driver (even Microsoft Print to PDF
+    ' reserves an epsilon), and fit-to-page scaling ignores the manual page
+    ' breaks and floats the content in loose whitespace. 1:1 inside a real
+    ' margin is the only geometry that yields exactly one PDF page per map
+    ' page on every printer.
     On Error Resume Next
-    With wsMap.PageSetup
-        .Zoom = False
-        .FitToPagesWide = 1
-        .FitToPagesTall = MapPageCount(wsMap)
-    End With
+    ConfigureMapPageSetup wsMap
+    SetMapPrintArea wsMap
     On Error GoTo 0
 
     On Error GoTo Fail

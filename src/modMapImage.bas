@@ -44,7 +44,11 @@ Option Explicit
 
 Private Const IMG_SUBFOLDER As String = "maps\"
 Private Const SHAPE_PREFIX As String = "MapImage_Page_"
-Private Const IMG_INSET_PTS As Double = 0       ' 0 = image covers the full page area, no gap
+' 1pt inset on every side: invisible, but it keeps the picture's bottom edge
+' STRICTLY inside its 4-row block. At 0 the picture ended exactly on the manual
+' page-break line and device-unit rounding tipped it onto an overflow page
+' (12 PDF pages for 6 sites - a full page then a sliver page, per site).
+Private Const IMG_INSET_PTS As Double = 1
 
 ' One image file discovered in the folder, for the oldest->newest auto-fill.
 Private Type ImgFile
