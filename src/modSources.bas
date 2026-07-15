@@ -30,9 +30,8 @@ Public Sub BuildSourcesSheet()
     ' ===================== SECTION 1: SOURCES =====================
     Section ws, "1.  SOURCES"
     Body ws, "For each state: the OFFICIAL PUBLIC MAP (open it to confirm a point yourself) and the DATA SERVICE " & _
-        "this tool reads. Michigan, Indiana and Wisconsin are wired for road classification. Minnesota, Illinois " & _
-        "and Ohio are reference-only for now - the tool runs the urban-boundary check on them but does not yet " & _
-        "read their class layer; their sources are listed so the data can be wired in later."
+        "this tool reads. All six Region V states - Michigan, Indiana, Wisconsin, Minnesota, Illinois and Ohio - " & _
+        "are wired for road classification."
     mRow = mRow + 1
 
     StateHeader ws, "Michigan (MDOT) - WIRED"
@@ -54,19 +53,21 @@ Public Sub BuildSourcesSheet()
     Cite ws, "Wisconsin Department of Transportation, Functional Class - State Trunk Network, ArcGIS REST feature " & _
         "service layer 3 (state highways and interstates; queried when the local layer has no class),", REST_WI_STATE_TRUNK
 
-    StateHeader ws, "Minnesota (MnDOT) - reference only, not yet wired"
+    StateHeader ws, "Minnesota (MnDOT) - WIRED"
     Cite ws, "Minnesota Department of Transportation, Enterprise MnDOT Mapping Application (EMMA) - Functional " & _
         "Class layer,", APP_MN
     Cite ws, "Minnesota Department of Transportation, Functional Class, ArcGIS REST map service layer 11 " & _
-        "(mndot_commonlayers2),", REST_MN_NFC
+        "(mndot_commonlayers2) - queried by this tool,", REST_MN_NFC
 
-    StateHeader ws, "Illinois (IDOT) - reference only, not yet wired"
+    StateHeader ws, "Illinois (IDOT) - WIRED"
     Cite ws, "Illinois Department of Transportation, Roadway Functional Class (Getting Around Illinois map viewer),", APP_IL
-    Cite ws, "Illinois Department of Transportation, Functional Class, ArcGIS REST map service layer 0,", REST_IL_NFC
+    Cite ws, "Illinois Department of Transportation, Functional Class, ArcGIS REST map service layer 0 - queried " & _
+        "by this tool,", REST_IL_NFC
 
-    StateHeader ws, "Ohio (ODOT) - reference only, not yet wired"
+    StateHeader ws, "Ohio (ODOT) - WIRED"
     Cite ws, "Ohio Department of Transportation, Transportation Information Mapping System (TIMS),", APP_OH
-    Cite ws, "Ohio Department of Transportation, Functional Class, ArcGIS REST map service layer 0,", REST_OH_NFC
+    Cite ws, "Ohio Department of Transportation, Functional Class, ArcGIS REST map service layer 0 (route names " & _
+        "for IR/US/SR routes from the same layer) - queried by this tool,", REST_OH_NFC
 
     StateHeader ws, "All states - urban boundary, street names, geocoding, flood maps"
     Cite ws, "U.S. Department of Transportation, Bureau of Transportation Statistics, 2020 Adjusted Urban Area " & _
@@ -120,10 +121,11 @@ Public Sub BuildSourcesSheet()
         "Note: WisDOT moved its local-roads service in 2026 (the old one now needs a login); if it moves again, " & _
         "paste the new layer URL into the Service URLs table below - no rebuild needed."
 
-    Sub2 ws, "Minnesota, Illinois, Ohio (not yet wired)"
-    Body ws, "Road-class lookup is not wired for these states yet, so the tool runs only the urban-boundary check " & _
-        "and the Federal Aid Status column says 'ACUB only - class lookup not wired for this state' rather than " & _
-        "guessing. The sources listed above are where each state's class data lives when it is added."
+    Sub2 ws, "Minnesota, Illinois, Ohio"
+    Body ws, "All three publish a plain federal class code (1-7), so they work like Indiana. Minnesota and " & _
+        "Illinois carry no street names in their class data - names come from the Census street layer. Ohio " & _
+        "names its numbered routes (like 'US 23' or 'SR 161') in the class data itself; local street names come " & _
+        "from the Census layer. None of the three needs a retired-record filter."
 
     Sub2 ws, "Street names and addresses (all states)"
     Body ws, "Street names are backfilled from the U.S. Census street layer wherever the state data only knows " & _
@@ -153,9 +155,9 @@ Public Sub BuildSourcesSheet()
     SvcOverrideRow ws, "ACUB", "All states - adjusted urban-area boundary (urban/rural)"
     SvcOverrideRow ws, "TIGER_ROADS", "All states - Census street names"
     SvcOverrideRow ws, "WORLD_IMAGERY", "All states - Esri aerial imagery (Fetch Imagery on Map Pages)"
-    SvcOverrideRow ws, "MN_NFC", "Minnesota - functional class (reference; not yet wired)"
-    SvcOverrideRow ws, "IL_NFC", "Illinois - functional class (reference; not yet wired)"
-    SvcOverrideRow ws, "OH_NFC", "Ohio - functional class (reference; not yet wired)"
+    SvcOverrideRow ws, "MN_NFC", "Minnesota - functional class"
+    SvcOverrideRow ws, "IL_NFC", "Illinois - functional class"
+    SvcOverrideRow ws, "OH_NFC", "Ohio - functional class (also carries IR/US/SR route names)"
     mRow = mRow + 1
 
     Body ws, "Sources verified 2026-07-05 against each service's live metadata. This tool classifies the road, " & _

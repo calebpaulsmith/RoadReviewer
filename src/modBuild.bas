@@ -808,7 +808,9 @@ End Function
 ' keyed off the State dropdown. App URLs carry no coordinates (the Experience
 ' apps can't be reliably centered via URL - PR #17/#18), so a row just opens
 ' the authoritative app; the AGOL NFC Layer column is the one that centers on
-' the exact point. Blank State defaults to MI (matches ClassifyRows).
+' the exact point. Blank State shows the "Set State" prompt via NfcLinkFormula
+' (Check Roads likewise refuses to run without a State since PR #36); the
+' formula's own blank branch below is unreachable and kept only for shape.
 Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
     Dim urlExpr As String, f As String
@@ -844,20 +846,27 @@ Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVa
 End Function
 
 ' AGOL NFC Layer column (COL_NFCAGOL): the state functional-class layer in
-' ArcGIS Map Viewer, centered + markered on the row's point. This is the old
-' per-state Map Viewer link (MI now uses the curated webmap so no time slider;
-' IN/WI side-load their live layer; others get the plain FEMA pin).
+' ArcGIS Map Viewer, centered + markered on the row's point. MI uses the
+' curated webmap (no time slider); IN/WI/MN/IL/OH side-load their live layer
+' (PR #36 wired the last three); any other typed state gets the plain FEMA pin.
 Private Sub SetNfcAgolFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
     Dim miExpr As String, inExpr As String, wiExpr As String, fallbackExpr As String
+    Dim mnExpr As String, ilExpr As String, ohExpr As String
     Dim urlExpr As String, f As String
     miExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW, latC, lonC)
     inExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IN, latC, lonC)
     wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC)
+    mnExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_MN, latC, lonC)
+    ilExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IL, latC, lonC)
+    ohExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_OH, latC, lonC)
     fallbackExpr = UrlExprFromTemplate(URL_FEMAVIEW, latC, lonC)
     urlExpr = "IF(OR(" & NR_STATE & "=""MI""," & NR_STATE & "="""")," & miExpr & _
         ",IF(" & NR_STATE & "=""IN""," & inExpr & _
-        ",IF(" & NR_STATE & "=""WI""," & wiExpr & "," & fallbackExpr & ")))"
+        ",IF(" & NR_STATE & "=""WI""," & wiExpr & _
+        ",IF(" & NR_STATE & "=""MN""," & mnExpr & _
+        ",IF(" & NR_STATE & "=""IL""," & ilExpr & _
+        ",IF(" & NR_STATE & "=""OH""," & ohExpr & "," & fallbackExpr & "))))))"
     f = NfcLinkFormula(latC, lonC, urlExpr)
     ws.Range(ws.Cells(r1, COL_NFCAGOL), ws.Cells(r2, COL_NFCAGOL)).Formula = f
 End Sub

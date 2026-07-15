@@ -136,13 +136,13 @@
       <div class="controls">
         <label>State:
           <select id="stateSel">
-            <option value="AUTO" selected>Auto-detect (MI / IN / WI)</option>
+            <option value="AUTO" selected>Auto-detect (all 6 states)</option>
             <option value="MI">Michigan</option>
             <option value="IN">Indiana</option>
             <option value="WI">Wisconsin</option>
-            <option value="MN">Minnesota (ACUB only)</option>
-            <option value="IL">Illinois (ACUB only)</option>
-            <option value="OH">Ohio (ACUB only)</option>
+            <option value="MN">Minnesota</option>
+            <option value="IL">Illinois</option>
+            <option value="OH">Ohio</option>
           </select>
         </label>
         <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft.">Search radius:
@@ -272,6 +272,11 @@ const REST = {
   // paste a replacement under Sources → Service URLs (no code change needed).
   WI_LOCAL_ROADS:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
   TIGER_ROADS:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
+  // MN/IL/OH (wired 2026-07-15, PR #36): classic ArcGIS MapServer layers, each
+  // publishing a bare FHWA 1-7 class code with no active/retired filter needed.
+  MN_NFC:        "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
+  IL_NFC:        "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
+  OH_NFC:        "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0",
 };
 
 // Runtime service-URL override ("lego swapout"): the page — or a test — may set
@@ -309,12 +314,15 @@ const LINK_TEMPLATES = {
 // Viewer centered + markered on the point with the state's functional-class
 // layer loaded. MI opens the curated FEMA-hosted NFC/ACUB webmap (a raw
 // side-load of MDOT's time-enabled layer 353 surfaces a time slider that
-// hides the roads); IN/WI side-load the state's live FeatureServer; every
+// hides the roads); IN/WI/MN/IL/OH side-load the state's live layer; any
 // other state gets the plain pinned viewer.
 const ARCGIS_MAP_TEMPLATES = {
   MI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}",
   IN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   WI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  MN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fdotapp9.dot.state.mn.us%2Fegis12%2Frest%2Fservices%2FBASEMAP%2Fmndot_commonlayers2%2FMapServer%2F11&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  IL: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgis1.dot.illinois.gov%2Farcgis%2Frest%2Fservices%2FAdministrativeData%2FFunctionalClass%2FMapServer%2F0&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  OH: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Ftims.dot.state.oh.us%2Fags%2Frest%2Fservices%2FRoadway_Information%2FFunctional_Class%2FMapServer%2F0&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   DEFAULT: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
 };
 
@@ -506,7 +514,43 @@ async function queryWisconsinNfc(lat, lon, bufferFt) {
   return { segments, roads };
 }
 
-const NFC_WIRED = { MI: queryMichiganNfc, IN: queryIndianaNfc, WI: queryWisconsinNfc };
+// MN/IL/OH (PR #36): bare FHWA 1-7 class, no active/retired filter — the
+// Indiana shape. MN's FUNCTIONAL_CLASS and OH's FUNCTION_CLASS_CD are
+// integers; IL's FC is a string "1".."7". MN/IL carry no street-name field
+// (Census TIGER backfills); OH names its IR/US/SR routes on the same layer
+// (municipal "MR 00923" codes are skipped as gibberish, TIGER covers them).
+async function queryMinnesotaNfc(lat, lon, bufferFt) {
+  const nfc = await queryWithFallback(svc("MN_NFC"), lat, lon, "FUNCTIONAL_CLASS", "1=1", bufferFt, true);
+  const segments = featureEntries(nfc, lat, lon)
+    .filter(e => cleanStr(e.attrs.FUNCTIONAL_CLASS) !== "" && Number.isFinite(Number(e.attrs.FUNCTIONAL_CLASS)))
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt }));
+  return { segments, roads: [] };
+}
+
+async function queryIllinoisNfc(lat, lon, bufferFt) {
+  const nfc = await queryWithFallback(svc("IL_NFC"), lat, lon, "FC", "1=1", bufferFt, true);
+  const segments = featureEntries(nfc, lat, lon)
+    .filter(e => cleanStr(e.attrs.FC) !== "" && Number.isFinite(Number(e.attrs.FC)))
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FC)), name: "", distFt: e.distFt }));
+  return { segments, roads: [] };
+}
+
+async function queryOhioNfc(lat, lon, bufferFt) {
+  const nfc = await queryWithFallback(svc("OH_NFC"), lat, lon, "FUNCTION_CLASS_CD,ROUTE_TYPE,ROUTE_NBR", "1=1", bufferFt, true);
+  const segments = [], roads = [];
+  for (const e of featureEntries(nfc, lat, lon)) {
+    const a = e.attrs;
+    if (cleanStr(a.FUNCTION_CLASS_CD) === "" || !Number.isFinite(Number(a.FUNCTION_CLASS_CD))) continue;
+    const rt = cleanStr(a.ROUTE_TYPE).toUpperCase(), rn = cleanStr(a.ROUTE_NBR);
+    const name = (["IR", "US", "SR"].includes(rt) && /^\d+$/.test(rn)) ? rt + " " + Number(rn) : "";
+    segments.push({ code: Math.trunc(Number(a.FUNCTION_CLASS_CD)), name, distFt: e.distFt });
+    if (name) roads.push({ name, distFt: e.distFt });
+  }
+  return { segments, roads };
+}
+
+const NFC_WIRED = { MI: queryMichiganNfc, IN: queryIndianaNfc, WI: queryWisconsinNfc,
+                    MN: queryMinnesotaNfc, IL: queryIllinoisNfc, OH: queryOhioNfc };
 
 // Distinct FHWA class labels across the detected segments, nearest-first.
 function classLabels(segments, bufferFt) {
@@ -654,18 +698,27 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
   return out;
 }
 
-// Rough CONUS-region state auto-detection for the three wired states.
-// Indiana's box barely overlaps the others; the MI/WI ambiguity around Lake
-// Michigan and the western Upper Peninsula is split on longitude. Wrong
-// guesses fail soft: the wrong state's NFC layer simply returns no segment
-// ("review manually") and the user can pin the state in the dropdown.
+// Rough CONUS-region state auto-detection for all six wired states (PR #36).
+// Indiana is tested first (its ranges nest inside IL/OH/MI boxes) with the
+// Wabash-border longitude in the north and a wider southwest lobe; Ohio's box
+// drops to the 41.74 MI-line west of Lake Erie (so Monroe MI isn't OH while
+// Ashtabula OH still is); the MI/WI and WI/MN ambiguities are split on
+// longitude. Wrong guesses fail soft: the wrong state's NFC layer simply
+// returns no segment ("review manually") and the user can pin the state in
+// the dropdown.
 function detectState(lat, lon) {
-  if (lat >= 37.75 && lat <= 41.77 && lon >= -88.15 && lon <= -84.75) return "IN";
+  if (lat >= 38.85 && lat <= 41.77 && lon >= -87.53 && lon <= -84.79) return "IN";
+  if (lat >= 37.75 && lat < 38.85 && lon >= -88.10 && lon <= -84.79) return "IN";
+  if (lat >= 38.40 && lat <= (lon <= -82.40 ? 41.74 : 41.98) && lon >= -84.82 && lon <= -80.52) return "OH";
+  if (lat >= 36.97 && lat <= 42.49 && lon >= -91.52 && lon <= -87.02) return "IL";
   const inMI = lat >= 41.69 && lat <= 48.35 && lon >= -90.45 && lon <= -82.10;
   const inWI = lat >= 42.45 && lat <= 47.35 && lon >= -92.95 && lon <= -86.20;
+  const inMN = lat >= 43.50 && lat <= 49.38 && lon >= -97.24 && lon <= -89.48;
   if (inMI && inWI) return lon >= (lat >= 45.4 ? -88.7 : -86.7) ? "MI" : "WI";
   if (inMI) return "MI";
+  if (inWI && inMN) return lon >= (lat >= 45.8 ? -92.08 : -91.50) ? "WI" : "MN";
   if (inWI) return "WI";
+  if (inMN) return "MN";
   return null;
 }
 
@@ -712,6 +765,9 @@ function parseCoordinates(text) {
     ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
     ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
     ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
+    ["MN_NFC",         "Minnesota — functional class (layer 11)"],
+    ["IL_NFC",         "Illinois — functional class (layer 0)"],
+    ["OH_NFC",         "Ohio — functional class + IR/US/SR route names (layer 0)"],
     ["ACUB",           "All states — adjusted urban-area boundary (urban/rural)"],
     ["TIGER_ROADS",    "All states — Census street names"],
   ];
@@ -725,6 +781,9 @@ function parseCoordinates(text) {
     MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
     IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+    MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
+    IL_NFC:         "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
+    OH_NFC:         "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0",
     ACUB:           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
     TIGER_ROADS:    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
   };
@@ -982,7 +1041,7 @@ function render() {
 
     if (!cache.has(key)) {
       cache.set(key, state === "??"
-        ? classifyPoint(p.lat, p.lon, "XX", buffer)   // outside MI/IN/WI: ACUB-only path
+        ? classifyPoint(p.lat, p.lon, "XX", buffer)   // outside the six wired states: ACUB-only path
         : classifyPoint(p.lat, p.lon, state, buffer));
     }
     cache.get(key).then(res => {
@@ -1265,10 +1324,38 @@ function officialAppLink(state) {
   return app ? { label: app.label + " (official public map)", url: app.url, official: true } : null;
 }
 
-// Mirrors rr-core's NFC_WIRED dispatch (MI/IN/WI), but frame-wide and with
-// the layer's own drawingInfo so the figure is drawn in that source's real
-// published symbology instead of an invented color scheme.
+// Mirrors rr-core's NFC_WIRED dispatch (all six states), but frame-wide and
+// with the layer's own drawingInfo so the figure is drawn in that source's
+// real published symbology instead of an invented color scheme.
 async function fetchClassLayers(state, bbox, lat, lon) {
+  // MN/IL/OH (PR #36): one classic MapServer layer each, all publishing a
+  // real uniqueValue renderer (confirmed live 2026-07-15). Renderer-field
+  // trap, WI-style: MnDOT keys its renderer off FUNCTIONAL_CLASS_DESC (the
+  // label string), not the FUNCTIONAL_CLASS code the classifier reads — so
+  // the frame query fetches both fields.
+  const SIMPLE_STATES = {
+    MN: { key: "MN_NFC", out: "FUNCTIONAL_CLASS,FUNCTIONAL_CLASS_DESC", rf: "FUNCTIONAL_CLASS_DESC", codeField: "FUNCTIONAL_CLASS",
+          fallbackName: "MnDOT Functional Class", hdr: "Road functional class (MnDOT)" },
+    IL: { key: "IL_NFC", out: "FC", rf: "FC", codeField: "FC",
+          fallbackName: "IDOT Functional Class", hdr: "Road functional class (IDOT)" },
+    OH: { key: "OH_NFC", out: "FUNCTION_CLASS_CD", rf: "FUNCTION_CLASS_CD", codeField: "FUNCTION_CLASS_CD",
+          fallbackName: "ODOT Functional Class", hdr: "Road functional class (ODOT)" },
+  };
+  if (SIMPLE_STATES[state]) {
+    const s = SIMPLE_STATES[state];
+    const [json, meta] = await Promise.all([
+      queryFrame(svc(s.key), bbox, s.out, "1=1", false),
+      fetchLayerMeta(svc(s.key)),
+    ]);
+    const published = meta.drawingInfo && meta.drawingInfo.renderer && meta.drawingInfo.renderer.type === "uniqueValue";
+    return [{ url: svc(s.key), layerName: meta.name || s.fallbackName,
+      legendHeader: s.hdr, geometryType: "polyline",
+      rendererField: published ? s.rf : s.codeField,
+      drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo(s.codeField),
+      synthSymbology: !published,
+      features: json.features || [], truncated: !!json.exceededTransferLimit,
+      liveLink: { label: "Road class — " + s.fallbackName + " layer, pinned", url: liveLayerLink(svc(s.key), lat, lon), official: false } }];
+  }
   if (state === "MI") {
     const [json, meta] = await Promise.all([
       queryFrame(svc("MI_NFC"), bbox, "FunctionalSystem,PR", "RHRetireDate IS NULL", false),

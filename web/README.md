@@ -110,8 +110,10 @@ coordinate deep-link proved unreliable and was dropped). The **pinned
 links** that follow open the FEMA-hosted ArcGIS Map Viewer centered and
 markered on the exact site (MI's curated NFC/ACUB webmap; the FeatureServer
 side-loaded for other states / the ACUB layer) — these are what put you on
-your point. Wisconsin and the unwired states have no official public app,
-so they get only the pinned link. Plus a Google Maps link. (Layer on/off
+your point. Wisconsin has no statewide interactive app (static PDFs only),
+so it gets only the pinned link; MN/IL/OH link their DOT map portals
+(EMMA / Getting Around Illinois / TIMS) at their roots. Plus a Google Maps
+link. (Layer on/off
 can't be driven through a URL in Experience Builder, but the wanted layers
 are the app defaults — see `sources.html` for the per-state specifics.)
 

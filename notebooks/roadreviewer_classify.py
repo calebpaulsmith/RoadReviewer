@@ -75,6 +75,10 @@ REST = {
     # Indiana INDOT — functional class + separate road-name centerline layer
     "IN_NFC":         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
     "IN_ROADNAME":    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+    # Minnesota / Illinois / Ohio (wired PR #36) — bare FHWA 1-7 class, no filter needed
+    "MN_NFC":         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
+    "IL_NFC":         "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
+    "OH_NFC":         "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0",
     # Wisconsin WisDOT — local-roads layer (queried FIRST) + state-trunk layer (fallback).
     # WisDOT moved/locked the old WI_Local_Roads_Flood_Damage_Assessment_Snapshot
     # (now token-gated); this is the live public local layer.
@@ -392,8 +396,65 @@ def query_wisconsin_nfc(lat, lon, buffer_ft):
                 roads.append({"name": name, "distFt": e["distFt"]})
     return segments, roads
 
-# States whose NFC layer is wired (rr-core NFC_WIRED). MN/IL/OH are ACUB-only.
-NFC_WIRED = {"MI": query_michigan_nfc, "IN": query_indiana_nfc, "WI": query_wisconsin_nfc}
+def query_minnesota_nfc(lat, lon, buffer_ft):
+    """MnDOT Functional Class layer 11 - bare FHWA 1-7 integer, no active/retired filter.
+    No street-name field (ROUTE_ID is an LRS key); Census TIGER backfills names."""
+    nfc = query_with_fallback(svc("MN_NFC"), lat, lon, "FUNCTIONAL_CLASS", "1=1", buffer_ft, True)
+    segments = []
+    for e in feature_entries(nfc, lat, lon):
+        raw = e["attrs"].get("FUNCTIONAL_CLASS")
+        if clean_str(raw) == "":
+            continue
+        try:
+            code = int(float(raw))
+        except (TypeError, ValueError):
+            continue
+        segments.append({"code": code, "name": "", "distFt": e["distFt"]})
+    return segments, []
+
+def query_illinois_nfc(lat, lon, buffer_ft):
+    """IDOT Functional Class layer 0 - FC is a STRING "1".."7"; no filter needed.
+    Route-system labels ("FAU 1422") aren't street names; TIGER covers names."""
+    nfc = query_with_fallback(svc("IL_NFC"), lat, lon, "FC", "1=1", buffer_ft, True)
+    segments = []
+    for e in feature_entries(nfc, lat, lon):
+        raw = e["attrs"].get("FC")
+        if clean_str(raw) == "":
+            continue
+        try:
+            code = int(float(raw))
+        except (TypeError, ValueError):
+            continue
+        segments.append({"code": code, "name": "", "distFt": e["distFt"]})
+    return segments, []
+
+def query_ohio_nfc(lat, lon, buffer_ft):
+    """ODOT Functional Class layer 0 - FUNCTION_CLASS_CD bare FHWA 1-7; ROUTE_TYPE+
+    ROUTE_NBR give route names for IR/US/SR systems ("US 23"); municipal "MR" codes
+    are skipped (cryptic) and Census TIGER fills local street names."""
+    nfc = query_with_fallback(svc("OH_NFC"), lat, lon,
+                              "FUNCTION_CLASS_CD,ROUTE_TYPE,ROUTE_NBR", "1=1", buffer_ft, True)
+    segments, roads = [], []
+    for e in feature_entries(nfc, lat, lon):
+        a = e["attrs"]
+        raw = a.get("FUNCTION_CLASS_CD")
+        if clean_str(raw) == "":
+            continue
+        try:
+            code = int(float(raw))
+        except (TypeError, ValueError):
+            continue
+        rt = clean_str(a.get("ROUTE_TYPE")).upper()
+        rn = clean_str(a.get("ROUTE_NBR"))
+        name = "{} {}".format(rt, int(rn)) if rt in ("IR", "US", "SR") and rn.isdigit() else ""
+        segments.append({"code": code, "name": name, "distFt": e["distFt"]})
+        if name:
+            roads.append({"name": name, "distFt": e["distFt"]})
+    return segments, roads
+
+# States whose NFC layer is wired (rr-core NFC_WIRED) - all six Region V states (PR #36).
+NFC_WIRED = {"MI": query_michigan_nfc, "IN": query_indiana_nfc, "WI": query_wisconsin_nfc,
+             "MN": query_minnesota_nfc, "IL": query_illinois_nfc, "OH": query_ohio_nfc}
 
 # %% [markdown]
 # ## 8. Verdict logic + ACUB + full per-point pipeline

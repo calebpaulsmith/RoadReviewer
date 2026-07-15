@@ -4,8 +4,9 @@ Option Explicit
 ' RoadReviewer V1 - Workflow 1: Classify Roads (§4.2 query strategy, F7 rule).
 ' For each Sites row: query the state's NFC layer (class + road name) and the
 ' nationwide NTAD ACUB layer (urban/rural), then write the eligibility verdict
-' back to the row. Michigan, Indiana and Wisconsin are wired in V1; other
-' states still get the ACUB check (F8).
+' back to the row. All six Region V states are wired (MI/IN/WI since V1;
+' MN/IL/OH added in PR #36, §4.2c-e); any other typed state code still gets
+' the ACUB-only check (F8).
 
 Private Const ACUB_OUTFIELDS As String = "NAME,UACE,state_1"
 
@@ -69,8 +70,23 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         Exit Sub
     End If
 
+    ' Blank State no longer silently means Michigan (PR #36 - with all six
+    ' states wired there is no safe default). Mark every target row so the
+    ' miss is visible + re-runnable, and tell the user where the State box is.
     stateCode = BareStateCode(SetupValue(NR_STATE))
-    If Len(stateCode) = 0 Then stateCode = "MI"
+    If Len(stateCode) = 0 Then
+        For r = SITES_FIRST_DATA_ROW To last
+            If Not RowIsEmpty(ws, r) Then
+                If (Not onlyFailed) Or RowIsFailed(ws, r) Then _
+                    ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "no State selected"
+            End If
+        Next r
+        ShowReviewerColumns
+        If Not gHeadless Then MsgBox "Pick a State first (the State box on " & _
+            IIf(ProductIsInspector(), "the Map Pages tab", "Start Here") & _
+            "), then click Check Roads again.", vbExclamation, "Check Roads"
+        Exit Sub
+    End If
     ' Local var deliberately NOT named NfcWired - VBA identifiers are
     ' case-insensitive, so a local variable with the same name as the
     ' module-level NfcWired() function shadows it, and `NfcWired(stateCode)`
@@ -130,7 +146,7 @@ End Function
 ' the ACUB urban-boundary check regardless (F8).
 Private Function NfcWired(ByVal stateCode As String) As Boolean
     Select Case stateCode
-        Case "MI", "IN", "WI": NfcWired = True
+        Case "MI", "IN", "WI", "MN", "IL", "OH": NfcWired = True
         Case Else: NfcWired = False
     End Select
 End Function
@@ -277,6 +293,23 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
                 AddNamedRoads ServiceUrl("WI_STATE_TRUNK"), "HWYTYPE,HWYNUM,HWYDIR", "1=1", "WI_TRUNK", _
                     lat, lon, latP, lonP, roads
             End If
+        ' MN/IL/OH (PR #36, §4.2c-e): bare FHWA 1-7 code, no active/retired
+        ' filter, same shape as Indiana. MN and IL carry no street-name field
+        ' (Census TIGER backfills names); OH's ROUTE_TYPE+ROUTE_NBR give
+        ' trunkline names ("US 23") on the same layer.
+        Case "MN"
+            AddClassSegs ServiceUrl("MN_NFC"), "FUNCTIONAL_CLASS", "1=1", False, False, _
+                lat, lon, latP, lonP, segs, errMsg
+        Case "IL"
+            ' FC is a STRING field ("1".."7") - isStringClass, like WI's FED_FC_CD.
+            AddClassSegs ServiceUrl("IL_NFC"), "FC", "1=1", True, False, _
+                lat, lon, latP, lonP, segs, errMsg
+        Case "OH"
+            AddClassSegs ServiceUrl("OH_NFC"), "FUNCTION_CLASS_CD", "1=1", False, False, _
+                lat, lon, latP, lonP, segs, errMsg
+            If Len(errMsg) > 0 Then Exit Sub
+            AddNamedRoads ServiceUrl("OH_NFC"), "ROUTE_TYPE,ROUTE_NBR", "1=1", "OH_ROUTE", _
+                lat, lon, latP, lonP, roads
     End Select
 End Sub
 
@@ -367,11 +400,21 @@ Private Sub AddNamedRoads(ByVal baseUrl As String, ByVal outFields As String, By
 End Sub
 
 Private Function RoadNameFromBlock(ByVal block As String, ByVal nameMode As String) As String
+    Dim rt As String, rn As String
     Select Case True
         Case nameMode = "MI_ROUTE"
             RoadNameFromBlock = Trim$(FirstString(block, "RouteDesignation") & " " & FirstString(block, "RouteNumber"))
         Case nameMode = "WI_TRUNK"
             RoadNameFromBlock = Trim$(FirstString(block, "HWYTYPE") & " " & FirstString(block, "HWYNUM") & " " & FirstString(block, "HWYDIR"))
+        Case nameMode = "OH_ROUTE"
+            ' Only the recognizable route systems: IR (interstate), US, SR.
+            ' County/township/municipal codes ("MR 00923") read as gibberish
+            ' to an inspector - TIGER supplies those street names instead.
+            rt = UCase$(Trim$(FirstString(block, "ROUTE_TYPE")))
+            rn = Trim$(FirstString(block, "ROUTE_NBR"))
+            If (rt = "IR" Or rt = "US" Or rt = "SR") And IsNumeric(rn) Then
+                RoadNameFromBlock = rt & " " & CStr(CLng(rn))   ' "US 00023" -> "US 23"
+            End If
         Case Left$(nameMode, 7) = "SINGLE:"
             RoadNameFromBlock = Trim$(FirstString(block, Mid$(nameMode, 8)))
     End Select

@@ -45,9 +45,10 @@
 <p class="toc">Jump to:
   <a href="#verdict">How the verdict works</a>
   <a href="#mi">Michigan</a> <a href="#in">Indiana</a> <a href="#wi">Wisconsin</a>
+  <a href="#mn">Minnesota</a> <a href="#il">Illinois</a> <a href="#oh">Ohio</a>
   <a href="#services">Swap a service URL</a>
   <a href="#acub">Urban Boundaries (all states)</a> <a href="#tiger">Street Names (all states)</a>
-  <a href="#firmette">FIRMettes</a> <a href="#basemap">Basemap</a> <a href="#unwired">Other states</a>
+  <a href="#firmette">FIRMettes</a> <a href="#basemap">Basemap</a>
 </p>
 
 <section id="verdict">
@@ -177,9 +178,35 @@
   <p>The interactive map's background tiles come from Esri and play no role in any classification. The PDF report figures also composite Esri World Street Map tiles under the authoritative data layers (fetched with <code>crossOrigin="anonymous"</code> against Esri's CORS-enabled tile service, so a non-CORS response fails outright instead of silently tainting the canvas; the fetch is disclosed in the network log and credited on the figure). Viewing the map — or generating a report — necessarily reveals the viewed area to the tile provider; this is the one disclosure the client-side design can't remove (disclosed in the main page footer). The <b>data layers</b> in every figure remain pure vector drawings queried from the authoritative services above.</p>
 </section>
 
-<section id="unwired">
-  <h2>MN / IL / OH</h2>
-  <p>No road-functional-class layer is wired for Minnesota, Illinois, or Ohio yet — sites there get the ACUB urban/rural check only, and the verdict column says so rather than guessing. The nationwide ACUB and TIGER layers above already cover them; each state's DOT publishes its NFC layer differently and needs the same per-state schema research MI/IN/WI received.</p>
+<section id="mn">
+  <h2>Minnesota — road functional class</h2>
+  <div class="org">Organization: <b>Minnesota Department of Transportation (MnDOT)</b> — public ArcGIS Server, <code>dotapp9.dot.state.mn.us</code></div>
+  <div class="quirk"><b>Official reference map.</b> MnDOT's <a href="https://webgis.dot.state.mn.us/emma/" target="_blank" rel="noopener">Enterprise MnDOT Mapping Application (EMMA)</a> carries the same Functional Class layer (plus a state-native "Federal Adjusted Urban Area" layer). Linked at its root; the exact location is carried by the separate "pinned view" ArcGIS Map Viewer link.</div>
+  <h3>Layer 11 — "Functional Class" (mndot_commonlayers2)</h3>
+  <div class="url"><a href="https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11" target="_blank" rel="noopener">https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11</a></div>
+  <p>Fields read: <code>FUNCTIONAL_CLASS</code> (integer — bare FHWA 1–7, confirmed live via <code>returnDistinctValues</code> 2026-07-15; <code>FUNCTIONAL_CLASS_DESC</code> carries the matching label). No active/retired filter needed.</p>
+  <div class="quirk"><b>Quirk — no street names.</b> <code>ROUTE_ID</code> is an LRS key, not a name; all Minnesota street names come from the Census TIGER layer above.</div>
+  <div class="quirk"><b>Quirk — legend keys off the description.</b> MnDOT's published renderer keys off <code>FUNCTIONAL_CLASS_DESC</code> (the label string), not the numeric code the classifier reads — the map figures fetch both fields.</div>
+</section>
+
+<section id="il">
+  <h2>Illinois — road functional class</h2>
+  <div class="org">Organization: <b>Illinois Department of Transportation (IDOT)</b> — public ArcGIS Server, <code>gis1.dot.illinois.gov</code></div>
+  <div class="quirk"><b>Official reference map.</b> IDOT's <a href="https://www.gettingaroundillinois.com/MapViewer/?config=RFCconfig.json" target="_blank" rel="noopener">Getting Around Illinois functional-class viewer</a>, linked at its root.</div>
+  <h3>Layer 0 — "Functional Class" (AdministrativeData)</h3>
+  <div class="url"><a href="https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0" target="_blank" rel="noopener">https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0</a></div>
+  <p>Field read: <code>FC</code> — a <b>string</b> "1"–"7" with a published coded-value domain matching the FHWA classes (1 Interstate (PAS) … 7 Local Road or Street). No active/retired filter needed.</p>
+  <div class="quirk"><b>Quirk — no street names.</b> The layer's route-system labels ("FAU 1422", "MUN 4022H") are inventory codes, not street names — Illinois street names come from the Census TIGER layer above.</div>
+</section>
+
+<section id="oh">
+  <h2>Ohio — road functional class &amp; route name</h2>
+  <div class="org">Organization: <b>Ohio Department of Transportation (ODOT)</b> — TIMS public ArcGIS Server, <code>tims.dot.state.oh.us</code></div>
+  <div class="quirk"><b>Official reference map.</b> ODOT's <a href="https://tims.dot.state.oh.us/tims" target="_blank" rel="noopener">Transportation Information Mapping System (TIMS)</a>, linked at its root.</div>
+  <h3>Layer 0 — "Functional Class" (Roadway_Information)</h3>
+  <div class="url"><a href="https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0" target="_blank" rel="noopener">https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0</a></div>
+  <p>Fields read: <code>FUNCTION_CLASS_CD</code> (integer — bare FHWA 1–7, confirmed live via <code>returnDistinctValues</code> 2026-07-15), plus <code>ROUTE_TYPE</code>/<code>ROUTE_NBR</code> for route names. No active/retired filter needed.</p>
+  <div class="quirk"><b>Quirk — route names only for numbered systems.</b> <code>ROUTE_TYPE</code>+<code>ROUTE_NBR</code> read cleanly for IR/US/SR routes ("US 23", "SR 161"); county/township/municipal codes ("MR 00923") are cryptic and skipped — those street names come from the Census TIGER layer above.</div>
 </section>
 
 <section id="services">
@@ -209,6 +236,9 @@
     ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
     ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
     ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
+    ["MN_NFC",         "Minnesota — functional class (layer 11)"],
+    ["IL_NFC",         "Illinois — functional class (layer 0)"],
+    ["OH_NFC",         "Ohio — functional class + IR/US/SR route names (layer 0)"],
     ["ACUB",           "All states — adjusted urban-area boundary (urban/rural)"],
     ["TIGER_ROADS",    "All states — Census street names"],
   ];
@@ -222,6 +252,9 @@
     MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
     IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
+    MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
+    IL_NFC:         "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
+    OH_NFC:         "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0",
     ACUB:           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
     TIGER_ROADS:    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
   };

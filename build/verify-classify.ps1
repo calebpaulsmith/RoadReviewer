@@ -1,15 +1,18 @@
 # Verification §5.4 (+ touches §5.7, §5.8): Check Roads workflow.
 #
 # Writes the wired-state test coordinates from CLAUDE.md §4.2 (MI),
-# §4.2a (IN) and §4.2b (WI) to the Sites table, runs CheckRoads on
-# each state in turn, then reads back FHWA Class, Urban/Rural, ACUB Name,
-# Federal Aid Status and checks them against the expected outcomes.
-# The MI pass also includes an address-only row to exercise the
-# auto-geocode step folded into Check Roads.
+# §4.2a (IN), §4.2b (WI) and §4.2c-e (MN/IL/OH, PR #36) to the Sites
+# table, runs CheckRoads on each state in turn, then reads back FHWA
+# Class, Urban/Rural, ACUB Name, Federal Aid Status and checks them
+# against the expected outcomes. The MI pass also includes an
+# address-only row to exercise the auto-geocode step folded into
+# Check Roads.
 #
 # Network-dependent: this hits mdotgis.state.mi.us (MI NFC + Route),
 # gisdata.in.gov (IN NFC + road name), services5.arcgis.com (WI state
-# trunk + local roads), services.arcgis.com (NTAD ACUB, nationwide) and
+# trunk + local roads), dotapp9.dot.state.mn.us (MN NFC),
+# gis1.dot.illinois.gov (IL NFC), tims.dot.state.oh.us (OH NFC),
+# services.arcgis.com (NTAD ACUB, nationwide) and
 # geocoding.geo.census.gov (the address row). All must be reachable from
 # this workstation.
 #
@@ -23,12 +26,12 @@ $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
 # Sites layout: row 1 header, data from row 2 (row-1 toolbar retired). Tests
-# use rows 3-12, all valid data rows; row 2 is left empty and skipped.
+# use rows 3-21, all valid data rows; row 2 is left empty and skipped.
 # Columns: SiteName=4, Lat=5, Lon=6, Address=8, Geocode=12,
 #          Class=16, Urban/Rural=17, ACUB=18, RoadName=19, Street=20,
 #          Elig=21, ReviewReason=22.
 $FirstRow = 3
-$LastTestRow = 12
+$LastTestRow = 21
 
 # (row, state, lat, lon, expected Federal Aid Status substring, expected class substring, expected ACUB name)
 $tests = @(
@@ -59,6 +62,17 @@ $tests = @(
   # and class 1-3 (here Interstate) must get the Urban/Rural prefix same as 4-6.
   @{ Row=11; State='WI'; Name='STH 52 Rural Minor Collector';    Lat=45.169879; Lon=-89.102452; ExpectElig='Non-federal aid - Rural Minor Collector'; ExpectClass='Minor Collector'; ExpectAcub='' }
   @{ Row=12; State='WI'; Name='I-94 Eau Claire Urban Interstate'; Lat=44.764850; Lon=-91.406533; ExpectElig='Federal aid - Urban Interstate'; ExpectClass='Interstate'; ExpectAcub='Eau Claire' }
+  # MN/IL/OH (PR #36, §4.2c-e) - all live-verified 2026-07-15 with the same
+  # closest-road model the classifier uses (probe script mirrored ComputeVerdict).
+  @{ Row=13; State='MN'; Name='Snelling Ave St Paul arterial';   Lat=44.9531;  Lon=-93.1668;   ExpectElig='Federal aid - Urban Minor Arterial'; ExpectClass='Minor Arterial'; ExpectAcub='Minneapolis' }
+  @{ Row=14; State='MN'; Name='Minneapolis Urban Local';         Lat=44.9260;  Lon=-93.2570;   ExpectElig='Non-federal aid - Urban Local'; ExpectClass='Local'; ExpectAcub='Minneapolis' }
+  @{ Row=15; State='MN'; Name='Douglas County Rural Local';      Lat=45.822764; Lon=-95.222414; ExpectElig='Non-federal aid - Rural Local'; ExpectClass='Local'; ExpectAcub='' }
+  @{ Row=16; State='IL'; Name='Western Ave Chicago arterial';    Lat=41.9020;  Lon=-87.6870;   ExpectElig='Federal aid - Urban Other Principal Arterial'; ExpectClass='Other Principal Arterial'; ExpectAcub='Chicago' }
+  @{ Row=17; State='IL'; Name='Chicago Urban Local';             Lat=41.9430;  Lon=-87.7010;   ExpectElig='Non-federal aid - Urban Local'; ExpectClass='Local'; ExpectAcub='Chicago' }
+  @{ Row=18; State='IL'; Name='Logan County Rural Local';        Lat=40.165157; Lon=-89.434236; ExpectElig='Non-federal aid - Rural Local'; ExpectClass='Local'; ExpectAcub='' }
+  @{ Row=19; State='OH'; Name='N High St Columbus / US 23';      Lat=40.0150;  Lon=-82.9990;   ExpectElig='Federal aid - Urban Other Principal Arterial'; ExpectClass='Other Principal Arterial'; ExpectAcub='Columbus' }
+  @{ Row=20; State='OH'; Name='Columbus Urban Local';            Lat=40.0855;  Lon=-83.0170;   ExpectElig='Non-federal aid - Urban Local'; ExpectClass='Local'; ExpectAcub='Columbus' }
+  @{ Row=21; State='OH'; Name='Marion County Rural Local';       Lat=40.320352; Lon=-83.302785; ExpectElig='Non-federal aid - Rural Local'; ExpectClass='Local'; ExpectAcub='' }
 )
 
 $excel = New-Object -ComObject Excel.Application
@@ -78,7 +92,7 @@ try {
 
   # JobState applies to the whole CheckRoads run, not per-row, so each
   # wired state needs its own write-then-classify pass.
-  foreach ($state in @('MI', 'IN', 'WI')) {
+  foreach ($state in @('MI', 'IN', 'WI', 'MN', 'IL', 'OH')) {
     $stateTests = $tests | Where-Object { $_.State -eq $state }
     if (-not $stateTests) { continue }
 

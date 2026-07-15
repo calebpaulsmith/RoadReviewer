@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #35"
+Public Const BUILD_REFERENCE As String = "PR #36"
 
 ' ---- Sheet names ----
 ' The "hub" sheet name. On the standard product this is the visible landing
@@ -179,6 +179,11 @@ Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapv
 ' the pin+zoom still resolves correctly either way.
 Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_NFC_MAPVIEW_WI As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+' MN/IL/OH (PR #36): same side-load shape. These are MapServer layers rather
+' than FeatureServers, which Map Viewer's url= parameter also accepts.
+Public Const URL_NFC_MAPVIEW_MN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fdotapp9.dot.state.mn.us%2Fegis12%2Frest%2Fservices%2FBASEMAP%2Fmndot_commonlayers2%2FMapServer%2F11&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+Public Const URL_NFC_MAPVIEW_IL As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgis1.dot.illinois.gov%2Farcgis%2Frest%2Fservices%2FAdministrativeData%2FFunctionalClass%2FMapServer%2F0&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+Public Const URL_NFC_MAPVIEW_OH As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Ftims.dot.state.oh.us%2Fags%2Frest%2Fservices%2FRoadway_Information%2FFunctional_Class%2FMapServer%2F0&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 
 ' Official public-facing functional-class apps per state (verified live
 ' 2026-07-05, §7c). These drive the "NFC Map" / Open column (COL_NFCMAP) -
@@ -235,11 +240,18 @@ Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/g
 ' designated trunkline routes — TIGER fills in the local street names.
 Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8"
 
-' Reference-only NFC class services for the not-yet-wired states (MN/IL/OH).
-' The tool does NOT query these yet (it runs only the ACUB check on those
-' states), but they are public here so (a) the Sources sheet can cite them and
-' (b) a future release - or a user pasting one into the Svc_ override table -
-' can wire them with the same shape as Indiana (bare FHWA 1-7 class field).
+' Minnesota / Illinois / Ohio NFC class services - WIRED in PR #36 (§4.2c/d/e).
+' All three publish a bare FHWA 1-7 class code, same shape as Indiana, with no
+' retired-segment filter needed (confirmed live 2026-07-15 via ?f=pjson +
+' returnDistinctValues):
+'   MN: FUNCTIONAL_CLASS (integer 1-7; FUNCTIONAL_CLASS_DESC carries the
+'       matching FHWA label). No road-name field (ROUTE_ID is an LRS key) -
+'       names come from the Census TIGER backfill.
+'   IL: FC (STRING "1".."7", published coded-value domain). Route-system
+'       labels like "FAU 1422" exist but are not street names - TIGER covers.
+'   OH: FUNCTION_CLASS_CD (integer 1-7). ROUTE_TYPE+ROUTE_NBR give trunkline
+'       names ("US 23", "SR 161") for IR/US/SR routes; municipal "MR" codes
+'       are skipped (cryptic) and TIGER fills local names.
 Public Const REST_MN_NFC As String = "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11"
 Public Const REST_IL_NFC As String = "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0"
 Public Const REST_OH_NFC As String = "https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0"
@@ -254,13 +266,12 @@ Public Const REST_OH_NFC As String = "https://tims.dot.state.oh.us/ags/rest/serv
 ' MDOT requires a browser User-Agent or it returns HTTP 403 (§4.2 operational note).
 Public Const BROWSER_UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-' ---- State selector (F8). The dropdown offers ONLY the wired states, per user
-' request - MN/IL/OH used to appear labeled "(not wired)" and just confused the
-' pick. The unwired-state path still exists in modClassify (a pasted or typed
-' MN/IL/OH runs the ACUB-only check and says so in Federal Aid Status), and
-' modUtil.BareStateCode still strips a "(not wired)" suffix, so an older
-' workbook whose cell holds "MN (not wired)" keeps working. ----
-Public Const STATE_LIST As String = "WI,IN,MI"
+' ---- State selector (F8). All six Region V states are wired for road
+' classification (MN/IL/OH joined in PR #36). The ACUB-only path still exists
+' in modClassify for any OTHER typed state code, and modUtil.BareStateCode
+' still strips a legacy "(not wired)" suffix so an older workbook whose cell
+' holds "MN (not wired)" keeps working. ----
+Public Const STATE_LIST As String = "WI,IN,MI,MN,IL,OH"
 
 ' ---- Status-prefix used by the "re-run failed rows" feature (F12). ----
 Public Const STATUS_FAILED_PREFIX As String = "Failed - "

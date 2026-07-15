@@ -1332,6 +1332,9 @@ Private Function NfcLayerTemplate() As String
     Select Case BareStateCode(SetupValue(NR_STATE))
         Case "IN": NfcLayerTemplate = URL_NFC_MAPVIEW_IN
         Case "WI": NfcLayerTemplate = URL_NFC_MAPVIEW_WI
+        Case "MN": NfcLayerTemplate = URL_NFC_MAPVIEW_MN
+        Case "IL": NfcLayerTemplate = URL_NFC_MAPVIEW_IL
+        Case "OH": NfcLayerTemplate = URL_NFC_MAPVIEW_OH
         Case "MI", "": NfcLayerTemplate = URL_NFC_MAPVIEW
         Case Else: NfcLayerTemplate = URL_FEMAVIEW
     End Select

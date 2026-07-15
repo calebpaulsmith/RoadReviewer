@@ -1,11 +1,13 @@
 # Verification §5.7 (Re-run Failed Rows) + §5.8 (State selector).
 #
-# §5.8: set State to an unwired value (MN — MI/IN/WI are all wired now,
-#       see CLAUDE.md §4.2/§4.2a/§4.2b, so this must be one of the
-#       still-unwired states). Run Check Roads on a coord that reports ACUB
-#       regardless of state. Expect the ACUB lookup to still run, but
-#       NFC/class/road name to be blank with a "class lookup not wired
-#       for this state" verdict message.
+# §5.8: all six Region V states are wired (PR #36), so the unwired-state
+#       gate is exercised with a TYPED out-of-region code (TN). Run Check
+#       Roads on a coord that reports ACUB regardless of state. Expect the
+#       ACUB lookup to still run, but NFC/class/road name to be blank with
+#       a "class lookup not wired for this state" verdict message.
+#       Also (PR #36): a BLANK State must refuse to classify — every target
+#       row gets "Failed - no State selected" instead of silently running
+#       as Michigan.
 #
 # §5.7: with State back to MI, plant a fake "Failed - ..." marker in the
 #       Federal Aid Status column of one row, run ReRunFailedRows,
@@ -36,15 +38,26 @@ try {
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_state_trace.txt')) | Out-Null
 
-  # ---- §5.8: MN state (unwired), classify a Detroit-area coord ----
+  # ---- §5.8a (PR #36): BLANK State refuses to classify ----
   Write-Host ""
-  Write-Host "=== §5.8: State=MN on Detroit coord ===" -ForegroundColor Cyan
-  # Use the annotated dropdown value to also exercise modUtil.StateCode,
-  # which must strip "(not wired)" back to the bare "MN" code.
-  $wb.Names('JobState').RefersToRange.Value2 = 'MN (not wired)'
-  $sites.Cells(3, 4).Value2 = 'MN-state Detroit'
+  Write-Host "=== §5.8a: blank State -> 'Failed - no State selected' ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = ''
+  $sites.Cells(3, 4).Value2 = 'Blank-state row'
   $sites.Cells(3, 5).Value2 = [double]42.331
   $sites.Cells(3, 6).Value2 = [double]-83.045
+  $excel.Run('CheckRoads') | Out-Null
+  $row_elig = [string]$sites.Cells(3, 21).Value2
+  Write-Host ("  elig: '" + $row_elig + "'")
+  if ($row_elig -ne 'Failed - no State selected') { throw ("Blank State should mark the row 'Failed - no State selected', got '" + $row_elig + "'") }
+  Write-Host "  §5.8a PASSED" -ForegroundColor Green
+
+  # ---- §5.8: unwired TYPED state (TN), classify a Detroit-area coord ----
+  Write-Host ""
+  Write-Host "=== §5.8: State=TN (typed, unwired) on Detroit coord ===" -ForegroundColor Cyan
+  # An annotated value also exercises modUtil.BareStateCode, which must strip
+  # everything after the first space back to the bare 2-letter code.
+  $wb.Names('JobState').RefersToRange.Value2 = 'TN (not wired)'
+  $sites.Cells(3, 4).Value2 = 'TN-state Detroit'
   $excel.Run('CheckRoads') | Out-Null
 
   $row_class = [string]$sites.Cells(3, 16).Value2
@@ -52,10 +65,23 @@ try {
   $row_acub  = [string]$sites.Cells(3, 18).Value2
   $row_elig  = [string]$sites.Cells(3, 21).Value2
   Write-Host ("  class: '" + $row_class + "'  urban/rural: '" + $row_urban + "'  ACUB: '" + $row_acub + "'  elig: '" + $row_elig + "'")
-  if ($row_class -ne '') { throw "Row 3 should have blank class when state=MN (NFC not wired), got '$row_class'" }
+  if ($row_class -ne '') { throw "Row 3 should have blank class when state=TN (NFC not wired), got '$row_class'" }
   if ($row_acub -notlike "*Detroit*") { throw ("Row 3 ACUB should still resolve to Detroit (ACUB is nationwide), got '" + $row_acub + "'") }
   if ($row_elig -notlike "*not wired*") { throw ("Row 3 verdict should mention NFC not wired, got '" + $row_elig + "'") }
   Write-Host "  §5.8 PASSED" -ForegroundColor Green
+
+  # ---- §5.8b (PR #36): MN is WIRED now - it must NOT gate ----
+  Write-Host ""
+  Write-Host "=== §5.8b: State=MN classifies for real (wired in PR #36) ===" -ForegroundColor Cyan
+  $wb.Names('JobState').RefersToRange.Value2 = 'MN'
+  $sites.Cells(3, 4).Value2 = 'MN rural local'
+  $sites.Cells(3, 5).Value2 = [double]45.822764
+  $sites.Cells(3, 6).Value2 = [double]-95.222414
+  $excel.Run('CheckRoads') | Out-Null
+  $row_elig = [string]$sites.Cells(3, 21).Value2
+  Write-Host ("  elig: '" + $row_elig + "'")
+  if ($row_elig -notlike "Non-federal aid - Rural Local*") { throw ("MN should classify (wired), got '" + $row_elig + "'") }
+  Write-Host "  §5.8b PASSED" -ForegroundColor Green
 
   # ---- §5.7: switch back to MI, set up failure + clean rows, re-run failed ----
   Write-Host ""

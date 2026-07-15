@@ -113,12 +113,19 @@ Private Function NfcAgolUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As Str
     Select Case BareStateCodeOrMI()
         Case "IN": template = URL_NFC_MAPVIEW_IN
         Case "WI": template = URL_NFC_MAPVIEW_WI
+        Case "MN": template = URL_NFC_MAPVIEW_MN
+        Case "IL": template = URL_NFC_MAPVIEW_IL
+        Case "OH": template = URL_NFC_MAPVIEW_OH
         Case "MI": template = URL_NFC_MAPVIEW
         Case Else: template = URL_FEMAVIEW
     End Select
     NfcAgolUrlForRow = BuildUrl(template, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
 End Function
 
+' Legacy name: blank State used to default to MI everywhere. Classify now
+' refuses to run without a State (PR #36), but the CSV can still be exported
+' with one unset - keep MI as the least-wrong link fallback there, matching
+' the Sites formulas' own OR(State="MI",State="") branch.
 Private Function BareStateCodeOrMI() As String
     Dim s As String
     s = BareStateCode(SetupValue(NR_STATE))

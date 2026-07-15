@@ -1,8 +1,9 @@
 // Verifies web/index.html's rr-core classification logic (the JS port of
-// modClassify.bas) against the live MDOT / INDOT / WisDOT / NTAD / TIGER
-// services, using the confirmed test coordinates from CLAUDE.md §4.2,
-// §4.2a and §4.2b. Runs the exact <script id="rr-core"> block shipped in
-// the page — not a copy — so a passing run vouches for the committed file.
+// modClassify.bas) against the live MDOT / INDOT / WisDOT / MnDOT / IDOT /
+// ODOT / NTAD / TIGER services, using the confirmed test coordinates from
+// CLAUDE.md §4.2, §4.2a, §4.2b and §4.2c-e. Runs the exact
+// <script id="rr-core"> block shipped in the page — not a copy — so a
+// passing run vouches for the committed file.
 //
 //   node build/verify-web-core.mjs
 //
@@ -52,11 +53,15 @@ console.log("parseCoordinates:");
   check("swapped lon,lat accepted", pts[3].lat === 42.3 && pts[3].lon === -85.5);
 }
 
-console.log("detectState:");
+console.log("detectState (all six states, PR #36):");
 for (const [lat, lon, want] of [
   [42.28536, -85.57025, "MI"], [44.27, -83.52, "MI"], [46.5, -87.4, "MI"],   // Kalamazoo, Iosco, Marquette (UP)
   [39.7684, -86.1581, "IN"], [43.0389, -87.9065, "WI"], [45.169879, -89.102452, "WI"],
   [46.65, -90.86, "WI"], [36.16, -86.78, null],                               // Washburn Co, Nashville TN
+  [44.9778, -93.2650, "MN"], [45.822764, -95.222414, "MN"],                   // Minneapolis, Douglas Co
+  [41.8781, -87.6298, "IL"], [40.12, -87.63, "IL"],                           // Chicago, Danville (east border)
+  [39.9612, -82.9988, "OH"], [41.87, -80.80, "OH"],                           // Columbus, Ashtabula (lakeshore)
+  [41.92, -83.40, "MI"],                                                      // Monroe MI (not OH's box)
 ]) check(`${lat},${lon} -> ${want}`, core.detectState(lat, lon) === want, "got " + core.detectState(lat, lon));
 
 console.log("computeVerdict (closest-road + ambiguity model, port of modClassify.ComputeVerdict):");
@@ -115,7 +120,17 @@ const CASES = [
   ["WI", 45.4711, -89.7345, { verdict: "Review - Nearby FHWA road", urbanRural: "Rural", classIncludes: "Major Collector" }],
   ["WI", 45.169879, -89.102452, { verdict: "Non-federal aid - Rural Minor Collector", urbanRural: "Rural" }],   // §7a fix #2 regression
   ["WI", 44.764850, -91.406533, { verdict: "Federal aid - Urban Interstate", acubName: "Eau Claire, WI" }],      // §7a fix #3 regression
-  ["MN", 44.9778, -93.2650, { verdict: "ACUB only - class lookup not wired for this state", urbanRural: "Urban" }], // Minneapolis: state gate
+  // MN/IL/OH (PR #36, §4.2c-e test coordinates - all live-verified 2026-07-15):
+  ["MN", 44.9531, -93.1668, { verdict: "Federal aid - Urban Minor Arterial", urbanRural: "Urban", acubName: "Minneapolis--St. Paul, MN", classIncludes: "Minor Arterial" }],  // Snelling Ave, St Paul
+  ["MN", 44.9260, -93.2570, { verdict: "Non-federal aid - Urban Local", urbanRural: "Urban" }],                  // Minneapolis residential
+  ["MN", 45.822764, -95.222414, { verdict: "Non-federal aid - Rural Local", urbanRural: "Rural" }],              // rural Douglas County
+  ["IL", 41.9020, -87.6870, { verdict: "Federal aid - Urban Other Principal Arterial", urbanRural: "Urban", acubName: "Chicago, IL--IN" }],  // Western Ave, Chicago
+  ["IL", 41.9430, -87.7010, { verdict: "Non-federal aid - Urban Local", urbanRural: "Urban" }],                  // Chicago residential
+  ["IL", 40.165157, -89.434236, { verdict: "Non-federal aid - Rural Local", urbanRural: "Rural" }],              // rural Logan County
+  ["OH", 40.0150, -82.9990, { verdict: "Federal aid - Urban Other Principal Arterial", urbanRural: "Urban", acubName: "Columbus, OH" }],     // N High St / US 23, Columbus
+  ["OH", 40.0855, -83.0170, { verdict: "Non-federal aid - Urban Local", urbanRural: "Urban" }],                  // Columbus residential
+  ["OH", 40.320352, -83.302785, { verdict: "Non-federal aid - Rural Local", urbanRural: "Rural" }],              // rural Marion County
+  ["TN", 36.16, -86.78, { verdict: "ACUB only - class lookup not wired for this state", urbanRural: "Urban" }],  // state gate (unwired state)
 ];
 
 console.log("live classification (" + CASES.length + " points):");
@@ -131,7 +146,7 @@ for (const [state, lat, lon, want] of CASES) {
   if (want.classIncludes && !r.classLabel.includes(want.classIncludes)) problems.push(`classLabel "${r.classLabel}" !~ "${want.classIncludes}"`);
   // PR #24 parity: wired-state results must carry real per-segment distances
   // and a nearest-first merged road list with "(N ft)" suffixes.
-  if (["MI", "IN", "WI"].includes(state)) {
+  if (["MI", "IN", "WI", "MN", "IL", "OH"].includes(state)) {
     if (!r.segments.length || !r.segments.every(s => Number.isFinite(s.distFt))) problems.push("segments missing finite distFt");
     if (r.roadName && !/\(\d+ ft\)/.test(r.roadName)) problems.push(`roadName "${r.roadName}" missing (N ft) distances`);
     const dists = r.roadList.map(x => x.distFt);

@@ -262,11 +262,13 @@ hand-rolled JSON parsing.
   Geocoder — free, no auth, US-only) that fills lat/lon on the row. A
   Geocode Status column shows pass/fail per row. *Lat/lon already in the
   row is never overwritten by the geocoder.*
-- **F5. Michigan, Indiana and Wisconsin road classification in V1.**
+- **F5. All six Region V states wired for road classification.**
   Hard-code each state's own NFC layer(s) for class + road name (MDOT for
-  MI, INDOT/IndianaMap for IN, WisDOT for WI — WI queries a state-trunk
-  layer first and falls back to a local-roads layer). MN / IL / OH are
-  still placeholders. *(See* [§4 Data sources](#4-data-sources) *.)*
+  MI, INDOT/IndianaMap for IN, WisDOT for WI — WI queries a local-roads
+  layer first and falls back to a state-trunk layer). **MN / IL / OH were
+  wired in PR #36** (§4.2c-e): all three publish a bare FHWA 1-7 code,
+  Indiana-shaped, no active/retired filter. *(See*
+  [§4 Data sources](#4-data-sources) *.)*
 - **F6. ACUB is nationwide.** Use the user-provided AGOL nationwide ACUB
   feature service for all six Region V states (see §4.2). One lookup
   call per row, regardless of state.
@@ -295,11 +297,13 @@ hand-rolled JSON parsing.
     and Cat C (Roads & Bridges), with Cat D (Water Control Facilities),
     Cat F (Public Utilities), and Cat G (Parks/Rec/Other) sometimes
     also touching federal-aid routes.
-- **F8. State selector.** Setup sheet has a State dropdown with WI / IN
-  / MI / MN / IL / OH. MI, IN and WI's NFC layers are wired in V1;
-  selecting MN, IL or OH pops a "NFC lookup not yet wired for {state} —
-  ACUB still runs" message and the workflow continues with the
-  ACUB-only check.
+- **F8. State selector.** The State dropdown offers all six Region V
+  states (WI / IN / MI / MN / IL / OH), every one wired for NFC lookup
+  since PR #36. A TYPED out-of-region code (e.g. TN) still pops the
+  "NFC lookup not yet wired — ACUB still runs" message and continues
+  ACUB-only. A BLANK State refuses to classify: every target row gets
+  "Failed - no State selected" plus a prompt pointing at the State box
+  (blank used to silently mean Michigan — removed in PR #36).
 - **F9. NHS column.** Dropped from V1 per user direction. Re-add if
   needed in a later version.
 - **F10. Single export across all points.** Provide:
@@ -852,6 +856,88 @@ regardless; harmless here.
 | 2 | Higher-class, rural | `45.4711` | `-89.7345` | State Trunk: `HWYTYPE='STH'`, `HWYNUM='86'`, `FED_FC_CD='5'` (Major Collector), `URB_TYPE='Rural'` — near Tomahawk, WI |
 | 3 | Local road, rural | ~`46.65` | ~`-90.86` | Local Roads (state-trunk layer returns nothing here): `FNCT_CLS_CTGY_TYCD=45` (Rural Local), `FEDUA_TYCD='000'` — Ballard Rd, Washburn County |
 
+### 4.2c Minnesota road classification (wired PR #36)
+
+Source: MnDOT's public ArcGIS Server (`dotapp9.dot.state.mn.us`), the same
+Functional Class layer MnDOT's EMMA app (`APP_MN`) displays. Schema
+confirmed live 2026-07-15 via `?f=pjson` + `returnDistinctValues`.
+
+- **Layer:** `https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11`
+  ("Functional Class", esriGeometryPolyline, native WKID 26915 / NAD83 UTM
+  15N — hand it WGS84 with `inSR=4326`). Classic MapServer, `capabilities:
+  Query,Map,Data`.
+- **Class field:** `FUNCTIONAL_CLASS` (esriFieldTypeInteger) — **bare FHWA
+  1-7**, confirmed by distinct values; `FUNCTIONAL_CLASS_DESC` carries the
+  matching standard label ("Principal Arterial - Interstate" … "Local").
+- **No active/retired filter needed** (`where=1=1`).
+- **No road-name field** — `ROUTE_ID` is an LRS key. Census TIGER backfills
+  all Minnesota street names.
+- **Renderer quirk (web figures):** MnDOT's published uniqueValue renderer
+  keys off `FUNCTIONAL_CLASS_DESC` (the label string), not the numeric
+  code — the web tool's frame query fetches both fields.
+- **Test coordinates (live-verified 2026-07-15):**
+
+  | # | Expected | lat | lon | Notes |
+  |---|---|---|---|---|
+  | 1 | Federal aid - Urban Minor Arterial | `44.9531` | `-93.1668` | Snelling Ave, St Paul (class 4 @ 36 ft closest); ACUB `Minneapolis--St. Paul, MN` |
+  | 2 | Non-federal aid - Urban Local | `44.9260` | `-93.2570` | Minneapolis residential, all class 7 |
+  | 3 | Non-federal aid - Rural Local | `45.822764` | `-95.222414` | rural Douglas County, class 7 @ 0 ft, outside every ACUB |
+
+### 4.2d Illinois road classification (wired PR #36)
+
+Source: IDOT's public ArcGIS Server (`gis1.dot.illinois.gov`), the layer
+behind the Getting Around Illinois RFC viewer (`APP_IL`). Confirmed live
+2026-07-15.
+
+- **Layer:** `https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0`
+  ("Functional Class", polyline, WKID 102113/3785 Web Mercator).
+- **Class field:** `FC` — a **STRING** `"1"`-`"7"` with a published
+  coded-value domain matching FHWA (1 Interstate (PAS) … 7 Local Road or
+  Street). Read with `isStringClass=True` in `AddClassSegs`, like WI's
+  `FED_FC_CD`.
+- **No active/retired filter needed.**
+- **No street names** — `LABEL_1`/`KEY_RT_*` are route-system inventory
+  codes ("FAU 1422", "MUN 4022H"), not names. TIGER backfills.
+- **Test coordinates (live-verified 2026-07-15):**
+
+  | # | Expected | lat | lon | Notes |
+  |---|---|---|---|---|
+  | 1 | Federal aid - Urban Other Principal Arterial | `41.9020` | `-87.6870` | Western Ave, Chicago (class 3 @ 2 ft); ACUB `Chicago, IL--IN` |
+  | 2 | Non-federal aid - Urban Local | `41.9430` | `-87.7010` | Chicago residential, single class-7 |
+  | 3 | Non-federal aid - Rural Local | `40.165157` | `-89.434236` | rural Logan County, class 7 @ 0 ft |
+
+### 4.2e Ohio road classification (wired PR #36)
+
+Source: ODOT's TIMS public ArcGIS Server (`tims.dot.state.oh.us`), the
+Functional Class layer TIMS (`APP_OH`) displays. Confirmed live 2026-07-15.
+
+- **Layer:** `https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0`
+  ("Functional Class", polyline, WKID 102100/3857 Web Mercator).
+- **Class field:** `FUNCTION_CLASS_CD` (esriFieldTypeInteger) — **bare FHWA
+  1-7**, confirmed by distinct values.
+- **No active/retired filter needed.**
+- **Route names on the same layer:** `ROUTE_TYPE` + `ROUTE_NBR` read
+  cleanly for the numbered systems — `"US"/"00023"` → "US 23",
+  `"SR"/"00161"` → "SR 161", `"IR"` = interstate. County/township/municipal
+  codes ("MR 00923") are cryptic and skipped (`RoadNameFromBlock`'s
+  `OH_ROUTE` mode); TIGER fills local street names.
+- **Test coordinates (live-verified 2026-07-15):**
+
+  | # | Expected | lat | lon | Notes |
+  |---|---|---|---|---|
+  | 1 | Federal aid - Urban Other Principal Arterial | `40.0150` | `-82.9990` | N High St / US 23, Columbus (class 3 @ 25 ft; Road Name shows "US 23 (25 ft)"); ACUB `Columbus, OH` |
+  | 2 | Non-federal aid - Urban Local | `40.0855` | `-83.0170` | Columbus residential, single class-7 |
+  | 3 | Non-federal aid - Rural Local | `40.320352` | `-83.302785` | rural Marion County, class 7 @ 3 ft |
+
+#### UA / header quirks (all three)
+
+None — all three servers answered plain GETs without a browser User-Agent
+(RoadReviewer sends its browser UA regardless, harmless). Note: INDOT's
+`gisdata.in.gov` showed intermittent 500s / empty responses on 2026-07-15
+during this pass (recovered within minutes each time) — unrelated to these
+three, but a reminder that per-row Failed + Re-run Failed Rows is the
+designed recovery for state-server flakiness.
+
 ### 4.3 Verification map URLs
 
 - Google Maps: `https://www.google.com/maps?q={lat},{lon}`
@@ -946,14 +1032,11 @@ These came up reading the prototypes; capturing them so they aren't lost.
   This sidesteps any limitation of "only public maps" because AGOL is
   already licensed for the user's organisation.
 - **Historical Google Earth / Nearmap links** for pre-disaster imagery.
-- **State expansion.** MI, IN and WI are wired (§4.2, §4.2a, §4.2b).
-  Wire up the NFC layer for MN / IL / OH next. Each state's DOT publishes
-  the layer differently; we'll need one layer-URL block per state plus a
-  normalisation function that maps each state's NFC codes back to the
-  FHWA standard classes (see `WisconsinLocalCategoryToFhwa` in
-  `modConstants.bas` for a worked example — WI's local-roads layer embeds
-  urban/rural into its own class code and needs unpacking). ACUB stays
-  nationwide.
+- **State expansion — DONE for Region V (PR #36).** All six states are
+  wired (§4.2-§4.2e); no normalisation function was needed for MN/IL/OH
+  (all bare FHWA 1-7). ACUB stays nationwide. Any future out-of-region
+  state follows the same recipe: probe `?f=pjson` + `returnDistinctValues`,
+  add a `QueryStateRoads` case + REST/Svc_ key, live-verify 3 coords.
 - **NHS column.** Surface MDOT's NHS layer (and the equivalent in other
   states) so the inspector can see federal-aid-system status alongside
   functional class.
@@ -1161,6 +1244,7 @@ once the run finishes.
 | Workflow 1 — Classify Roads, Michigan (NFC 353 + ACUB + route 543, eligibility, re-run failed, state gate) | modClassify | **tested** (§5.4/§5.7/§5.8 — verify-classify.ps1, verify-rerun-and-state.ps1) |
 | Workflow 1 — Classify Roads, Indiana (LRSE_Functional_Class + centerline road name) | modClassify | built against a live-verified schema (§4.2a); needs a local `verify-classify.ps1` run before first real use |
 | Workflow 1 — Classify Roads, Wisconsin (state-trunk + local-roads fallback, category-code normalization) | modClassify | built against a live-verified schema (§4.2b); needs a local `verify-classify.ps1` run before first real use |
+| Workflow 1 — Classify Roads, Minnesota / Illinois / Ohio (bare FHWA 1-7, Indiana shape; OH route names) | modClassify | **tested** (PR #36 — verify-classify.ps1 all six states + verify-web-core, 2026-07-15, live) |
 | Workflow 2 — Review Imagery (open curated set for selected rows) | modImagery | built; uses the same URL templates §5.3 already verified resolve correctly. End-user click test pending |
 | Geocode addresses → lat/lon (never overwrites) | modGeocode | built; no automated verifier yet (one-shot Census call) |
 | KML export + Sites-table CSV export | modMaps, modExport | built |
@@ -1591,16 +1675,15 @@ Four additions after the split, per user direction:
    | MI | MDOT "NFC, NHS & ACUB" Experience | mdotgis…/FeatureServer/353 (wired) |
    | IN | INDOT "Functional Class Map" Experience | gisdata.in.gov…/FeatureServer/22 (wired) |
    | WI | WisDOT function.aspx (static county/urban PDFs; **no statewide interactive map**) | services5.arcgis.com FFCL_gdb/FeatureServer/3 (wired) |
-   | MN | MnDOT EMMA (`webgis.dot.state.mn.us/emma/`) | dotapp9…/mndot_commonlayers2/MapServer/11 (ref only) |
-   | IL | IDOT "Getting Around Illinois" RFC viewer | gis1.dot.illinois.gov…/FunctionalClass/MapServer/0 (ref only) |
-   | OH | ODOT TIMS (`tims.dot.state.oh.us/tims`) | tims…/Functional_Class/MapServer/0 (ref only) |
+   | MN | MnDOT EMMA (`webgis.dot.state.mn.us/emma/`) | dotapp9…/mndot_commonlayers2/MapServer/11 (**wired PR #36**) |
+   | IL | IDOT "Getting Around Illinois" RFC viewer | gis1.dot.illinois.gov…/FunctionalClass/MapServer/0 (**wired PR #36**) |
+   | OH | ODOT TIMS (`tims.dot.state.oh.us/tims`) | tims…/Functional_Class/MapServer/0 (**wired PR #36**) |
 
    MN/IL/OH all expose a **bare FHWA 1-7** class field
-   (`FUNCTIONAL_CLASS` / `FC` / `FUNCTION_CLASS_CD`), so wiring them later
-   is the same shape as IN — the URLs live as `APP_*`/`REST_*_NFC`
-   constants in `modSources.bas`. MnDOT's same service also has a
-   "Federal Adjusted Urban Area" layer (an ACUB analog) if a state-native
-   urban-boundary source is ever wanted.
+   (`FUNCTIONAL_CLASS` / `FC` / `FUNCTION_CLASS_CD`) and were wired in
+   PR #36 with the Indiana shape (§4.2c-e). MnDOT's same service also has
+   a "Federal Adjusted Urban Area" layer (an ACUB analog) if a
+   state-native urban-boundary source is ever wanted.
 
 ### Column hiding, Sites-only actions, 250 ft buffer, Michigan link (PR #23)
 
@@ -1823,10 +1906,12 @@ so repeated exports never overwrite.
 State ships **blank by default** (both products). The two state-dependent NFC
 link columns (13 "NFC Layer (Map Viewer)", 15 "State NFC App") show — on the
 FIRST data row only, other rows blank — a working `HYPERLINK("#JobState","Set
-State →")` instead of silently defaulting to Michigan. `modClassify` still
-treats blank as MI (revisit when MN/IL/OH get wired). The State dropdown lists
-only wired states (`STATE_LIST = "WI,IN,MI"`); the ACUB-only path for typed
-unwired states still works.
+State →")` instead of silently defaulting to Michigan. Since PR #36
+`modClassify` refuses to run with a blank State (every target row gets
+"Failed - no State selected" + a prompt naming the State box) — blank no
+longer silently means Michigan. The State dropdown lists all six wired states
+(`STATE_LIST = "WI,IN,MI,MN,IL,OH"`); the ACUB-only path for typed
+out-of-region states still works.
 
 ### Hard-won operational rules (cost real corruption this session)
 
@@ -2056,8 +2141,8 @@ product has no FIRMette buttons or WO/DI named ranges).
 | Script | What it covers | Run against | Network? |
 |---|---|---|---|
 | `verify-skeleton.ps1` | §5.2 + §5.3 — sheets, buttons (every OnAction resolves), product button/named-range surface, Sites headers (row 2), hidden inspector-only columns, toolbar buttons, hyperlink formulas (incl. Google Earth), lat/lon decimal validation, verdict conditional formatting, Sources content | each product | no |
-| `verify-classify.ps1` | §5.4 — Check Roads against the §4.2/§4.2a/§4.2b test coords for MI, IN and WI + an address-only auto-geocode row | standard (or either) | MDOT + INDOT + WisDOT + NTAD + Census |
-| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=MN gates NFC (MI/IN/WI must NOT gate); ReRunFailedRows only retries `Failed - ` rows | standard (or either) | MDOT + NTAD |
+| `verify-classify.ps1` | §5.4 — Check Roads against the §4.2/§4.2a/§4.2b/§4.2c-e test coords for all SIX states + an address-only auto-geocode row | standard (or either) | MDOT + INDOT + WisDOT + MnDOT + IDOT + ODOT + NTAD + Census |
+| `verify-rerun-and-state.ps1` | §5.7 + §5.8 — blank State refuses ("Failed - no State selected"); typed TN gates NFC; MN classifies for real; ReRunFailedRows only retries `Failed - ` rows | standard (or either) | MDOT + MnDOT + NTAD |
 | `verify-firmette-maps.ps1` | Inspector workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | inspector | FEMA Print FIRMette GP |
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
 | `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
@@ -2183,19 +2268,19 @@ Setup's `JobState` cell:
 
 - **MI** → `URL_NFC_MAPVIEW`, the curated FEMA-hosted webmap described
   in §9.3a.
-- **IN** → `URL_NFC_MAPVIEW_IN`, **WI** → `URL_NFC_MAPVIEW_WI` - side-load
-  the state's own live NFC FeatureServer (§4.2a/§4.2b) via the Map
+- **IN/WI/MN/IL/OH** → `URL_NFC_MAPVIEW_IN/_WI/_MN/_IL/_OH` - side-load
+  the state's own live NFC layer (§4.2a-§4.2e) via the Map
   Viewer's `url=` parameter, using the same `find=`/`marker=`/`level=`
   parameters already proven to work for `URL_FEMAVIEW` (rather than the
   `webmap=`+`center=` combination MI's link uses, which broke once
   before when a `visibleLayers` param was added - see the `URL_NFC_MAPVIEW`
   comment in `modConstants.bas`). No curated combined NFC+ACUB webmap
-  exists for IN/WI to point at instead.
-- **Anything else** (MN/IL/OH, or a blank State cell) → `URL_FEMAVIEW`,
-  the plain pin+zoom with no data layer. A blank State cell is treated
-  as MI instead, matching `ClassifyRows`'s default-to-MI behavior - Setup
-  pre-fills `JobState` to `"MI"` at build time, so this only matters if
-  someone manually clears the cell.
+  exists for these states to point at instead. MN/IL/OH are MapServer
+  (not FeatureServer) layers, which `url=` also accepts.
+- **Anything else** → `URL_FEMAVIEW`, the plain pin+zoom with no data
+  layer. A BLANK State cell shows the "Set State →" prompt in the cells
+  (and `ClassifyRows` refuses to run, PR #36); the CSV export's resolver
+  still falls back to MI links for that edge case only.
 
 **Not yet click-tested.** The `url=`-sideload URLs were built by
 reasoning from a working pattern (`URL_FEMAVIEW`) and the ArcGIS REST
