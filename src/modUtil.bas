@@ -9,6 +9,17 @@ Option Explicit
 ' All Public variables must live in the declarations section (before the
 ' first Sub/Function) or VBA throws a compile error.
 
+' Win32 for SurfaceFolder: raise an already-open Explorer window instead of
+' spawning a duplicate. Declares belong in the declarations section too.
+#If VBA7 Then
+Private Declare PtrSafe Function SetForegroundWindow Lib "user32" (ByVal hWnd As LongPtr) As Long
+Private Declare PtrSafe Function ShowWindow Lib "user32" (ByVal hWnd As LongPtr, ByVal nCmdShow As Long) As Long
+#Else
+Private Declare Function SetForegroundWindow Lib "user32" (ByVal hWnd As Long) As Long
+Private Declare Function ShowWindow Lib "user32" (ByVal hWnd As Long, ByVal nCmdShow As Long) As Long
+#End If
+Private Const SW_RESTORE As Long = 9
+
 ' Set True by automation hosts (build\build.ps1, build\verify-*.ps1) to
 ' suppress user-facing MsgBox prompts so the COM caller doesn't hang on
 ' an invisible modal dialog. Workflows still write all status to cells +
@@ -257,17 +268,22 @@ Public Function JobIds(ByVal wo As String, ByVal di As String, _
 End Function
 
 ' The disaster tag used in file names, pairing the Disaster Number with the
-' State (per user's "DR-4882-IN" convention). A bare number is assumed to be a
-' major-disaster DR ("4882" -> "DR-4882"); an explicit prefix (DR-/EM-/...) is
-' kept as typed. State is appended when set. Empty when there's no disaster.
+' State. Convention (user direction, PR #37): NO separators - "DR4882IN",
+' not "DR-4882-IN". A bare number is assumed to be a major-disaster DR
+' ("4882" -> "DR4882"); a typed prefix (DR/EM/...) is kept, with any hyphens
+' or spaces the user typed stripped out. State is appended when set (unless
+' the user already typed it). Empty when there's no disaster.
 Public Function DisasterTag() As String
     Dim d As String, st As String
     d = Trim$(SetupValue(NR_DISASTER))
     st = BareStateCode(SetupValue(NR_STATE))
     If Len(d) = 0 Then Exit Function
-    If IsAllDigits(d) Then d = "DR-" & d
+    d = UCase$(Replace(Replace(d, "-", ""), " ", ""))
+    If IsAllDigits(d) Then d = "DR" & d
     DisasterTag = d
-    If Len(st) > 0 Then DisasterTag = DisasterTag & "-" & st
+    If Len(st) > 0 Then
+        If Right$(DisasterTag, Len(st)) <> st Then DisasterTag = DisasterTag & st
+    End If
 End Function
 
 Private Function IsAllDigits(ByVal s As String) As Boolean
@@ -298,6 +314,38 @@ Public Function JobFileStem() As String
     If Len(stem) = 0 Then stem = Format$(Now(), "yyyy-mm-dd HHmm")
     JobFileStem = CleanFileName(stem)
 End Function
+
+' Show the output folder to the user after an export (user direction, PR #37:
+' every output ends with its folder visible). If an Explorer window is already
+' open AT that folder it is un-minimized and brought to the front; otherwise a
+' new window opens. No-op when headless or when the folder doesn't exist.
+Public Sub SurfaceFolder(ByVal folderPath As String)
+    If gHeadless Then Exit Sub
+    Dim target As String
+    target = folderPath
+    Do While Right$(target, 1) = "\"
+        target = Left$(target, Len(target) - 1)
+    Loop
+    If Len(Dir$(target, vbDirectory)) = 0 Then Exit Sub
+
+    ' Shell.Application.Windows enumerates open Explorer (and IE) windows;
+    ' non-folder windows lack Document.Folder, hence the blanket error guard.
+    On Error Resume Next
+    Dim sh As Object, w As Object, p As String
+    Set sh = CreateObject("Shell.Application")
+    For Each w In sh.Windows
+        p = ""
+        p = w.Document.Folder.Self.Path
+        If StrComp(p, target, vbTextCompare) = 0 Then
+            ShowWindow w.hWnd, SW_RESTORE
+            SetForegroundWindow w.hWnd
+            Exit Sub
+        End If
+    Next w
+    On Error GoTo 0
+
+    Shell "explorer.exe """ & target & """", vbNormalFocus
+End Sub
 
 ' Strip characters that are illegal in Windows file names.
 Public Function CleanFileName(ByVal s As String) As String

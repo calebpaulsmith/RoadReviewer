@@ -1894,12 +1894,13 @@ never prints) holds:
 
 ### Shared file-name convention (modUtil)
 
-`JobFileStem()` = `"WO123 DI5 - DR-4882-MI"` → used by **every** export
+`JobFileStem()` = `"WO123 DI5 - DR4882MI"` → used by **every** export
 (Location Map PDF, per-site FIRMettes, KML, CSV, GeoJSON), suffixed per type
-(`... - Sites.kml` etc.). `DisasterTag()` composes the user's `DR-####-ST`
-convention: bare digits get `DR-` (typed `DR-`/`EM-` prefixes kept), State
-appended when set. All-blank job info falls back to a `yyyy-mm-dd HHmm` stamp
-so repeated exports never overwrite.
+(`... - Sites.kml` etc.). `DisasterTag()` composes the user's convention —
+**no separators since PR #37: `DR4882IN`, not `DR-4882-IN`** — bare digits
+get `DR`, typed prefixes are kept with any hyphens/spaces stripped, State
+appended when set (unless already typed). All-blank job info falls back to a
+`yyyy-mm-dd HHmm` stamp so repeated exports never overwrite.
 
 ### State handling
 
@@ -2003,6 +2004,49 @@ red pin pixels at page center (per §9.8: rendered pixels, never
 `get_image_rects`). Known risk (stated in the commit): reachability of
 `services.arcgisonline.com` from a hardened FEMA laptop is untested.
 
+## 7f. UX pass: naming, output folder, columns & links (PR #37, 2026-07-15)
+
+All per user direction, both products. Everything below is asserted by the
+updated verifiers (skeleton labels/hiding, classify/rerun column indices,
+DRTEST filenames) and the whole §9.2 suite passes on the rebuilt workbooks.
+
+1. **Disaster naming**: `DR4882IN`, no hyphens, everywhere the disaster
+   appears (see §7d). `DisasterTag` strips typed separators too.
+2. **Output folder default**: `<workbook dir>\RR Output\` / `\SI Tool
+   Output\` + the OneDrive https→local mapping + `SurfaceFolder` after
+   every export (full detail in §8 resolved #9). `SetOutputFolderDefault`'s
+   display formula (standard Start Here) appends `RR Output\` so the shown
+   default matches. SurfaceFolder is headless-gated, so it's exercised
+   only by a human click-test.
+3. **AGOL column defaults to the FEMA pin**: blank `JobAgolMap` → every
+   row links the FEMA-hosted Map Viewer as "FEMA AGOL Map Viewer"; a
+   pasted webmap URL takes the column over as before. The separate FEMA
+   Viewer column (27) ships hidden in BOTH products, as do Google Maps
+   (23) and Bing (25); Street View stays visible; Google Earth keeps its
+   split (inspector hidden). CSV resolver matches.
+4. **Reviewer block reordered** — verdicts lead: Federal Aid Status (16/P),
+   Review Reason (17/Q), then FHWA Class, Urban/Rural, ACUB Name, Road
+   Name, Street Name (18-22). `COL_REVIEWER_FIRST/LAST` still span 16-22,
+   so tint/CF/hide logic was untouched; only constants + verifier indices
+   moved. **Check Roads reveals the block BEFORE its loop** so the user
+   watches verdicts appear row by row.
+5. **Map-link columns sit together** (13 "NFC Layer (Map Viewer)", 14
+   "State NFC App"), AGOL moved to 15. Labels are descriptive, not "Open":
+   col 13 = "Review NFC AGOL Layer", col 14 = "Review State NFC Layer" —
+   except **Wisconsin**, whose two links split its two layers: col 13 =
+   "Review Local Roads Layer" (local-roads side-load,
+   `URL_NFC_MAPVIEW_WI_LOCAL`) and col 14 = "Review State Trunk Hwy Layer"
+   (the FFCL trunk side-load, coords included, replacing WisDOT's static
+   -PDF app link there).
+6. **Excel HYPERLINK 255-char trap** (cost a build round): the
+   percent-encoded WI local-roads side-load link is ~261 chars and
+   HYPERLINK() returns #VALUE! past 255. The `url=` value is deliberately
+   left unencoded (~239 chars, legal — no `&` inside). Watch this on any
+   future side-load of a long layer path.
+7. **`docs/Region V Test Coordinates.xlsx`** — the 19 live-verified test
+   points for all six states (coords + expected verdict/class/ACUB +
+   sources), for hand smoke-testing without digging through CLAUDE.md.
+
 ## 8. Design decisions (resolved) and remaining open questions
 
 ### Resolved (do not relitigate)
@@ -2031,13 +2075,19 @@ red pin pixels at page center (per §9.8: rendered pixels, never
    capture is a V2 effort (see §6).
 8. **WO/DI.** Per-job only — Setup sheet drives it. Row-level override
    is allowed by editing the row's WO/DI cells directly; no mode toggle.
-9. **Output folder default.** Setup sheet pre-fills the output folder
-   with `{OneDrivePath}\Desktop\Script\RoadReviewer\{Disaster}\WO{WO}-DI{DI}\`,
-   where `{OneDrivePath}` is discovered at workbook open time by
-   probing for `%USERPROFILE%\OneDrive - FEMA\`, then
-   `%USERPROFILE%\OneDrive\`, falling back to `%USERPROFILE%\Desktop\`
-   if neither exists. The folder is created on-demand on first
-   FIRMette / Map PDF write. Inspector can override on the Setup sheet.
+9. **Output folder default — superseded PR #37.** The default is now a
+   product subfolder NEXT TO the workbook: `<workbook dir>\RR Output\`
+   (standard) or `<workbook dir>\SI Tool Output\` (inspector), created
+   on demand; an explicit Output Folder value still wins. A
+   OneDrive-synced workbook reports an `https://` path — the old code
+   silently fell through to the §8.9 OneDrive probe (the "outputs went
+   to Desktop\Scripts\RoadReviewer" bug the user hit); `modMaps.
+   OneDriveLocalFolder` now maps the URL back to the locally synced
+   path via the `OneDrive*` env vars (longest-matching URL tail whose
+   folder actually contains the workbook file). The §8.9 probe remains
+   only for a never-saved or unmappable workbook. Every export also
+   ends with `modUtil.SurfaceFolder`: the output folder is opened in
+   Explorer, or its already-open window is un-minimized and raised.
 
 10. **MDOT NFC field names — confirmed 2026-05-22 (verification §5.1).**
     Read live from `mdotgis.state.mi.us` via the procedure in

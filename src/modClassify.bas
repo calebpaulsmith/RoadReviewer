@@ -108,6 +108,10 @@ Private Sub ClassifyRows(ByVal onlyFailed As Boolean)
         Exit Sub
     End If
 
+    ' Reveal the auto-check output columns BEFORE the loop starts (PR #37,
+    ' user direction) so the user watches the verdicts appear as each row is
+    ' classified, instead of the columns popping into view only at the end.
+    ShowReviewerColumns
     ' Leave ScreenUpdating on and stay on the Sites sheet (not the Classify
     ' Roads control sheet the button lives on) so the inspector watches each
     ' row's cells fill in as it's classified - each row is dominated by
@@ -128,9 +132,6 @@ NextRow:
 
 Done:
     ClearStatus
-    ' The auto-reviewer columns ship hidden; this is the macro that fills them,
-    ' so reveal them now (idempotent, and safe even on the error path).
-    ShowReviewerColumns
     If Err.Number <> 0 Then
         If Not gHeadless Then MsgBox "Classification stopped: " & Err.Description, vbExclamation, "Check Roads"
     Else

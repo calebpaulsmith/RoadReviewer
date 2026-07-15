@@ -22,7 +22,9 @@ if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmP
 # toolbar was retired; all actions live on Start Here.
 $HeaderRow = 1
 $FirstDataRow = 2
-$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Layer (Map Viewer)','User-Defined AGOL Layer','State NFC App','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Federal Aid Status','Review Reason','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status')
+# PR #37 layout: the two state map-link columns sit together (13, 14) with the
+# AGOL column after (15); the verdict columns LEAD the reviewer block (16, 17).
+$expectedHeaders = @('WO #','DI #','Site #','Site Name','Latitude','Longitude','Description (optional)','Address (optional)','Category (optional)','Costs (optional)','Work Completion (optional)','Geocode Status','NFC Layer (Map Viewer)','State NFC App','User-Defined AGOL Layer','Federal Aid Status','Review Reason','FHWA Class','Urban/Rural','ACUB Name','Road Name','Street Name','Google Maps','Street View','Bing','Google Earth','FEMA Viewer','FIRMette Portal','FIRMette Status','Map Status')
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -189,22 +191,32 @@ try {
   Write-Host ("  inspector-only columns " + $(if ($isInspector) { 'visible' } else { 'hidden' }) + " as expected") -ForegroundColor Green
 
   Write-Host "=== Auto-reviewer columns hidden on a fresh (unclassified) build ===" -ForegroundColor Cyan
-  # FHWA Class(16) .. Review Reason(22) ship hidden until CheckRoads reveals them.
+  # Federal Aid Status(16) .. Street Name(22) ship hidden until CheckRoads
+  # reveals them (BEFORE its loop since PR #37).
   foreach ($c in @(16, 22)) {
     if (-not [bool]$sites.Columns($c).Hidden) { throw "Reviewer column $c should be hidden on a fresh build (classifier hasn't run)" }
   }
   Write-Host "  reviewer columns 16..22 hidden until first Check Roads" -ForegroundColor Green
 
-  Write-Host "=== Inspector photo/NFC column hiding ===" -ForegroundColor Cyan
-  # Inspector hides Bing(25) + Google Earth(26) outright, and rides NFC Layer(13)
-  # + State NFC App(15) along with the reviewer block (hidden until Check Roads).
-  # Standard shows all four.
-  foreach ($c in @(13, 15, 25, 26)) {
+  Write-Host "=== Photo/NFC column hiding (PR #37) ===" -ForegroundColor Cyan
+  # BOTH products hide Google Maps(23), Bing(25) and FEMA Viewer(27) - the FEMA
+  # pin lives in the AGOL column's default link now. Street View(24) stays
+  # visible. Google Earth(26) keeps the per-product split.
+  foreach ($c in @(23, 25, 27)) {
+    if (-not [bool]$sites.Columns($c).Hidden) { throw "Column $c should be hidden by default on both products" }
+  }
+  if ([bool]$sites.Columns(24).Hidden) { throw "Street View (24) should stay visible" }
+  $earthHidden = [bool]$sites.Columns(26).Hidden
+  if ($isInspector -and -not $earthHidden) { throw "Inspector build should hide Google Earth (26)" }
+  if (-not $isInspector -and $earthHidden) { throw "Standard build should show Google Earth (26)" }
+  # The two state map-link columns (13, 14) ride with the reviewer block on the
+  # inspector (hidden until Check Roads); standard shows them always.
+  foreach ($c in @(13, 14)) {
     $hidden = [bool]$sites.Columns($c).Hidden
     if ($isInspector -and -not $hidden) { throw "Inspector build should hide column $c on a fresh build" }
     if (-not $isInspector -and $hidden) { throw "Standard build should show column $c" }
   }
-  Write-Host ("  Bing/Earth + NFC link columns " + $(if ($isInspector) { 'hidden' } else { 'visible' }) + " as expected") -ForegroundColor Green
+  Write-Host ("  photo links hidden per PR #37; NFC link columns " + $(if ($isInspector) { 'hidden' } else { 'visible' }) + " as expected") -ForegroundColor Green
 
   Write-Host "=== Sites toolbar retired + export dropdown present ===" -ForegroundColor Cyan
   # The row-1 toolbar was removed; assert no leftover RR_* buttons on Sites.
@@ -241,10 +253,10 @@ try {
   $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536      # Lat
   $sites.Cells($FirstDataRow, 6).Value2 = [double]-85.57025     # Lon
   $excel.Calculate()
-  # Verify each hyperlink formula resolves to a non-empty string. Col 14
-  # ("Your AGOL Map") is intentionally blank unless JobAgolMap is set, so it's
-  # excluded here.
-  $linkCols = @{ 13='NFC Layer (Map Viewer)'; 15='State NFC App'; 23='Google Maps'; 24='Street View'; 25='Bing'; 26='Google Earth'; 27='FEMA Viewer'; 28='FIRMette Portal' }
+  # Verify each hyperlink formula resolves to a non-empty string. The AGOL
+  # column (15) now defaults to the FEMA pin ("FEMA AGOL Map Viewer") when
+  # JobAgolMap is blank, so it's included (PR #37).
+  $linkCols = @{ 13='NFC Layer (Map Viewer)'; 14='State NFC App'; 15='User-Defined AGOL'; 23='Google Maps'; 24='Street View'; 25='Bing'; 26='Google Earth'; 27='FEMA Viewer'; 28='FIRMette Portal' }
   foreach ($k in $linkCols.Keys | Sort-Object) {
     $cell = $sites.Cells($FirstDataRow, $k)
     $f = [string]$cell.Formula
@@ -253,9 +265,23 @@ try {
     if (-not $v) { throw ("Col $k ({0}) shows empty with a valid coord" -f $linkCols[$k]) }
     Write-Host ("  col {0,2} ({1,-16}) shows: '{2}'  -- formula intact: {3} chars" -f $k, $linkCols[$k], $v, $f.Length)
   }
-  # The two state-dependent NFC columns (13, 15) carry a blank-State placeholder
+  # PR #37 link labels: descriptive per-state text instead of "Open", the AGOL
+  # column's FEMA default, and Wisconsin's local/trunk relabel + layer split.
+  if ([string]$sites.Cells($FirstDataRow, 13).Value2 -ne 'Review NFC AGOL Layer') { throw ("Col 13 label (MI) should be 'Review NFC AGOL Layer', got '" + $sites.Cells($FirstDataRow, 13).Value2 + "'") }
+  if ([string]$sites.Cells($FirstDataRow, 14).Value2 -ne 'Review State NFC Layer') { throw ("Col 14 label (MI) should be 'Review State NFC Layer', got '" + $sites.Cells($FirstDataRow, 14).Value2 + "'") }
+  if ([string]$sites.Cells($FirstDataRow, 15).Value2 -ne 'FEMA AGOL Map Viewer') { throw ("Col 15 default should be 'FEMA AGOL Map Viewer', got '" + $sites.Cells($FirstDataRow, 15).Value2 + "'") }
+  $wb.Names('JobState').RefersToRange.Value2 = 'WI'
+  $excel.Calculate()
+  if ([string]$sites.Cells($FirstDataRow, 13).Value2 -ne 'Review Local Roads Layer') { throw ("Col 13 label (WI) should be 'Review Local Roads Layer', got '" + $sites.Cells($FirstDataRow, 13).Value2 + "'") }
+  if ([string]$sites.Cells($FirstDataRow, 14).Value2 -ne 'Review State Trunk Hwy Layer') { throw ("Col 14 label (WI) should be 'Review State Trunk Hwy Layer', got '" + $sites.Cells($FirstDataRow, 14).Value2 + "'") }
+  if ([string]$sites.Cells($FirstDataRow, 13).Formula -notmatch 'Functional_Class_Local_Non_Prod') { throw "Col 13 WI branch should side-load the local-roads layer" }
+  if ([string]$sites.Cells($FirstDataRow, 14).Formula -notmatch 'FFCL_gdb') { throw "Col 14 WI branch should side-load the state-trunk layer" }
+  Write-Host "  PR #37 link labels + WI local/trunk split OK" -ForegroundColor Green
+  $wb.Names('JobState').RefersToRange.Value2 = 'MI'
+  $excel.Calculate()
+  # The two state-dependent NFC columns (13, 14) carry a blank-State placeholder
   # that directs the user to set State (instead of silently linking to Michigan).
-  foreach ($k in @(13, 15)) {
+  foreach ($k in @(13, 14)) {
     if ([string]$sites.Cells($FirstDataRow, $k).Formula -notmatch 'Set State') {
       throw "Col $k should carry the blank-State 'Set State' placeholder branch"
     }

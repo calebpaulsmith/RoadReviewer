@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #36"
+Public Const BUILD_REFERENCE As String = "PR #37"
 
 ' ---- Sheet names ----
 ' The "hub" sheet name. On the standard product this is the visible landing
@@ -93,43 +93,52 @@ Public Const COL_CATEGORY As Long = 9
 Public Const COL_COSTS As Long = 10
 Public Const COL_WORKCOMP As Long = 11
 Public Const COL_GEOCODE As Long = 12
-' ---- map links (13-15) ----
-' PRIMARY map link. "NFC Layer (Map Viewer)" opens the state functional-class
-' layer in ArcGIS Map Viewer, CENTERED + MARKERED on the row's point. This is
-' the link that actually navigates to the coordinate, so it leads.
+' ---- map links (13-15, reordered PR #37) ----
+' PRIMARY map link. Opens the state functional-class layer in ArcGIS Map
+' Viewer, CENTERED + MARKERED on the row's point. This is the link that
+' actually navigates to the coordinate, so it leads. For Wisconsin this is
+' the LOCAL ROADS layer ("Review Local Roads Layer"); every other state gets
+' its NFC layer ("Review NFC AGOL Layer").
 Public Const COL_NFCAGOL As Long = 13
-' The user-led link, sitting immediately to its right: a per-row deep-link into
-' the user's OWN AGOL webmap (Start Here NR_AGOLMAP). Empty cell when
-' NR_AGOLMAP isn't set, so the column is unobtrusive when nobody wired one up.
-Public Const COL_AGOLMAP As Long = 14
-' The state's official public functional-class app (APP_MI / APP_IN / ...).
-' Authoritative, but carries NO lat/lon - the state Experience apps mis-navigate
-' on coordinate deep-links (PR #17/#18), so it opens at the default extent and
-' is demoted behind the two links above.
-Public Const COL_NFCMAP As Long = 15
+' The state's second reference link, right next to the first (user request:
+' the two map-layer links sit together as M and N). For Wisconsin this is
+' the STATE TRUNK highway layer in Map Viewer ("Review State Trunk Hwy
+' Layer"); every other state opens its official public app at its default
+' extent ("Review State NFC Layer" - the Experience apps mis-navigate on
+' coordinate deep-links, PR #17/#18).
+Public Const COL_NFCMAP As Long = 14
+' The AGOL webmap link. When the user pastes their own webmap URL
+' (NR_AGOLMAP) every row deep-links into it centered on the point; when the
+' field is BLANK it defaults to the FEMA-hosted ArcGIS Map Viewer pin
+' ("FEMA AGOL Map Viewer", PR #37) - which is why the separate FEMA Viewer
+' column now ships hidden.
+Public Const COL_AGOLMAP As Long = 15
 
-' ---- classification results (contiguous 16-22) ----
-' Written only by CheckRoads / ReRunFailedRows. HIDDEN until one of those runs
-' (see modBuild.ShowReviewerColumns). The grey tint + tri-color verdict
-' conditional format both span this range.
-Public Const COL_CLASS As Long = 16
-Public Const COL_URBANRURAL As Long = 17
-Public Const COL_ACUBNAME As Long = 18
-Public Const COL_ROADNAME As Long = 19
+' ---- classification results (contiguous 16-22, reordered PR #37) ----
+' Written only by CheckRoads / ReRunFailedRows. HIDDEN until one of those
+' STARTS (revealed before the loop so the user watches them fill in). The
+' verdict columns lead the block per user request: Federal Aid Status and
+' Review Reason are the first two (P and Q on the sheet), the supporting
+' lookups follow. The grey tint + tri-color verdict conditional format both
+' span this range.
+Public Const COL_ELIGIBILITY As Long = 16
+' <=3-word reason a row is yellow ("Review"): Nearby FHWA road / Second road
+' close / Urban boundary edge / etc. Blank for confident red or green rows.
+Public Const COL_REVIEWNOTE As Long = 17
+Public Const COL_CLASS As Long = 18
+Public Const COL_URBANRURAL As Long = 19
+Public Const COL_ACUBNAME As Long = 20
+Public Const COL_ROADNAME As Long = 21
 ' Street name(s) from the U.S. Census Bureau's TIGERweb Local Roads layer.
 ' Dense (covers most addresses) where COL_ROADNAME / MDOT 543 only gets
 ' trunkline route designations like "I-94 BL". Pipe-joined when multiple
 ' streets fall inside the search buffer (intersection points).
-Public Const COL_STREET As Long = 20
-Public Const COL_ELIGIBILITY As Long = 21
-' <=3-word reason a row is yellow ("Review"): Nearby FHWA road / Second road
-' close / Urban boundary edge / etc. Blank for confident red or green rows.
-Public Const COL_REVIEWNOTE As Long = 22
+Public Const COL_STREET As Long = 22
 
 ' First and last of the auto-reviewer block, so the hide/show helper and the
 ' conditional formats never drift out of sync with the constants above.
-Public Const COL_REVIEWER_FIRST As Long = COL_CLASS
-Public Const COL_REVIEWER_LAST As Long = COL_REVIEWNOTE
+Public Const COL_REVIEWER_FIRST As Long = COL_ELIGIBILITY
+Public Const COL_REVIEWER_LAST As Long = COL_STREET
 
 ' ---- imagery / photo-source links (23-28) ----
 Public Const COL_GMAP As Long = 23
@@ -179,6 +188,13 @@ Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapv
 ' the pin+zoom still resolves correctly either way.
 Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_NFC_MAPVIEW_WI As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+' Wisconsin's LOCAL ROADS layer side-loaded the same way (PR #37): WI's
+' primary link column reviews the local-roads layer (it carries most points),
+' with the state-trunk link above demoted to the second column.
+' NB: the url= value is deliberately NOT percent-encoded here - encoded, the
+' full link is ~261 chars and Excel's HYPERLINK() errors (#VALUE!) past 255.
+' Unencoded is legal (the value contains no "&") and keeps the link at ~239.
+Public Const URL_NFC_MAPVIEW_WI_LOCAL As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 ' MN/IL/OH (PR #36): same side-load shape. These are MapServer layers rather
 ' than FeatureServers, which Map Viewer's url= parameter also accepts.
 Public Const URL_NFC_MAPVIEW_MN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fdotapp9.dot.state.mn.us%2Fegis12%2Frest%2Fservices%2FBASEMAP%2Fmndot_commonlayers2%2FMapServer%2F11&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"

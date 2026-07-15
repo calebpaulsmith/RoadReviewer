@@ -112,6 +112,7 @@ Private Sub FetchImageryRun(ByVal onlyFailed As Boolean)
 NextPage:
     Next pageIdx
     ClearStatus
+    If ok > 0 Then SurfaceFolder folder
 
     If Not gHeadless Then
         MsgBox "Imagery fetch complete." & vbCrLf & _

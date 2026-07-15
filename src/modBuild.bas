@@ -596,8 +596,11 @@ End Sub
 ' cell just now displays the default. Browse-for-folder or typing overwrites
 ' the formula with an explicit path.
 Private Sub SetOutputFolderDefault(ByVal cell As Range)
+    ' PR #37: the default is a product subfolder NEXT TO the workbook
+    ' ("RR Output" - this sub only runs on the standard product), so the
+    ' display formula appends it; ResolveOutputFolder computes the same path.
     cell.Formula = "=IF(OR(CELL(""filename"",$A$1)="""",LEFT(CELL(""filename"",$A$1),4)=""http""),""""," & _
-        "LEFT(CELL(""filename"",$A$1),FIND(""["",CELL(""filename"",$A$1))-1))"
+        "LEFT(CELL(""filename"",$A$1),FIND(""["",CELL(""filename"",$A$1))-1)&""RR Output\"")"
     cell.Font.Color = RGB(90, 90, 90)
     cell.Font.Italic = True
 End Sub
@@ -770,17 +773,23 @@ End Function
 ' The AGOL formula is bespoke enough (depends on the dynamic Start Here URL,
 ' picks ? vs & based on whether the URL already has query params) that
 ' it doesn't fit SetLinkFormula. Built as its own helper.
+' PR #37: when the user hasn't pasted a webmap URL the column no longer sits
+' empty - it defaults to the FEMA-hosted ArcGIS Map Viewer pin, labeled
+' "FEMA AGOL Map Viewer" (which is why the separate FEMA Viewer column now
+' ships hidden). A pasted URL takes over the column as before.
 Private Sub SetAgolMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
-    Dim sep As String, urlExpr As String, f As String
+    Dim sep As String, urlExpr As String, femaExpr As String, f As String
     ' If the user's pasted URL already contains "?", join with "&", else with "?".
     sep = "IF(ISNUMBER(FIND(""?""," & NR_AGOLMAP & ")),""&"",""?"")"
     urlExpr = NR_AGOLMAP & "&" & sep & _
         "&""center=""&" & lonC & "&"",""&" & latC & _
         "&""&level=16&marker=""&" & lonC & "&"",""&" & latC
-    ' Blank cell when either the AGOL URL isn't set OR the row has no coords.
-    f = "=IF(OR(" & NR_AGOLMAP & "="""", " & latC & "="""", " & lonC & "=""""),""""," & _
-        "HYPERLINK(" & urlExpr & ",""Open""))"
+    femaExpr = UrlExprFromTemplate(URL_FEMAVIEW, latC, lonC)
+    f = "=IF(OR(" & latC & "="""", " & lonC & "=""""),""""," & _
+        "IF(" & NR_AGOLMAP & "=""""," & _
+        "HYPERLINK(" & femaExpr & ",""FEMA AGOL Map Viewer"")," & _
+        "HYPERLINK(" & urlExpr & ",""Open"")))"
     ws.Range(ws.Cells(r1, COL_AGOLMAP), ws.Cells(r2, COL_AGOLMAP)).Formula = f
 End Sub
 
@@ -804,23 +813,27 @@ Private Function UrlExprFromTemplate(ByVal urlTemplate As String, ByVal latC As 
     UrlExprFromTemplate = """" & Replace(Replace(urlTemplate, "{LAT}", """&" & latC & "&"""), "{LON}", """&" & lonC & "&""") & """"
 End Function
 
-' NFC Map / "Open" column (COL_NFCMAP): the state's official PUBLIC APP,
-' keyed off the State dropdown. App URLs carry no coordinates (the Experience
-' apps can't be reliably centered via URL - PR #17/#18), so a row just opens
-' the authoritative app; the AGOL NFC Layer column is the one that centers on
-' the exact point. Blank State shows the "Set State" prompt via NfcLinkFormula
-' (Check Roads likewise refuses to run without a State since PR #36); the
-' formula's own blank branch below is unreachable and kept only for shape.
+' Second map-link column (COL_NFCMAP, now next to the first per PR #37).
+' Wisconsin: the STATE TRUNK highway layer in Map Viewer, centered on the
+' point ("Review State Trunk Hwy Layer" - WI's primary column reviews the
+' local-roads layer, so the trunk network gets its own link). Every other
+' state: the official PUBLIC APP at its default extent ("Review State NFC
+' Layer" - app URLs carry no coordinates; the Experience apps mis-navigate
+' on coordinate deep-links, PR #17/#18). Blank State shows the "Set State"
+' prompt via NfcLinkFormula (Check Roads likewise refuses to run without a
+' State since PR #36).
 Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
-    Dim urlExpr As String, f As String
+    Dim urlExpr As String, labelExpr As String, f As String
     urlExpr = "IF(OR(" & NR_STATE & "=" & ExcelStr("MI") & "," & NR_STATE & "=" & ExcelStr("") & ")," & ExcelStr(APP_MI) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("IN") & "," & ExcelStr(APP_IN) & _
-        ",IF(" & NR_STATE & "=" & ExcelStr("WI") & "," & ExcelStr(APP_WI) & _
+        ",IF(" & NR_STATE & "=" & ExcelStr("WI") & "," & UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("MN") & "," & ExcelStr(APP_MN) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("IL") & "," & ExcelStr(APP_IL) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("OH") & "," & ExcelStr(APP_OH) & "," & ExcelStr(APP_MI) & "))))))"
-    f = NfcLinkFormula(latC, lonC, urlExpr)
+    labelExpr = "IF(" & NR_STATE & "=" & ExcelStr("WI") & "," & _
+        ExcelStr("Review State Trunk Hwy Layer") & "," & ExcelStr("Review State NFC Layer") & ")"
+    f = NfcLinkFormula(latC, lonC, urlExpr, labelExpr)
     ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
 End Sub
 
@@ -833,7 +846,11 @@ End Sub
 '   Inspector: State lives on the HIDDEN "Tools and Exports" sheet, and Excel
 '     can't follow a hyperlink to a hidden cell - so it's plain directive text
 '     pointing at the "Exports & other tools" button that reveals that sheet.
-Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVal urlExpr As String) As String
+' labelExpr is an Excel EXPRESSION for the link's friendly text (a quoted
+' literal or an IF on the State) - PR #37 made the labels state-conditional
+' ("Review Local Roads Layer" for WI etc.), so the old fixed "Open" is gone.
+Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, _
+        ByVal urlExpr As String, ByVal labelExpr As String) As String
     Dim ph As String, phCell As String
     ' State is on a VISIBLE sheet for both products now (Map Pages on the
     ' inspector, Start Here on the standard), so the directive can be a real
@@ -842,21 +859,24 @@ Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVa
     ' First data row only; every other row blank when State is blank.
     phCell = "IF(ROW()=" & SITES_FIRST_DATA_ROW & "," & ph & ","""")"
     NfcLinkFormula = "=IF(OR(" & latC & "=""""," & lonC & "=""""),""""," & _
-        "IF(" & NR_STATE & "=""""," & phCell & ",HYPERLINK(" & urlExpr & ",""Open"")))"
+        "IF(" & NR_STATE & "=""""," & phCell & ",HYPERLINK(" & urlExpr & "," & labelExpr & ")))"
 End Function
 
-' AGOL NFC Layer column (COL_NFCAGOL): the state functional-class layer in
+' Primary map-link column (COL_NFCAGOL): the state functional-class layer in
 ' ArcGIS Map Viewer, centered + markered on the row's point. MI uses the
-' curated webmap (no time slider); IN/WI/MN/IL/OH side-load their live layer
-' (PR #36 wired the last three); any other typed state gets the plain FEMA pin.
+' curated webmap (no time slider); Wisconsin side-loads the LOCAL ROADS layer
+' (PR #37 - it carries most points; the trunk layer moved to the second
+' column); IN/MN/IL/OH side-load their live NFC layer; any other typed state
+' gets the plain FEMA pin. Label: "Review Local Roads Layer" for WI,
+' "Review NFC AGOL Layer" everywhere else.
 Private Sub SetNfcAgolFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
         ByVal latC As String, ByVal lonC As String)
     Dim miExpr As String, inExpr As String, wiExpr As String, fallbackExpr As String
     Dim mnExpr As String, ilExpr As String, ohExpr As String
-    Dim urlExpr As String, f As String
+    Dim urlExpr As String, labelExpr As String, f As String
     miExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW, latC, lonC)
     inExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IN, latC, lonC)
-    wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI, latC, lonC)
+    wiExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_WI_LOCAL, latC, lonC)
     mnExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_MN, latC, lonC)
     ilExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_IL, latC, lonC)
     ohExpr = UrlExprFromTemplate(URL_NFC_MAPVIEW_OH, latC, lonC)
@@ -867,7 +887,9 @@ Private Sub SetNfcAgolFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 
         ",IF(" & NR_STATE & "=""MN""," & mnExpr & _
         ",IF(" & NR_STATE & "=""IL""," & ilExpr & _
         ",IF(" & NR_STATE & "=""OH""," & ohExpr & "," & fallbackExpr & "))))))"
-    f = NfcLinkFormula(latC, lonC, urlExpr)
+    labelExpr = "IF(" & NR_STATE & "=" & ExcelStr("WI") & "," & _
+        ExcelStr("Review Local Roads Layer") & "," & ExcelStr("Review NFC AGOL Layer") & ")"
+    f = NfcLinkFormula(latC, lonC, urlExpr, labelExpr)
     ws.Range(ws.Cells(r1, COL_NFCAGOL), ws.Cells(r2, COL_NFCAGOL)).Formula = f
 End Sub
 
@@ -917,8 +939,10 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ws.Columns(COL_GEOCODE).ColumnWidth = 16
     ws.Columns(COL_FIRMSTATUS).ColumnWidth = 18
     ws.Columns(COL_MAPSTATUS).ColumnWidth = 16
-    ws.Columns(COL_AGOLMAP).ColumnWidth = 10
-    ws.Columns(COL_NFCAGOL).ColumnWidth = 14
+    ' The map-link columns carry full "Review ... Layer" labels now (PR #37).
+    ws.Columns(COL_AGOLMAP).ColumnWidth = 22
+    ws.Columns(COL_NFCAGOL).ColumnWidth = 24
+    ws.Columns(COL_NFCMAP).ColumnWidth = 24
 
     ' Guidance tints (friction fix: nothing used to tell the user which
     ' columns are theirs). Yellow = type here; grey = a workflow writes it.
@@ -1001,16 +1025,16 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     ' surface in the Federal Aid Status column, so nothing is lost by hiding it.
     ws.Columns(COL_GEOCODE).Hidden = True      ' L
 
-    ' Inspector only: Bing and Google Earth stay hidden for good (the inspector
-    ' works from Google Maps / Street View / FEMA). The standard product keeps
-    ' its full photo-link strip.
-    If ProductIsInspector() Then
-        ws.Columns(COL_BING).Hidden = True
-        ws.Columns(COL_GEARTH).Hidden = True
-    Else
-        ws.Columns(COL_BING).Hidden = False
-        ws.Columns(COL_GEARTH).Hidden = False
-    End If
+    ' Photo links (PR #37): Google Maps, Bing and the FEMA Viewer are hidden
+    ' by default in BOTH products - the FEMA pin now lives in the AGOL
+    ' column's default "FEMA AGOL Map Viewer" link, and Street View stays as
+    ' the visible photo link. Google Earth keeps its per-product split
+    ' (inspector hidden, standard shown).
+    ws.Columns(COL_GMAP).Hidden = True
+    ws.Columns(COL_BING).Hidden = True
+    ws.Columns(COL_FEMAVIEW).Hidden = True
+    ws.Columns(COL_STREETVIEW).Hidden = False
+    ws.Columns(COL_GEARTH).Hidden = ProductIsInspector()
 
     ' Auto-reviewer output columns start hidden (and, on the inspector, so do
     ' the two NFC map-link columns - they only mean something once a row has a

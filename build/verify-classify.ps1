@@ -27,9 +27,10 @@ if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmP
 
 # Sites layout: row 1 header, data from row 2 (row-1 toolbar retired). Tests
 # use rows 3-21, all valid data rows; row 2 is left empty and skipped.
-# Columns: SiteName=4, Lat=5, Lon=6, Address=8, Geocode=12,
-#          Class=16, Urban/Rural=17, ACUB=18, RoadName=19, Street=20,
-#          Elig=21, ReviewReason=22.
+# Columns (PR #37 reorder - verdicts lead the reviewer block):
+#          SiteName=4, Lat=5, Lon=6, Address=8, Geocode=12,
+#          Elig=16, ReviewReason=17, Class=18, Urban/Rural=19, ACUB=20,
+#          RoadName=21, Street=22.
 $FirstRow = 3
 $LastTestRow = 21
 
@@ -127,13 +128,13 @@ try {
 
     foreach ($t in $stateTests) {
       $r = $t.Row
-      $cls = [string]$sites.Cells($r, 16).Value2  # FHWA Class
-      $ur  = [string]$sites.Cells($r, 17).Value2  # Urban/Rural
-      $ac  = [string]$sites.Cells($r, 18).Value2  # ACUB Name
-      $rn  = [string]$sites.Cells($r, 19).Value2  # Road Name (merged, with distances)
-      $st  = [string]$sites.Cells($r, 20).Value2  # Street Name (Census TIGER)
-      $el  = [string]$sites.Cells($r, 21).Value2  # Federal Aid Status
-      $rr  = [string]$sites.Cells($r, 22).Value2  # Review Reason (yellow note)
+      $el  = [string]$sites.Cells($r, 16).Value2  # Federal Aid Status
+      $rr  = [string]$sites.Cells($r, 17).Value2  # Review Reason (yellow note)
+      $cls = [string]$sites.Cells($r, 18).Value2  # FHWA Class
+      $ur  = [string]$sites.Cells($r, 19).Value2  # Urban/Rural
+      $ac  = [string]$sites.Cells($r, 20).Value2  # ACUB Name
+      $rn  = [string]$sites.Cells($r, 21).Value2  # Road Name (merged, with distances)
+      $st  = [string]$sites.Cells($r, 22).Value2  # Street Name (Census TIGER)
       $gc  = [string]$sites.Cells($r, 12).Value2  # Geocode Status
       Write-Host ""
       Write-Host ("  row {0}: {1}" -f $r, $t.Name)

@@ -83,7 +83,8 @@ try {
   Write-Host ""
   Write-Host "=== ExportCombinedMapPdf ===" -ForegroundColor Cyan
   $excel.Run('ExportCombinedMapPdf') | Out-Null
-  $pdfFiles = Get-ChildItem -LiteralPath $outFolder -Filter 'WO* DI* - DR-TEST - Location Map.pdf'
+  # DisasterTag strips separators (PR #37): typed 'DR-TEST' -> 'DRTEST'.
+  $pdfFiles = Get-ChildItem -LiteralPath $outFolder -Filter 'WO* DI* - DRTEST - Location Map.pdf'
   Write-Host ("  Map PDFs found: " + ($pdfFiles.Count))
   $pdfFiles | ForEach-Object { Write-Host ("    " + $_.Name + " (" + $_.Length + " bytes)") }
   if ($pdfFiles.Count -lt 1) { throw "Combined map PDF was not exported" }

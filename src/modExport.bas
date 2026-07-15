@@ -34,6 +34,7 @@ Public Sub ExportSitesCsv()
         If Not gHeadless Then MsgBox "Could not write the CSV (is it open in another program?).", vbExclamation, "Export CSV"
         Exit Sub
     End If
+    SurfaceFolder folder
     If Not gHeadless Then MsgBox "Exported the Sites table to:" & vbCrLf & file, vbInformation, "Export CSV"
 End Sub
 
@@ -91,14 +92,14 @@ Private Function CellText(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Lon
     End Select
 End Function
 
-' Resolve the state-specific NFC map link (F8/F11). Matches the cell
-' formula generated in SetNfcMapFormula - keep the two in sync.
-' Open column = the state's official public app (no coordinates). Matches
-' modBuild.SetNfcMapFormula - keep the two in sync.
+' Resolve the second map-link column (F8/F11). WI = the state-trunk layer in
+' Map Viewer centered on the point (PR #37); every other state = the official
+' public app (no coordinates). Matches modBuild.SetNfcMapFormula - keep the
+' two in sync.
 Private Function NfcMapUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
     Select Case BareStateCodeOrMI()
         Case "IN": NfcMapUrlForRow = APP_IN
-        Case "WI": NfcMapUrlForRow = APP_WI
+        Case "WI": NfcMapUrlForRow = BuildUrl(URL_NFC_MAPVIEW_WI, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
         Case "MN": NfcMapUrlForRow = APP_MN
         Case "IL": NfcMapUrlForRow = APP_IL
         Case "OH": NfcMapUrlForRow = APP_OH
@@ -106,13 +107,14 @@ Private Function NfcMapUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As Stri
     End Select
 End Function
 
-' AGOL NFC Layer column = the state functional-class layer in Map Viewer,
-' centered on the point. Matches modBuild.SetNfcAgolFormula.
+' Primary map-link column = the state functional-class layer in Map Viewer,
+' centered on the point (WI = the LOCAL ROADS layer, PR #37). Matches
+' modBuild.SetNfcAgolFormula.
 Private Function NfcAgolUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
     Dim template As String
     Select Case BareStateCodeOrMI()
         Case "IN": template = URL_NFC_MAPVIEW_IN
-        Case "WI": template = URL_NFC_MAPVIEW_WI
+        Case "WI": template = URL_NFC_MAPVIEW_WI_LOCAL
         Case "MN": template = URL_NFC_MAPVIEW_MN
         Case "IL": template = URL_NFC_MAPVIEW_IL
         Case "OH": template = URL_NFC_MAPVIEW_OH
@@ -133,14 +135,18 @@ Private Function BareStateCodeOrMI() As String
     BareStateCodeOrMI = s
 End Function
 
-' Resolve the inspector's pasted AGOL webmap URL into a per-row deep-link
-' that centers the map on this row's coords. Matches the cell formula
-' generated in SetAgolMapFormula. Returns "" when NR_AGOLMAP is blank.
+' Resolve the pasted AGOL webmap URL into a per-row deep-link that centers
+' the map on this row's coords. Matches the cell formula generated in
+' SetAgolMapFormula: when NR_AGOLMAP is blank the column defaults to the
+' FEMA-hosted Map Viewer pin (PR #37).
 Private Function AgolUrlForRow(ByVal ws As Worksheet, ByVal r As Long) As String
     Dim base As String, sep As String, lat As String, lon As String
     base = SetupValue(NR_AGOLMAP)
-    If Len(base) = 0 Then Exit Function
     If Not HasValidCoords(ws, r) Then Exit Function
+    If Len(base) = 0 Then
+        AgolUrlForRow = BuildUrl(URL_FEMAVIEW, ws.Cells(r, COL_LAT).Value, ws.Cells(r, COL_LON).Value)
+        Exit Function
+    End If
     sep = IIf(InStr(base, "?") > 0, "&", "?")
     lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
     lon = InvariantNum(ws.Cells(r, COL_LON).Value)

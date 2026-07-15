@@ -27,33 +27,78 @@ Public Sub SelectOutputFolder()
     End If
 End Sub
 
-' Effective output folder: the Start Here value if set, else a per-product
-' default. Standard product: the folder this workbook lives in (zero
-' configuration - "exports save next to the file"). Inspector product:
-' the OneDrive-FEMA job-folder pattern (§8.9). Both fall through to the
-' §8.9 probe when the workbook path is unusable (unsaved workbook, or a
-' SharePoint https:// path a local file can't be written next to).
+' Effective output folder: the explicit Start Here / Map Pages value if set,
+' else a per-product subfolder NEXT TO THE WORKBOOK (PR #37, user direction):
+' "<workbook dir>\RR Output\" (standard) or "<workbook dir>\SI Tool Output\"
+' (inspector), created on first use. The §8.9 OneDrive probe is only the last
+' resort for a workbook whose folder genuinely can't be determined (never
+' saved, or an https path with no local OneDrive mapping).
 Public Function ResolveOutputFolder() As String
     Dim v As String
     v = SetupValue(NR_OUTFOLDER)
-    ' Both products default to the folder this workbook lives in ("exports save
-    ' next to the file") - the most predictable place for an inspector who found
-    ' exports landing in a hardcoded OneDrive path surprising. The §8.9
-    ' job-folder pattern is only the last resort, for an unsaved workbook or an
-    ' https:// (SharePoint) path a local file can't be written next to.
-    If Len(v) = 0 Then v = WorkbookFolder()
-    If Len(v) = 0 Then v = DefaultOutputFolder()
+    If Len(v) = 0 Then
+        Dim base As String
+        base = WorkbookFolder()
+        If Len(base) > 0 Then
+            v = base & "\" & OutputSubfolderName()
+        Else
+            v = DefaultOutputFolder()
+        End If
+    End If
     If Right$(v, 1) <> "\" Then v = v & "\"
     ResolveOutputFolder = v
 End Function
 
+' The per-product output subfolder created next to the workbook.
+Public Function OutputSubfolderName() As String
+    If ProductIsInspector() Then
+        OutputSubfolderName = "SI Tool Output"
+    Else
+        OutputSubfolderName = "RR Output"
+    End If
+End Function
+
 ' The folder this .xlsm lives in, or "" when there isn't a usable one.
+' A OneDrive/SharePoint-synced workbook reports an https:// URL here (that is
+' how "exports save next to the file" silently degraded to the §8.9 probe -
+' the bug the user hit); map it back to the locally synced path when possible.
 Private Function WorkbookFolder() As String
     Dim p As String
     p = ThisWorkbook.Path
     If Len(p) = 0 Then Exit Function                     ' never saved
-    If LCase$(Left$(p, 4)) = "http" Then Exit Function   ' SharePoint/OneDrive URL path
+    If LCase$(Left$(p, 4)) = "http" Then p = OneDriveLocalFolder(p)
     WorkbookFolder = p
+End Function
+
+' Map an https://... OneDrive/SharePoint folder URL to its locally synced
+' path by testing progressively shorter URL tails under each OneDrive
+' env-var root until this workbook's file is found on disk. Returns "" when
+' no mapping resolves (the caller then falls back to the §8.9 probe).
+Private Function OneDriveLocalFolder(ByVal urlFolder As String) As String
+    Dim bases As Variant, parts() As String
+    Dim b As Long, i As Long, j As Long, tail As String, cand As String
+    ' The longest candidate tails still contain "https:" etc. - Dir$ raises
+    ' error 52 on those instead of returning ""; treat any error as no-match.
+    On Error Resume Next
+    bases = Array(Environ$("OneDriveCommercial"), Environ$("OneDriveConsumer"), Environ$("OneDrive"))
+    parts = Split(Replace(urlFolder, "%20", " "), "/")
+    For b = LBound(bases) To UBound(bases)
+        If Len(bases(b)) > 0 Then
+            For i = LBound(parts) To UBound(parts)
+                tail = ""
+                For j = i To UBound(parts)
+                    If Len(parts(j)) > 0 Then tail = tail & "\" & parts(j)
+                Next j
+                If Len(tail) > 0 Then
+                    cand = bases(b) & tail
+                    If Len(Dir$(cand & "\" & ThisWorkbook.Name)) > 0 Then
+                        OneDriveLocalFolder = cand
+                        Exit Function
+                    End If
+                End If
+            Next i
+        End If
+    Next b
 End Function
 
 ' {base}\Desktop\Script\RoadReviewer\{Disaster}\{WO-DI}\  (§8.9)
@@ -186,6 +231,7 @@ Private Sub FirmetteRunRows(ByVal onlyFailed As Boolean)
 NextRow:
     Next r
     ClearStatus
+    If ok > 0 Then SurfaceFolder folder
 
     If Not gHeadless Then
         MsgBox "FIRMette run complete." & vbCrLf & _
@@ -1194,6 +1240,7 @@ Public Sub ExportCombinedMapPdf()
     On Error GoTo 0
     RestorePrinter savedPrinter
     SetMapEditControlsVisible wsMap, True
+    SurfaceFolder folder
 
     If Not gHeadless Then MsgBox "Combined map PDF exported:" & vbCrLf & fullPath, vbInformation, "Export Map PDF"
     Exit Sub
@@ -1248,6 +1295,7 @@ Public Sub ExportSitesToKML()
     Dim file As String, n As Long, dialogTitle As String
     dialogTitle = "Export KML"
     If Not WriteSitesKml(file, n, dialogTitle) Then Exit Sub
+    SurfaceFolder ResolveOutputFolder()
     If Not gHeadless Then
         Dim q As String: q = Chr$(34)
         Shell "cmd /c start " & q & q & " " & q & file & q, vbNormalFocus
@@ -1331,7 +1379,7 @@ End Sub
 Private Function NfcLayerTemplate() As String
     Select Case BareStateCode(SetupValue(NR_STATE))
         Case "IN": NfcLayerTemplate = URL_NFC_MAPVIEW_IN
-        Case "WI": NfcLayerTemplate = URL_NFC_MAPVIEW_WI
+        Case "WI": NfcLayerTemplate = URL_NFC_MAPVIEW_WI_LOCAL   ' local-first, matches the primary link column (PR #37)
         Case "MN": NfcLayerTemplate = URL_NFC_MAPVIEW_MN
         Case "IL": NfcLayerTemplate = URL_NFC_MAPVIEW_IL
         Case "OH": NfcLayerTemplate = URL_NFC_MAPVIEW_OH
@@ -1532,9 +1580,8 @@ Public Sub ExportSitesToGeoJson()
     Dim file As String, n As Long, dialogTitle As String
     dialogTitle = "Export GeoJSON"
     If Not WriteSitesGeoJson(file, n, dialogTitle) Then Exit Sub
+    SurfaceFolder ResolveOutputFolder()
     If Not gHeadless Then
-        Dim q As String: q = Chr$(34)
-        Shell "explorer.exe /select," & q & file & q, vbNormalFocus
         MsgBox "Exported " & n & " point(s) to:" & vbCrLf & file & vbCrLf & vbCrLf & _
             "In your ArcGIS Online Experience, use the Add Data widget to load this " & _
             ".geojson, then step through the sites with the Feature Info widget.", _

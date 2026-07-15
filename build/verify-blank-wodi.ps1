@@ -58,7 +58,9 @@ try {
   if ($nameA.Contains('WO ')) { throw ("Filename has dangling 'WO ': " + $nameA) }
   if ($nameA.Contains(' DI')) { throw ("Filename has dangling ' DI': " + $nameA) }
   if ($nameA.StartsWith('WO') -or $nameA.StartsWith('DI')) { throw ("Filename starts with WO/DI when both blank: " + $nameA) }
-  if (-not $nameA.StartsWith('DR-TEST')) { throw ("Filename should start with DR-TEST when no WO/DI: " + $nameA) }
+  # DisasterTag strips separators (PR #37: DR4882IN convention) - typed
+  # 'DR-TEST' lands in filenames as 'DRTEST'.
+  if (-not $nameA.StartsWith('DRTEST')) { throw ("Filename should start with DRTEST when no WO/DI: " + $nameA) }
   Write-Host ("  filename clean: " + $nameA) -ForegroundColor Green
 
   $excel.Run('PrepareMapPages') | Out-Null
@@ -79,7 +81,7 @@ try {
   if ($mapPdfs.Count -ne 1) { throw "Expected exactly 1 Map PDF" }
   $mapNameA = $mapPdfs[0].Name
   Write-Host ("  Map PDF: " + $mapNameA)
-  if (-not $mapNameA.StartsWith('DR-TEST')) { throw ("Map PDF should start with DR-TEST: " + $mapNameA) }
+  if (-not $mapNameA.StartsWith('DRTEST')) { throw ("Map PDF should start with DRTEST: " + $mapNameA) }
   Write-Host "  Map PDF clean" -ForegroundColor Green
 
   # Reset Case B
