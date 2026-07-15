@@ -139,8 +139,10 @@ Private Sub RemoveStrayDefaultSheets()
     For i = ThisWorkbook.Worksheets.Count To 1 Step -1
         Set ws = ThisWorkbook.Worksheets(i)
         Select Case ws.Name
-            Case SH_START, SH_SITES, SH_SOURCES, SH_MAPPAGES
-                ' keep
+            Case SH_START, SH_TOOLS, SH_SITES, SH_SOURCES, SH_MAPPAGES
+                ' keep (SH_START + SH_TOOLS: the hub sheet is named one or the
+                ' other depending on product; keep both so a rebuild never
+                ' deletes it and a legacy-named one is cleaned by BuildStartHere)
             Case Else
                 If ThisWorkbook.Worksheets.Count > 1 Then
                     If Application.WorksheetFunction.CountA(ws.UsedRange) = 0 Then ws.Delete
@@ -159,10 +161,10 @@ Private Sub OrderSheets()
     If ProductIsInspector() Then
         MoveSheet SH_MAPPAGES, 1
         MoveSheet SH_SITES, 2
-        MoveSheet SH_START, 3
+        MoveSheet StartSheetName(), 3
         MoveSheet SH_SOURCES, 4
     Else
-        MoveSheet SH_START, 1
+        MoveSheet StartSheetName(), 1
         MoveSheet SH_SITES, 2
         MoveSheet SH_MAPPAGES, 3
         MoveSheet SH_SOURCES, 4
@@ -170,7 +172,7 @@ Private Sub OrderSheets()
 
     On Error Resume Next
     Dim wsStart As Worksheet, wsMap As Worksheet, wsSrc As Worksheet
-    Set wsStart = SheetByName(SH_START)
+    Set wsStart = SheetByName(StartSheetName())
     Set wsMap = SheetByName(SH_MAPPAGES)
     Set wsSrc = SheetByName(SH_SOURCES)
 
@@ -417,7 +419,20 @@ End Sub
 
 Private Sub BuildStartHere()
     Dim ws As Worksheet
-    Set ws = FreshSheet(SH_START)
+    ' Migration: an inspector workbook built before the rename still has a sheet
+    ' literally named "Start Here". FreshSheet(StartSheetName()) would create a
+    ' new "Tools and Exports" and orphan the old one, so delete the legacy sheet
+    ' first when the target name differs.
+    If StartSheetName() <> SH_START Then
+        Dim wsLegacy As Worksheet
+        Set wsLegacy = SheetByName(SH_START)
+        If Not wsLegacy Is Nothing Then
+            Application.DisplayAlerts = False
+            wsLegacy.Delete
+            Application.DisplayAlerts = True
+        End If
+    End If
+    Set ws = FreshSheet(StartSheetName())
     ws.Cells.Interior.Color = RGB(245, 247, 249)
     ' The whole sheet lives in A/B/C - nothing is placed over D/E/F. B is the
     ' label/prose column, C the input column; prose merges across both.
@@ -509,7 +524,7 @@ End Sub
 ' its role and on-sheet title changed.
 Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     With ws.Range("B2")
-        .Value = "Tools & Exports"
+        .Value = "Tools and Exports"
         .Font.Size = 20
         .Font.Bold = True
     End With
@@ -801,9 +816,21 @@ Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 A
         ",IF(" & NR_STATE & "=" & ExcelStr("MN") & "," & ExcelStr(APP_MN) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("IL") & "," & ExcelStr(APP_IL) & _
         ",IF(" & NR_STATE & "=" & ExcelStr("OH") & "," & ExcelStr(APP_OH) & "," & ExcelStr(APP_MI) & "))))))"
-    f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""Open""))"
+    f = NfcLinkFormula(latC, lonC, urlExpr)
     ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
 End Sub
+
+' The two NFC-map link columns depend on the State dropdown. When State is blank
+' the link would silently fall back to Michigan, so instead show a short
+' directive that points at wherever State is set (Start Here on the standard
+' product, the hidden Tools and Exports sheet on the inspector). Only the
+' state-dependent columns get this; the plain lat/lon imagery links don't.
+Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVal urlExpr As String) As String
+    Dim ph As String
+    ph = ExcelStr("Set State (" & StartSheetName() & ")")
+    NfcLinkFormula = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),""""," & _
+        "IF(" & NR_STATE & "=""""," & ph & ",HYPERLINK(" & urlExpr & ",""Open"")))"
+End Function
 
 ' AGOL NFC Layer column (COL_NFCAGOL): the state functional-class layer in
 ' ArcGIS Map Viewer, centered + markered on the row's point. This is the old
@@ -820,7 +847,7 @@ Private Sub SetNfcAgolFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 
     urlExpr = "IF(OR(" & NR_STATE & "=""MI""," & NR_STATE & "="""")," & miExpr & _
         ",IF(" & NR_STATE & "=""IN""," & inExpr & _
         ",IF(" & NR_STATE & "=""WI""," & wiExpr & "," & fallbackExpr & ")))"
-    f = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),"""",HYPERLINK(" & urlExpr & ",""Open""))"
+    f = NfcLinkFormula(latC, lonC, urlExpr)
     ws.Range(ws.Cells(r1, COL_NFCAGOL), ws.Cells(r2, COL_NFCAGOL)).Formula = f
 End Sub
 

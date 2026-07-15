@@ -137,7 +137,7 @@ End Sub
 Private Sub RunPicker(ByVal comboName As String, ByVal items As Variant)
     Dim ws As Worksheet, shp As Shape
     On Error Resume Next
-    Set ws = ThisWorkbook.Worksheets(SH_START)
+    Set ws = ThisWorkbook.Worksheets(StartSheetName())
     Set shp = ws.Shapes(comboName)
     On Error GoTo 0
 

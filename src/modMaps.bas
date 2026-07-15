@@ -355,7 +355,7 @@ End Sub
 Public Sub GoToOtherTools()
     On Error Resume Next
     Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets(SH_START)
+    Set ws = ThisWorkbook.Worksheets(StartSheetName())
     If Not ws Is Nothing Then
         ws.Visible = xlSheetVisible
         ws.Activate

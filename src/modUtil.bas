@@ -75,6 +75,18 @@ Public Function ProductTitle() As String
     End If
 End Function
 
+' Name of the "hub" sheet for the current product: the standard product's
+' visible "Start Here" landing, or the inspector's hidden "Tools and Exports"
+' utility sheet. Every SheetByName/Worksheets() lookup of the hub goes through
+' this so the two products can name the same-role sheet differently.
+Public Function StartSheetName() As String
+    If ProductIsInspector() Then
+        StartSheetName = SH_TOOLS
+    Else
+        StartSheetName = SH_START
+    End If
+End Function
+
 Public Sub TraceLine(ByVal txt As String)
     If Len(gTracePath) = 0 Then Exit Sub
     Dim fnum As Integer

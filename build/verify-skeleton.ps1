@@ -13,10 +13,10 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
-# MapPages is a PERMANENT sheet now (built by BuildWorkbook, not created and
-# deleted by PrepareMapPages) - it hosts the inspector's job inputs and their
-# named ranges, so it must exist in a fresh build on both products.
-$expectedSheets = @('Start Here', 'Sites', 'MapPages', 'Sources')
+# The hub sheet is named per product: "Start Here" (standard, visible) or
+# "Tools and Exports" (inspector, hidden). The map workspace tab is "Map Pages".
+# $startName / $mapName are set once the product is known (below); the expected
+# sheet set is built from them.
 
 # Canonical Sites layout: row 1 IS the header, data from row 2. The row-1
 # toolbar was retired; all actions live on Start Here.
@@ -39,6 +39,11 @@ try {
   } catch { }
   $isInspector = ($product -eq 'Inspector')
   Write-Host ("=== Product: {0} ===" -f $product) -ForegroundColor Cyan
+
+  # Product-specific sheet names (see the header comment).
+  $startName = if ($isInspector) { 'Tools and Exports' } else { 'Start Here' }
+  $mapName = 'Map Pages'
+  $expectedSheets = @($startName, 'Sites', $mapName, 'Sources')
 
   Write-Host "=== Sheets ===" -ForegroundColor Cyan
   $present = @{}
@@ -84,8 +89,8 @@ try {
       if ($oa) {
         $btnCount++
         $onActions[$oa] = $true
-        if ($ws.Name -eq 'Start Here') { $startActions[$oa] = $true }
-        if ($ws.Name -eq 'MapPages')   { $mapActions[$oa] = $true }
+        if ($ws.Name -eq $startName) { $startActions[$oa] = $true }
+        if ($ws.Name -eq $mapName)   { $mapActions[$oa] = $true }
         $resolved = $publicSubs[$oa]
         $caption = $sh.TextFrame2.TextRange.Text
         $status = if ($resolved) { "OK   ($resolved)" } else { "ORPHAN"; $orphans += "$($ws.Name)::$caption -> $oa" }
@@ -142,8 +147,8 @@ try {
   # Inspector: Map Pages is the landing (visible), Start Here demotes to a HIDDEN
   # Tools & Exports sheet. Standard: Start Here is the hub (visible), MapPages
   # hidden until opted in.
-  $mpVisible = [int]$wb.Worksheets('MapPages').Visible
-  $shVisible = [int]$wb.Worksheets('Start Here').Visible
+  $mpVisible = [int]$wb.Worksheets($mapName).Visible
+  $shVisible = [int]$wb.Worksheets($startName).Visible
   if ($isInspector) {
     if ($mpVisible -ne -1) { throw "Inspector should show MapPages (Visible=$mpVisible)" }
     if ($shVisible -eq -1) { throw "Inspector should hide Start Here / Tools (Visible=$shVisible)" }
@@ -204,8 +209,8 @@ try {
   foreach ($sh in $sites.Shapes) {
     if ($sh.Name -like 'RR_*') { throw "Unexpected leftover toolbar shape on Sites: $($sh.Name)" }
   }
-  # The export picker lives on Start Here and drives RunSelectedExport.
-  $startSheet = $wb.Worksheets('Start Here')
+  # The export picker lives on the hub sheet and drives RunSelectedExport.
+  $startSheet = $wb.Worksheets($startName)
   $hasPicker = $false
   foreach ($sh in $startSheet.Shapes) { if ($sh.Name -eq 'RR_ExportPicker') { $hasPicker = $true } }
   if (-not $hasPicker) { throw "Start Here is missing the RR_ExportPicker export dropdown" }
@@ -239,6 +244,23 @@ try {
     if (-not $v) { throw ("Col $k ({0}) shows empty with a valid coord" -f $linkCols[$k]) }
     Write-Host ("  col {0,2} ({1,-16}) shows: '{2}'  -- formula intact: {3} chars" -f $k, $linkCols[$k], $v, $f.Length)
   }
+  # The two state-dependent NFC columns (13, 15) carry a blank-State placeholder
+  # that directs the user to set State (instead of silently linking to Michigan).
+  foreach ($k in @(13, 15)) {
+    if ([string]$sites.Cells($FirstDataRow, $k).Formula -notmatch 'Set State') {
+      throw "Col $k should carry the blank-State 'Set State' placeholder branch"
+    }
+  }
+  # And that it actually fires: blank JobState, recalc, expect the directive.
+  $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536
+  $jsOld = [string]$wb.Names('JobState').RefersToRange.Value2
+  $wb.Names('JobState').RefersToRange.Value2 = ''
+  $excel.Calculate()
+  $ph = [string]$sites.Cells($FirstDataRow, 13).Value2
+  if ($ph -notmatch 'Set State') { throw "Blank State should show a 'Set State' placeholder in col 13, got '$ph'" }
+  Write-Host ("  blank-State placeholder: '{0}'" -f $ph)
+  $wb.Names('JobState').RefersToRange.Value2 = $jsOld
+  $excel.Calculate()
 
   Write-Host "=== Sites validation ===" -ForegroundColor Cyan
   $latVal = $sites.Cells($FirstDataRow, 5).Validation
@@ -256,8 +278,8 @@ try {
   Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
   if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }
 
-  Write-Host "=== Start Here disclaimer + version ===" -ForegroundColor Cyan
-  $start = $wb.Worksheets('Start Here')
+  Write-Host "=== Hub-sheet disclaimer + version ===" -ForegroundColor Cyan
+  $start = $wb.Worksheets($startName)
   $startBlob = ''
   foreach ($cell in $start.UsedRange.Cells) { $startBlob += ([string]$cell.Value2) + "`n" }
   # Standard keeps the on-sheet disclaimer box. Inspector moved it to a dialog
