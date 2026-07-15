@@ -354,12 +354,20 @@ End Sub
 ' header band (job inputs) and the tools panel never land in the PDF. Without a
 ' PrintArea the panel cells would spill onto extra pages.
 Private Sub SetMapPrintArea(ByVal wsMap As Worksheet)
-    Dim lastRow As Long
+    Dim lastRow As Long, savedAlerts As Boolean
     lastRow = MAP_FIRST_PAGE_ROW + (MapPageCount(wsMap) * MAP_ROWS_PER_PAGE) - 1
     If lastRow < MAP_FIRST_PAGE_ROW Then lastRow = MAP_FIRST_PAGE_ROW
     On Error Resume Next
+    ' With ONE site the print area is a single MERGED page cell, and Excel then
+    ' pops "You've selected a single cell for the print area" on the assignment
+    ' when alerts are on (PrepareMapPages re-enables them before Export runs).
+    ' OK is the right answer - the merged block IS the page - so suppress the
+    ' prompt; it hung every headless 1-site export and confused real users.
+    savedAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
     wsMap.PageSetup.PrintArea = wsMap.Range( _
         wsMap.Cells(MAP_FIRST_PAGE_ROW, 1), wsMap.Cells(lastRow, MAP_COLS_WIDE)).Address
+    Application.DisplayAlerts = savedAlerts
     On Error GoTo 0
 End Sub
 
@@ -416,10 +424,9 @@ Public Sub PrepareMapPages()
     If Not gHeadless Then
         MsgBox "Created " & pages & " map page(s) on the '" & SH_MAPPAGES & "' sheet." & vbCrLf & vbCrLf & _
             "Next steps:" & vbCrLf & _
-            "1. Fill in the job info at the top of this sheet (WO/DI, Applicant, Output Folder)," & vbCrLf & _
-            "   then click 'Update Stamps' to write it onto every page." & vbCrLf & _
-            "2. Click 'Insert Map Images' - or use a page's 'Select photo' button." & vbCrLf & _
-            "3. Click 'Export Combined Map PDF' when done.", _
+            "2. Click 'Fetch Imagery' - an aerial image is downloaded and placed on every page" & vbCrLf & _
+            "   automatically (or use the manual Google Earth screenshot buttons instead)." & vbCrLf & _
+            "3. Click 'Export PDF' when done.", _
             vbInformation, "Map Pages Ready"
     End If
     Exit Sub
@@ -442,6 +449,8 @@ Private Sub ClearMapPages(ByVal wsMap As Worksheet)
         nm = shp.Name
         If Left$(nm, Len("Textbox_Page_")) = "Textbox_Page_" _
             Or Left$(nm, Len(MAP_PICKBTN_PREFIX)) = MAP_PICKBTN_PREFIX _
+            Or Left$(nm, Len(MAP_PIN_PREFIX)) = MAP_PIN_PREFIX _
+            Or Left$(nm, Len(MAP_ATTR_PREFIX)) = MAP_ATTR_PREFIX _
             Or shp.Type = msoPicture Then
             shp.Delete
         End If
@@ -586,6 +595,13 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     End If
     rr = rr + 1
 
+    ' Fetch Imagery source override (both products): blank = Esri World Imagery;
+    ' the inspector can paste any other ArcGIS MapServer URL right here (per user
+    ' request - the imagery source is swappable without touching the Sources
+    ' sheet). Must be a MapServer: only those expose the /export operation.
+    MapJobField wsMap, rr, "Imagery URL (optional)", NR_IMAGERYSVC
+    rr = rr + 1
+
     ' Live file-name preview (updates as the job cells change; FirmettePreview is
     ' volatile). Same JobFileStem every export uses, so this is exactly what the
     ' FIRMette / Location Map / KML / CSV files will be called.
@@ -692,20 +708,56 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         tbtn.OnAction = "GoToOtherTools"
     End If
 
-    ' ---- the 4-step ribbon: one line, evenly spaced across the print width ----
-    Const RIB_TOP As Double = 34, BTN_H As Double = 30, BTN_W As Double = 182, GAP As Double = 8
+    ' ---- the 3-step hero ribbon: Prepare -> Fetch Imagery -> Export PDF ----
+    ' Fetch Imagery (PR #35) downloads a site-centered aerial per page, so the
+    ' default flow needs no screenshots at all. The Google Earth screenshot
+    ' path (KML + Insert Images) stays below as the labeled manual alternative.
+    Const RIB_TOP As Double = 34, BTN_H As Double = 30, BTN_W As Double = 190, GAP As Double = 10
     Dim x0 As Double
     x0 = 8
-    MapRibbonStep wsMap, "KML", x0 + 0 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "1.  Export to KML", "ExportSitesToKML", _
-        "Opens KML in Google Earth Desktop." & vbLf & "Zoom in and screenshot each site (Windows key + Shift + S)."
-    MapRibbonStep wsMap, "Prepare", x0 + 1 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "2.  Prepare Pages", "PrepareMapPages", "One page per site. Re-run if you add sites."
-    MapRibbonStep wsMap, "Insert", x0 + 2 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "3.  Insert Images", "InsertMapImages", _
-        "Pick a folder with screenshots - auto-orders oldest to newest, or rename each to match: Site_1, Site_2..."
-    MapRibbonStep wsMap, "Export", x0 + 3 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "4.  Export PDF", "ExportCombinedMapPdf", "Exports Location Maps as a single PDF."
+    MapRibbonStep wsMap, "Prepare", x0 + 0 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "1.  Prepare Pages", "PrepareMapPages", "One page per site. Re-run if you add sites."
+    MapRibbonStep wsMap, "Fetch", x0 + 1 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "2.  Fetch Imagery", "FetchMapImagery", ""
+    MapRibbonStep wsMap, "Export", x0 + 2 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
+        "3.  Export PDF", "ExportCombinedMapPdf", "Exports Location Maps as a single PDF."
+
+    ' Under the Fetch step: a ghost re-run button (retries only rows whose Map
+    ' Status says "Failed - ...", same model as the FIRMette re-run), then the
+    ' step caption below it.
+    Dim fetchX As Double
+    fetchX = x0 + 1 * (BTN_W + GAP)
+    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, fetchX, RIB_TOP + BTN_H + 2, 140, 15)
+    shp.Name = MAP_CTRL_PREFIX & "FetchRe"
+    shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
+    shp.Line.Visible = msoTrue
+    shp.Line.ForeColor.RGB = RGB(150, 150, 150)
+    shp.Line.Weight = 0.75
+    shp.Shadow.Visible = msoFalse
+    With shp.TextFrame2.TextRange
+        .Text = ChrW$(8635) & " Re-run failed imagery"     ' U+21BB (ChrW$, >255)
+        .Font.Size = 8
+        .Font.Bold = msoTrue
+        .Font.Fill.ForeColor.RGB = RGB(90, 90, 90)
+        .ParagraphFormat.Alignment = msoAlignCenter
+    End With
+    shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    shp.OnAction = "ReRunFailedImagery"
+    MapCtrlLabel wsMap, "Fetch_Note", fetchX + 2, RIB_TOP + BTN_H + 20, BTN_W - 2, 26, _
+        "Auto-downloads an aerial image centered on every site (red dot marks the site).", _
+        8, False, RGB(110, 110, 110)
+
+    ' ---- manual alternative: Google Earth screenshots ----
+    Const MAN_TOP As Double = 116
+    MapCtrlLabel wsMap, "ManualLabel", 8, MAN_TOP, 300, 14, _
+        "Manual alternative - Google Earth screenshots:", 9, True, RGB(90, 90, 90)
+    MapRibbonStep wsMap, "KML", 8, MAN_TOP + 16, 130, 20, BLUE, _
+        "Export to KML", "ExportSitesToKML", ""
+    MapRibbonStep wsMap, "Insert", 146, MAN_TOP + 16, 130, 20, BLUE, _
+        "Insert Images", "InsertMapImages", ""
+    MapCtrlLabel wsMap, "ManualNote", 284, MAN_TOP + 12, 250, 34, _
+        "KML opens in Google Earth Desktop - screenshot each site (Win+Shift+S), " & _
+        "save as Site_1, Site_2..., then Insert Images.", 8, False, RGB(110, 110, 110)
 
     ' ---- by the job boxes ----
     ' Re-stamp: a GHOST button (white fill, grey outline+text) so it reads as a
@@ -756,6 +808,14 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
         shp.OnAction = "SelectOutputFolder"
     End If
+
+    ' Note beside the Imagery URL field (the row after Output Folder: +6 on the
+    ' inspector, whose job block also carries State; +5 on the standard product).
+    Dim imTop As Double
+    imTop = wsMap.Cells(MAP_JOB_FIRST_ROW + IIf(ProductIsInspector(), 6, 5), 1).Top
+    MapCtrlLabel wsMap, "ImgSvcNote", reLeft, imTop, 175, 30, _
+        "Blank = Esri World Imagery. Paste another ArcGIS MapServer URL to fetch from it.", _
+        8, False, RGB(120, 120, 120)
 
     ' ---- FIRMettes block, to the right of the job info ----
     Dim fx As Double, fy As Double

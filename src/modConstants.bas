@@ -21,7 +21,7 @@ Public Const NM_PRODUCT As String = "RR_Product"
 
 ' Version stamp shown on Start Here + the Sources sheet so a shared copy can
 ' be traced back to the PR / build it came from. Bump this on each release.
-Public Const BUILD_REFERENCE As String = "PR #34"
+Public Const BUILD_REFERENCE As String = "PR #35"
 
 ' ---- Sheet names ----
 ' The "hub" sheet name. On the standard product this is the visible landing
@@ -50,6 +50,13 @@ Public Const NR_OUTFOLDER As String = "JobOutputFolder"
 ' Sites table's "AGOL Map" column (COL_AGOLMAP) produces per-row deep-links
 ' that open the webmap centered on the row's coordinates.
 Public Const NR_AGOLMAP As String = "JobAgolMap"
+' Optional imagery-source override for Fetch Imagery, entered right on the
+' Map Pages header band. Blank = Esri World Imagery (REST_WORLD_IMAGERY /
+' the Svc_WORLD_IMAGERY override). A pasted URL must be an ArcGIS MapServer
+' - only MapServers expose the /export operation Fetch Imagery drives;
+' Query-only FeatureServers cannot render an image (same constraint as the
+' web tool's PDF figures, §7b).
+Public Const NR_IMAGERYSVC As String = "JobImagerySvc"
 ' Search radius (in feet) used when the exact point-on-polyline intersect
 ' returns no road segments. The classifier always tries an exact intersect
 ' first; this buffer is the second-chance fallback. Default 250 ft, read
@@ -299,6 +306,32 @@ Public Const MAP_STAMP_FONT As Double = 11
 ' stamped on each map page by CreateMapPage; hidden during PDF export.
 Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 
+' ---- Fetch Imagery (modMapFetch) ----
+' Esri World Imagery export endpoint - one anonymous GET returns a rendered
+' aerial PNG for a Web-Mercator bbox (confirmed live 2026-07-14: HTTP 200,
+' image/png, real 1520x1136 satellite image). No auth, no browser needed.
+' Reachability from a hardened FEMA laptop is UNTESTED; if it's blocked there,
+' the Sources sheet's Service URLs table (key WORLD_IMAGERY) can re-point it.
+Public Const REST_WORLD_IMAGERY As String = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
+' Half-WIDTH of the fetched frame in meters (bbox = site center +/- this).
+' The frame height is scaled down to the page-block aspect ratio
+' (MAP_PAGE_WIDTH_PTS : MAP_PAGE_HEIGHT_PTS = 760 : 568), so the site is
+' always the exact center of the printed image - which is what lets
+' modMapFetch drop the site pin at the geometric center of the page.
+Public Const MAP_IMG_HALFWIDTH_M As Double = 600
+' Requested raster size: 2x the page block's point size (760x568 -> 1520x1136)
+' so the placed image stays sharp at print resolution.
+Public Const MAP_IMG_PX_W As Long = 1520
+Public Const MAP_IMG_PX_H As Long = 1136
+' Esri's terms require visible attribution on maps produced from this service.
+' modMapFetch prints this line in a small textbox on every fetched page.
+Public Const MAP_IMG_ATTRIBUTION As String = "Imagery: Esri, Maxar, Earthstar Geographics"
+' Shape-name prefixes for the printed site pin + attribution line. Deliberately
+' NOT MAP_CTRL_PREFIX / MAP_PICKBTN_PREFIX: SetMapEditControlsVisible hides
+' those groups during PDF export, and the pin + attribution MUST print.
+Public Const MAP_PIN_PREFIX As String = "MapPin_Page_"
+Public Const MAP_ATTR_PREFIX As String = "MapAttr_Page_"
+
 ' ---- MapPages job panel ----
 ' MapPages is now a PERMANENT sheet built by BuildWorkbook (it used to be
 ' created - and deleted - by PrepareMapPages). It hosts the job inputs so the
@@ -312,7 +345,7 @@ Public Const MAP_PICKBTN_PREFIX As String = "PickBtn_Page_"
 ' and page 1 starts at MAP_FIRST_PAGE_ROW. The pages' print area starts there
 ' too, so the header never prints. Buttons are absolute-positioned shapes over
 ' this band, so they're free of the tall page-row heights.
-Public Const MAP_HEADER_ROWS As Long = 18
+Public Const MAP_HEADER_ROWS As Long = 20
 Public Const MAP_FIRST_PAGE_ROW As Long = MAP_HEADER_ROWS + 1
 Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
 ' Job-block cells inside that band. Labels merge A:B, values merge C:F (the page
@@ -320,8 +353,9 @@ Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
 Public Const MAP_JOB_LABEL_COL As Long = 1      ' A (merged A:B)
 Public Const MAP_JOB_VALUE_COL As Long = 3      ' C (merged C:F)
 Public Const MAP_JOB_VALUE_LAST_COL As Long = 6 ' F
-' The job block sits under the workflow ribbon (which occupies rows ~3-6).
-Public Const MAP_JOB_FIRST_ROW As Long = 8      ' WO # ... Output Folder run 8..12
+' The job block sits under the workflow ribbon + the manual-alternative line
+' (which together occupy roughly rows 3-9 of the band).
+Public Const MAP_JOB_FIRST_ROW As Long = 11     ' WO # ... Output Folder run 11..16
 
 ' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
 ' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,
@@ -402,6 +436,7 @@ Public Function ServiceDefault(ByVal key As String) As String
         Case "WI_LOCAL_ROADS": ServiceDefault = REST_WI_LOCAL_ROADS
         Case "ACUB":           ServiceDefault = REST_ACUB
         Case "TIGER_ROADS":    ServiceDefault = REST_TIGER_ROADS
+        Case "WORLD_IMAGERY":  ServiceDefault = REST_WORLD_IMAGERY
         Case "MN_NFC":         ServiceDefault = REST_MN_NFC
         Case "IL_NFC":         ServiceDefault = REST_IL_NFC
         Case "OH_NFC":         ServiceDefault = REST_OH_NFC

@@ -22,7 +22,10 @@ $job = Start-Job -ScriptBlock {
   $x = New-Object -ComObject Excel.Application
   $x.Visible = $false; $x.DisplayAlerts = $false; $x.AutomationSecurity = 1
   try {
-    $wb = $x.Workbooks.Open($p)
+    # READONLY: the target is the committed workbook, and OneDrive AutoSave
+    # persists any macro side effect of a read-write open (§7d) - one no-op
+    # hook that revealed a hidden sheet got silently saved that way.
+    $wb = $x.Workbooks.Open($p, 0, $true)
     # Each Run compiles that function's ENTIRE module (all procedures).
     $x.Run('SetHeadless', $true) | Out-Null           # modUtil
     [void]$x.Run('BareStateCode', 'MI')               # modUtil
@@ -32,6 +35,7 @@ $job = Start-Job -ScriptBlock {
     [void]$x.Run('ResolveOutputFolder')               # modMaps
     [void]$x.Run('ExportItemCount')                   # modExportMenu (pure hook)
     $x.Run('RemoveMapImages') | Out-Null              # modMapImage (no-op w/o MapPages)
+    $x.Run('ReRunFailedImagery') | Out-Null           # modMapFetch (no-op: 0 pages + headless)
     $wb.Close($false)
     'COMPILE OK'
   } catch {

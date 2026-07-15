@@ -46,6 +46,7 @@ Private Function ExportItems() As Variant
             "Sites to KML|ExportSitesToKML", _
             "Sites to GeoJSON|ExportSitesToGeoJson", _
             "Prepare Map Pages|PrepareMapPages", _
+            "Fetch Map Imagery|FetchMapImagery", _
             "Add Blank Map Page|AddMapPage", _
             "Insert Map Images|InsertMapImages", _
             "Combined Map PDF|ExportCombinedMapPdf", _

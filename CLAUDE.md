@@ -911,14 +911,13 @@ developer (or reviewer) actually runs in Excel before moving on.
 
 These came up reading the prototypes; capturing them so they aren't lost.
 
-- **Auto-capture basemap for MapPages.** Pull a basemap image directly
-  from a print service (e.g. ArcGIS World Imagery's `exportImage`
-  endpoint, or MDOT's own basemap print service) and drop it into the
-  MapPages merged cell automatically, instead of asking the inspector to
-  paste a screenshot. Confirmed as a V2 deliverable. Risks to test:
-  reachability from a hardened govt laptop, rate limits, attribution
-  requirements, and whether the rendered image is high-enough resolution
-  for FEMA PA paperwork.
+- **Auto-capture basemap for MapPages — SHIPPED (PR #35, §7e).** "Fetch
+  Imagery" on the Map Pages ribbon downloads a site-centered Esri World
+  Imagery aerial per page (one anonymous GET against the MapServer
+  `/export` endpoint) and places it automatically; the imagery source is
+  user-swappable to any ArcGIS MapServer via the Map Pages "Imagery URL"
+  cell. Remaining risk from the original list: reachability of
+  `services.arcgisonline.com` from a hardened govt laptop is untested.
 - **Route-optimization integration.** The user has a separate route
   planner. Easiest hand-off: export the Sites table as a CSV / KML / GPX
   that the planner already accepts. Avoid tight coupling for now.
@@ -992,6 +991,10 @@ src/                                    Shared VBA source (importable .bas modul
   modMaps.bas                           Inspector workflow 3 — FIRMette download (FEMA GP
                                           service), MapPages layout, ExportCombinedMapPdf,
                                           KML export, output-folder resolution
+  modMapFetch.bas                       Fetch Imagery — auto-download a site-centered aerial
+                                          per map page (Esri World Imagery /export or a pasted
+                                          ArcGIS MapServer), center pin, attribution, re-run
+                                          failed (§7e)
   modExport.bas                         Sites table → CSV with resolved link URLs, product-
                                           filtered columns (F10)
 build/                                  Local assembly + verification scripts (not for end users)
@@ -1012,6 +1015,9 @@ build/                                  Local assembly + verification scripts (n
   verify-rerun-and-state.ps1            §5.7 + §5.8 — re-run-failed-rows + state selector
   verify-firmette-maps.ps1              Workflow 3 — DownloadFirmettes + PrepareMapPages
                                           + ExportCombinedMapPdf against live FEMA GP
+  verify-imagery.ps1                    §7e — Fetch Imagery end-to-end: 3 sites, failure path,
+                                          re-run-failed, imagery-URL override, PDF checked with
+                                          PyMuPDF (page count, attribution text, pixels, pin)
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
                                           for reference (not version-controlled)
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
@@ -1783,12 +1789,16 @@ job values — safe to re-run. The header band (rows 1..`MAP_HEADER_ROWS`, short
 rows; pages start at `MAP_FIRST_PAGE_ROW`; PrintArea starts there so the band
 never prints) holds:
 
-- the 4-step ribbon: **1 Export to KML → 2 Prepare Pages → 3 Insert Images →
-  4 Export PDF**, each with a one-line caption (exact wording per user);
+- the 3-step hero ribbon (reworked in PR #35, §7e): **1 Prepare Pages →
+  2 Fetch Imagery → 3 Export PDF**, with a ghost "↻ Re-run failed imagery"
+  under step 2 and, below the ribbon, the labeled **manual alternative**
+  (Export to KML + Insert Images — the old Google Earth screenshot flow,
+  kept as an option per user direction, just no longer the hero);
 - the job block: WO / DI / Disaster (bare number, e.g. 4882) / **State**
   (inspector only; drives classification AND the filename tag) / Applicant /
-  Output Folder (+ Browse) — these carry the `JobWO`/`JobDI`/`JobDisaster`/
-  `JobState`/`JobApplicant`/`JobOutputFolder` named ranges on the inspector
+  Output Folder (+ Browse) / **Imagery URL (optional, PR #35)** — these carry
+  the `JobWO`/`JobDI`/`JobDisaster`/
+  `JobState`/`JobApplicant`/`JobOutputFolder`/`JobImagerySvc` named ranges on the inspector
   (standard keeps State/Output Folder/AGOL/buffer on Start Here; its Map Pages
   shows a read-only Output Folder mirror so the name isn't defined twice);
 - a **live filename preview** (`="File name:  "&FirmettePreview()`, volatile);
@@ -1828,6 +1838,85 @@ unwired states still works.
 - **OneDrive AutoSave persists macro effects into any workbook opened
   read-write.** Automated tests must run on a COPY of the built workbook (see
   the temp-copy pattern in the session scripts), or open readonly.
+
+## 7e. Fetch Imagery — automatic aerial download for Map Pages (PR #35, 2026-07-15)
+
+Map Pages no longer needs manual screenshots as its primary flow. The ribbon
+hero is **1 Prepare Pages → 2 Fetch Imagery → 3 Export PDF**; the Google Earth
+screenshot path (Export to KML + Insert Images) is preserved below it as the
+labeled "Manual alternative" (user direction: keep it as an option, not the
+hero). The **PR #34 workbooks are archived byte-exact** in
+`archive/pr34-manual-screenshots/`.
+
+**How it works (`modMapFetch.bas`):** for every map page that references a
+Sites row, one anonymous GET against Esri World Imagery's MapServer
+`/export` endpoint (`REST_WORLD_IMAGERY`, proved live 2026-07-14/15: HTTP
+200, image/png) returns a rendered aerial for a Web-Mercator bbox centered
+on the site — half-width `MAP_IMG_HALFWIDTH_M` (600 m), half-height scaled
+to the page-block aspect (760:568), pixels at 2× (1520×1136) so the crop
+step in `PlaceImageOnPage` is a no-op. The PNG lands in `%TEMP%`, is placed
+through the existing `modMapImage` pipeline (crop-to-cover + 1 pt inset
+kept), and is also copied to `<output folder>\maps\Site_<n>.png` so the
+manual Insert-Images flow interoperates. Because the site is always the bbox
+center, a small red **pin shape** is dropped at the geometric center of each
+page, plus the Esri-required **attribution** textbox bottom-left
+(`MAP_PIN_PREFIX` / `MAP_ATTR_PREFIX` — deliberately NOT the control
+prefixes, so `SetMapEditControlsVisible` never hides them: they must print).
+Per-row progress goes to the Map Status column with `STATUS_FAILED_PREFIX`,
+and **Re-run failed imagery** retries only failed rows (FIRMette model). A
+row whose coordinates went bad after Prepare is *processed and marked
+Failed* (not skipped), so failures are visible and re-runnable.
+
+**User-swappable imagery source.** The Map Pages job block has an
+**"Imagery URL (optional)"** cell (`JobImagerySvc`, both products): blank =
+Esri World Imagery (also overridable repo-wide via `Svc_WORLD_IMAGERY` on
+Sources); paste any **ArcGIS MapServer** URL to fetch from it instead
+(`ImageryServiceBase` normalizes a browser-copied URL — strips query string,
+trailing slashes, trailing `/export`). Only MapServers work: the `/export`
+operation doesn't exist on Query-only FeatureServers (same constraint as the
+web PDF figures, §7b). With a custom source the attribution line switches to
+"Imagery: <host>".
+
+**Traps hit during this pass (all fixed, all verified):**
+
+1. **`ShowMapPages` before the early-exits = the §7d AutoSave trap.**
+   `compile-check.ps1` no-op-runs `ReRunFailedImagery` against the COMMITTED
+   workbook; an unconditional `ShowMapPages` at the top of the sub unhid the
+   standard product's Map Pages and OneDrive AutoSave persisted it (caught by
+   verify-skeleton). Fix: reveal only after the "any pages?" check, and
+   compile-check now opens READONLY.
+2. **`modMapImage.ClearPlaceholderText` still used the pre-header-band row
+   formula** (`pageIdx*ROWS+1`), so on pages 3+ it cleared cells INSIDE the
+   header band (job-field labels) instead of the page placeholder. Latent
+   since the §7d band was added; fixed to the `MAP_FIRST_PAGE_ROW` offset.
+3. **`build.ps1` imports an explicit module list**, not a glob — a new .bas
+   must be added there or it silently doesn't ship (compile-check catches it).
+4. **The 1-site "single cell for the print area" modal.** Each map page is
+   one big MERGED cell, so with exactly one site the print area is a single
+   merged cell — and Excel pops "You've selected a single cell for the print
+   area" on the `PageSetup.PrintArea` assignment whenever alerts are on
+   (`PrepareMapPages` re-enables `DisplayAlerts` before Export runs). It hung
+   every headless 1-site export (an invisible `NUIDialog` — found by
+   enumerating the hidden Excel's windows via user32) and hit the user
+   interactively too. OK is the right answer, so `SetMapPrintArea` now wraps
+   the assignment in its own `DisplayAlerts = False` save/restore. Multi-site
+   runs never showed it, which is why verify-imagery (3 sites) passed while
+   verify-firmette-maps (1 site) hung.
+
+**Layout constants moved:** `MAP_HEADER_ROWS` 18→20, `MAP_JOB_FIRST_ROW`
+8→11 (the manual-alternative line sits between the ribbon and the job
+block). `modHttp.HttpDownloadPdf` was generalized into `HttpDownloadBinary`
+(accept header + expected Content-Type as params; PDF wrapper kept).
+
+**Verification:** `build\verify-imagery.ps1` runs end-to-end on a %TEMP%
+copy of the inspector build: 3 live sites → Prepare → one row sabotaged →
+Fetch (2 placed, 1 Failed, batch continues) → sentinel + re-run-failed (only
+the failed row retried) → imagery-URL override re-fetch (World_Street_Map,
+attribution switches) → Export PDF → PyMuPDF asserts page count == 3,
+attribution + stamp text on every page, ~90% non-white imagery coverage, and
+red pin pixels at page center (per §9.8: rendered pixels, never
+`get_image_rects`). Known risk (stated in the commit): reachability of
+`services.arcgisonline.com` from a hardened FEMA laptop is untested.
 
 ## 8. Design decisions (resolved) and remaining open questions
 
@@ -1971,6 +2060,7 @@ product has no FIRMette buttons or WO/DI named ranges).
 | `verify-rerun-and-state.ps1` | §5.7 + §5.8 — state=MN gates NFC (MI/IN/WI must NOT gate); ReRunFailedRows only retries `Failed - ` rows | standard (or either) | MDOT + NTAD |
 | `verify-firmette-maps.ps1` | Inspector workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | inspector | FEMA Print FIRMette GP |
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
+| `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
 
 Run the whole suite from a clean state:
 

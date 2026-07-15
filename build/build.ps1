@@ -42,6 +42,7 @@ $importOrder = @(
   'modImagery.bas',
   'modMaps.bas',
   'modMapImage.bas',
+  'modMapFetch.bas',
   'modExport.bas',
   'modExportMenu.bas'
 )

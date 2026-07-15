@@ -152,6 +152,7 @@ Public Sub BuildSourcesSheet()
     SvcOverrideRow ws, "IN_ROADNAME", "Indiana - road names (2021 centerlines)"
     SvcOverrideRow ws, "ACUB", "All states - adjusted urban-area boundary (urban/rural)"
     SvcOverrideRow ws, "TIGER_ROADS", "All states - Census street names"
+    SvcOverrideRow ws, "WORLD_IMAGERY", "All states - Esri aerial imagery (Fetch Imagery on Map Pages)"
     SvcOverrideRow ws, "MN_NFC", "Minnesota - functional class (reference; not yet wired)"
     SvcOverrideRow ws, "IL_NFC", "Illinois - functional class (reference; not yet wired)"
     SvcOverrideRow ws, "OH_NFC", "Ohio - functional class (reference; not yet wired)"

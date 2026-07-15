@@ -132,7 +132,9 @@ try {
   # on standard). Output-Folder Browse is the one that differs: on the inspector
   # it's on MapPages (Output Folder is canonical there); on the standard product
   # it's on Start Here, so its MapPages has no Browse.
-  foreach ($a in @('ExportSitesToKML','PrepareMapPages','InsertMapImages','ExportCombinedMapPdf','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
+  # 3-step hero (Prepare / Fetch Imagery / Export PDF, PR #35) + the manual
+  # Google Earth alternative (KML / Insert Images) + re-run + FIRMettes.
+  foreach ($a in @('PrepareMapPages','FetchMapImagery','ReRunFailedImagery','ExportCombinedMapPdf','ExportSitesToKML','InsertMapImages','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
     if (-not $mapActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
   }
   if ($isInspector) {

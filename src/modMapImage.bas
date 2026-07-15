@@ -185,6 +185,8 @@ Fail:
 End Sub
 
 ' Button: "Remove Map Images" - restores the paste-a-screenshot placeholders.
+' Also drops every fetched-imagery site pin + attribution line (modMapFetch) -
+' those only make sense over the auto-fetched, site-centered image.
 Public Sub RemoveMapImages()
     If Not SheetExists(SH_MAPPAGES) Then Exit Sub
 
@@ -193,7 +195,9 @@ Public Sub RemoveMapImages()
 
     For i = wsMap.Shapes.Count To 1 Step -1
         Set shp = wsMap.Shapes(i)
-        If Left$(shp.Name, Len(SHAPE_PREFIX)) = SHAPE_PREFIX Then shp.Delete
+        If Left$(shp.Name, Len(SHAPE_PREFIX)) = SHAPE_PREFIX _
+            Or Left$(shp.Name, Len(MAP_PIN_PREFIX)) = MAP_PIN_PREFIX _
+            Or Left$(shp.Name, Len(MAP_ATTR_PREFIX)) = MAP_ATTR_PREFIX Then shp.Delete
     Next i
 End Sub
 
@@ -228,14 +232,19 @@ Fail:
     MsgBox "Could not place the image:" & vbCrLf & Err.Description, vbExclamation, "Select Photo"
 End Sub
 
-' Delete only the placed picture on one page (leaves the textbox + pick button).
-Private Sub RemoveImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
-    Dim target As String
-    target = SHAPE_PREFIX & CStr(pageIdx + 1)
-    Dim shp As Shape, i As Long
+' Delete the placed picture on one page (leaves the textbox + pick button).
+' The page's fetched-imagery pin + attribution (modMapFetch) go with it: a
+' manually chosen screenshot isn't guaranteed to be centered on the site, so
+' a leftover center pin would lie. Public - modMapFetch reuses it before
+' placing a fresh download.
+Public Sub RemoveImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
+    Dim n As String, shp As Shape, i As Long
+    n = CStr(pageIdx + 1)
     For i = wsMap.Shapes.Count To 1 Step -1
         Set shp = wsMap.Shapes(i)
-        If shp.Name = target Then shp.Delete
+        If shp.Name = SHAPE_PREFIX & n _
+            Or shp.Name = MAP_PIN_PREFIX & n _
+            Or shp.Name = MAP_ATTR_PREFIX & n Then shp.Delete
     Next i
 End Sub
 
@@ -446,7 +455,7 @@ End Function
 ' pages begin BELOW the header band at MAP_FIRST_PAGE_ROW. Using the old
 ' pre-header formula (pageIdx*ROWS+1) piled every inserted image near the top of
 ' the sheet, overlapping, so each printed page showed slivers of several images.
-Private Function PageTopPts(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As Double
+Public Function PageTopPts(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As Double
     Dim startRow As Long, rr As Long, t As Double
     startRow = MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE
     For rr = 1 To startRow - 1
@@ -455,7 +464,7 @@ Private Function PageTopPts(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As 
     PageTopPts = t
 End Function
 
-Private Function PageWidthPts(ByVal wsMap As Worksheet) As Double
+Public Function PageWidthPts(ByVal wsMap As Worksheet) As Double
     Dim cc As Long, w As Double
     For cc = 1 To MAP_COLS_WIDE
         w = w + wsMap.Columns(cc).Width
@@ -468,8 +477,10 @@ End Function
 ' Insert the picture, CROP it to the page area's aspect ratio (no distortion),
 ' then scale the cropped remainder to exactly fill the area edge-to-edge,
 ' push it behind the WO/DI textbox, and clear the placeholder text from the
-' merged cell underneath.
-Private Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
+' merged cell underneath. Public - modMapFetch places its downloads through
+' this same pipeline (its 1520x1136 frames match the block aspect exactly,
+' so the crop step is a no-op there).
+Public Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
                              ByVal imgPath As String)
     Dim areaTop As Double, areaLeft As Double, areaW As Double, areaH As Double
     areaTop = PageTopPts(wsMap, pageIdx) + IMG_INSET_PTS
@@ -534,7 +545,10 @@ End Sub
 ' Once a real image is in place that prompt would print over/behind it.
 Private Sub ClearPlaceholderText(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
     Dim startRow As Long
-    startRow = pageIdx * MAP_ROWS_PER_PAGE + 1
+    ' Same MAP_FIRST_PAGE_ROW offset as PageTopPts/CreateMapPage. The old
+    ' pre-header formula (pageIdx*ROWS+1) landed in the HEADER BAND for every
+    ' page, silently clearing job-field label cells on pages 3+.
+    startRow = MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE
     ' The page area is a MERGED cell. ClearContents on a single member cell
     ' raises "We can't do that to a merged cell" (and hangs under headless COM
     ' with a just-placed picture over it) - clear the whole MergeArea instead.
