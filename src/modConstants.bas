@@ -272,21 +272,23 @@ Public Const FIRMETTE_POLL_MAX_ATTEMPTS As Long = 90    ' ~3 min max
 ' margin clears every real driver's hard margins, so the export is 1:1
 ' (Zoom=100), the manual page breaks hold, and each map page is EXACTLY one
 ' PDF page with a thin even frame.
-' Sizing is driven by the MEASURED usable print area, not the nominal one.
-' Excel's usable area = paper - max(page-setup margin, DRIVER hard margin) per
-' side, and drivers lie big: a probe sheet (thin rows/cols, find the first
-' automatic page break) measured just 540pt x 749pt usable on landscape Letter
-' with 18pt margins requested (Brother laser via WSD). Any block taller/wider
-' than usable is auto-split into overflow pages no matter what the margins say
-' (the 40-pages-for-10-sites / strip-page bugs). 528x736 sits under that floor
-' with slack; CenterHorizontally/Vertically make the leftover an even ~0.4"
-' frame on each PDF page. If some exotic driver reports an even smaller
-' usable area, pages would split again - re-run the probe and shrink these.
+' Sizing is driven by the MEASURED usable print area of "Microsoft Print to
+' PDF", which ExportCombinedMapPdf makes the active printer for the export (and
+' restores after). Excel's usable area = paper - max(page-setup margin, DRIVER
+' hard margin) per side; a probe sheet (thin rows/cols, find the first
+' automatic page break) measured MS Print to PDF's landscape-Letter usable at
+' 769.5 x 576pt - no Windows driver is truly borderless, but this one is the
+' same on EVERY machine (Windows inbox driver), which makes the geometry
+' machine-independent. Any block sized AT or past the usable floor is
+' auto-split into overflow pages (the 40-pages-for-10-sites / strip-page
+' bugs; equality loses to device rounding, so slack is mandatory).
+' 760 x 568 sits under the floor; CenterHorizontally/Vertically turn the
+' leftover into an even frame (16pt sides, 22pt top/bottom).
 Public Const MAP_ROWS_PER_PAGE As Long = 4
 Public Const MAP_COLS_WIDE As Long = 13
-Public Const MAP_PRINT_MARGIN_PTS As Double = 18            ' page-setup margin
-Public Const MAP_PAGE_HEIGHT_PTS As Double = 528            ' 4 rows x 132pt, < 540 measured usable
-Public Const MAP_PAGE_WIDTH_PTS As Double = 736             ' < 749 measured usable
+Public Const MAP_PRINT_MARGIN_PTS As Double = 0             ' page-setup margin
+Public Const MAP_PAGE_HEIGHT_PTS As Double = 568            ' 4 rows x 142pt, < 576 usable
+Public Const MAP_PAGE_WIDTH_PTS As Double = 760             ' < 769.5 usable
 Public Const MAP_TEXTBOX_WIDTH As Double = 260
 Public Const MAP_TEXTBOX_HEIGHT As Double = 104
 ' Stamp font size (WO/DI/Applicant/Site/coords textbox on each page). Bumped

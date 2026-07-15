@@ -1100,18 +1100,31 @@ Public Sub ExportCombinedMapPdf()
     ' off-grid controls) so they don't print.
     SetMapEditControlsVisible wsMap, False
 
-    ' Re-assert the page setup (landscape Letter, the 0.25" margin frame the
-    ' 756x576 blocks are sized for, zoom 100) and the print area right before
-    ' export, so a stray manual page-setup change can't break the pagination.
-    ' See MAP_PRINT_MARGIN_PTS in modConstants for why the frame exists: Excel
-    ' cannot print true edge-to-edge on ANY driver (even Microsoft Print to PDF
-    ' reserves an epsilon), and fit-to-page scaling ignores the manual page
-    ' breaks and floats the content in loose whitespace. 1:1 inside a real
-    ' margin is the only geometry that yields exactly one PDF page per map
-    ' page on every printer.
+    ' Export through "Microsoft Print to PDF": Excel paginates against the
+    ' ACTIVE printer's usable area, which differs per driver (a Brother laser
+    ' measured 749x552 usable; MS Print to PDF measures 769.5x576) - so pinning
+    ' the export to the inbox MS PDF driver makes the pagination identical on
+    ' every Windows machine. The 760x568 blocks are sized to ITS floor. Two
+    ' hard-won rules: (1) switching the active printer RESETS the sheet's page
+    ' setup (orientation flips back to portrait), so the setup must be
+    ' re-applied AFTER the switch; (2) fit-to-page scaling is not a substitute
+    ' - it ignores the manual page breaks and floats shrunken content in
+    ' whitespace - so it's only the fallback when MS Print to PDF is absent.
+    Dim savedPrinter As String, borderless As Boolean
+    On Error Resume Next
+    savedPrinter = Application.ActivePrinter
+    On Error GoTo 0
+    borderless = SwitchToPdfPrinter()
     On Error Resume Next
     ConfigureMapPageSetup wsMap
     SetMapPrintArea wsMap
+    If Not borderless Then
+        With wsMap.PageSetup
+            .Zoom = False
+            .FitToPagesWide = 1
+            .FitToPagesTall = MapPageCount(wsMap)
+        End With
+    End If
     On Error GoTo 0
 
     On Error GoTo Fail
@@ -1119,14 +1132,47 @@ Public Sub ExportCombinedMapPdf()
         Quality:=xlQualityStandard, IncludeDocProperties:=False, _
         IgnorePrintAreas:=False, OpenAfterPublish:=False
     On Error GoTo 0
+    RestorePrinter savedPrinter
     SetMapEditControlsVisible wsMap, True
 
     If Not gHeadless Then MsgBox "Combined map PDF exported:" & vbCrLf & fullPath, vbInformation, "Export Map PDF"
     Exit Sub
 Fail:
+    RestorePrinter savedPrinter
     SetMapEditControlsVisible wsMap, True
     If gHeadless Then Err.Raise Err.Number, "ExportCombinedMapPdf", Err.Description Else _
         MsgBox "Export failed: " & Err.Description, vbCritical, "Export Map PDF"
+End Sub
+
+' Make "Microsoft Print to PDF" the active printer for the export. The reliable
+' port comes from the registry (HKCU\...\Devices holds "winspool,Ne0X:" per
+' printer - the exact suffix Excel's ActivePrinter wants); the Ne-port probe is
+' only the fallback. NB: Excel rejects ActivePrinter changes when no workbook
+' is open - always true here since we're exporting one.
+Private Function SwitchToPdfPrinter() As Boolean
+    Const PDF_PRINTER As String = "Microsoft Print to PDF"
+    Dim port As String, i As Long
+    On Error Resume Next
+    port = CreateObject("WScript.Shell").RegRead( _
+        "HKCU\Software\Microsoft\Windows NT\CurrentVersion\Devices\" & PDF_PRINTER)
+    If InStr(port, ",") > 0 Then
+        port = Mid$(port, InStr(port, ",") + 1)          ' "winspool,Ne00:" -> "Ne00:"
+        Err.Clear
+        Application.ActivePrinter = PDF_PRINTER & " on " & port
+        If Err.Number = 0 Then SwitchToPdfPrinter = True: Exit Function
+    End If
+    For i = 0 To 31                                       ' fallback: probe the ports
+        Err.Clear
+        Application.ActivePrinter = PDF_PRINTER & " on Ne" & Format$(i, "00") & ":"
+        If Err.Number = 0 Then SwitchToPdfPrinter = True: Exit Function
+    Next i
+    On Error GoTo 0
+End Function
+
+Private Sub RestorePrinter(ByVal savedPrinter As String)
+    On Error Resume Next
+    If Len(savedPrinter) > 0 Then Application.ActivePrinter = savedPrinter
+    On Error GoTo 0
 End Sub
 
 Private Sub EnsureTextboxesOnTop(ByVal wsMap As Worksheet)
