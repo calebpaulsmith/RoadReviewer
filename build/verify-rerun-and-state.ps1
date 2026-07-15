@@ -100,8 +100,7 @@ try {
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null
   $excel.Run('SetTrace', '') | Out-Null
-  $wb.Save()
-  $wb.Close($true)
+  $wb.Close($false)
 
   Write-Host ""
   Write-Host "VERIFICATION PASSED (§5.7 + §5.8)" -ForegroundColor Green

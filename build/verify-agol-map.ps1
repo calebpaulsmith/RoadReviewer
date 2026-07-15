@@ -133,8 +133,7 @@ try {
   $wb.Names('JobAgolMap').RefersToRange.Value2 = ''
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''
   $excel.Run('SetHeadless', $false) | Out-Null
-  $wb.Save()
-  $wb.Close($true)
+  $wb.Close($false)
   Get-ChildItem $csvFolder | Remove-Item -Force
   Remove-Item $csvFolder -Force -ErrorAction SilentlyContinue
 

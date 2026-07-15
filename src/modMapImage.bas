@@ -438,9 +438,13 @@ Private Function PageCount(ByVal wsMap As Worksheet) As Long
     PageCount = n
 End Function
 
+' Top of page `pageIdx` in points. MUST match modMaps.CreateMapPage's startRow:
+' pages begin BELOW the header band at MAP_FIRST_PAGE_ROW. Using the old
+' pre-header formula (pageIdx*ROWS+1) piled every inserted image near the top of
+' the sheet, overlapping, so each printed page showed slivers of several images.
 Private Function PageTopPts(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As Double
     Dim startRow As Long, rr As Long, t As Double
-    startRow = pageIdx * MAP_ROWS_PER_PAGE + 1
+    startRow = MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE
     For rr = 1 To startRow - 1
         t = t + wsMap.Rows(rr).Height
     Next rr

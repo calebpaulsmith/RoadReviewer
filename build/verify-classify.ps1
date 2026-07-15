@@ -159,8 +159,7 @@ try {
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobState').RefersToRange.Value2 = 'MI'
   $excel.Run('SetHeadless', $false) | Out-Null
-  $wb.Save()
-  $wb.Close($true)
+  $wb.Close($false)
 
   if ($failures) {
     Write-Host ""

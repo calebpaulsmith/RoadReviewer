@@ -342,10 +342,9 @@ try {
 
   # Clean up the test row so the saved file stays empty
   $sites.Range($sites.Cells($FirstDataRow, 4), $sites.Cells($FirstDataRow, 6)).ClearContents()
-  $wb.Save()
 
   Write-Host "VERIFICATION PASSED ($product)" -ForegroundColor Green
-  $wb.Close($true)
+  $wb.Close($false)
 }
 catch {
   Write-Host ("VERIFICATION FAILED: " + $_.Exception.Message) -ForegroundColor Red

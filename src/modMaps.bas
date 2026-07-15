@@ -1098,11 +1098,21 @@ Public Sub ExportCombinedMapPdf()
     ' Bring text boxes to the front in case the inspector's pasted screenshot covered them.
     EnsureTextboxesOnTop wsMap
     ' Hide the on-sheet editing aids (per-page "Select photo" buttons + the
-    ' off-grid "Insert Map Images" control) so they don't print. Hiding the
-    ' off-grid control also keeps it out of the used range - the reason we do
-    ' NOT set PageSetup.PrintArea here: assigning PrintArea forces a printer
-    ' query that hangs headless Excel on a machine with no default printer.
+    ' off-grid controls) so they don't print.
     SetMapEditControlsVisible wsMap, False
+
+    ' Force exactly ONE printed page per map page. At Zoom=100 a 792x612 map page
+    ' slightly overflows the printer's hard margins and spills to a 2x2 = 4-page
+    ' block (the "40 pages for 10 sites" bug), so scale-to-fit instead: 1 page
+    ' wide x (page count) tall. Excel uses the smaller of the two scale factors,
+    ' so nothing distorts and the result is exactly N pages.
+    On Error Resume Next
+    With wsMap.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = MapPageCount(wsMap)
+    End With
+    On Error GoTo 0
 
     On Error GoTo Fail
     wsMap.ExportAsFixedFormat Type:=xlTypePDF, fileName:=fullPath, _

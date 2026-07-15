@@ -62,7 +62,7 @@ try {
   Write-Host ("  filename clean: " + $nameA) -ForegroundColor Green
 
   $excel.Run('PrepareMapPages') | Out-Null
-  $wsMap = $wb.Worksheets('MapPages')
+  $wsMap = $wb.Worksheets('Map Pages')
   $textbox = $wsMap.Shapes('Textbox_Page_1')
   $stampA = [string]$textbox.TextFrame2.TextRange.Text
   Write-Host "  Map textbox stamp:"
@@ -86,7 +86,7 @@ try {
   Write-Host ""
   Write-Host "=== Case B: WO=123, DI blank ===" -ForegroundColor Cyan
   Get-ChildItem -LiteralPath $outFolder | Remove-Item -Force
-  $wb.Worksheets('MapPages').Delete()
+  $wb.Worksheets('Map Pages').Delete()
   $wb.Names('JobWO').RefersToRange.Value2 = '123'
   $sites.Cells(3, 29).Value2 = ''   # FIRMette Status
   $sites.Cells(3, 30).Value2 = ''   # Map Status
@@ -101,7 +101,7 @@ try {
   Write-Host "  Case B filename clean (WO only)" -ForegroundColor Green
 
   $excel.Run('PrepareMapPages') | Out-Null
-  $stampB = [string]$wb.Worksheets('MapPages').Shapes('Textbox_Page_1').TextFrame2.TextRange.Text
+  $stampB = [string]$wb.Worksheets('Map Pages').Shapes('Textbox_Page_1').TextFrame2.TextRange.Text
   $linesB = Split-StampLines $stampB
   Write-Host ("  textbox first line: " + $linesB[0])
   if ($linesB[0] -ne 'WO #123') { throw ("Expected stamp first line 'WO #123', got: '" + $linesB[0] + "'") }
@@ -109,7 +109,7 @@ try {
   Write-Host "  Case B textbox clean (WO # only)" -ForegroundColor Green
 
   # Cleanup
-  $wb.Worksheets('MapPages').Delete()
+  $wb.Worksheets('Map Pages').Delete()
   $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
   $wb.Names('JobWO').RefersToRange.Value2 = ''
@@ -118,8 +118,7 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = ''
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''
   $excel.Run('SetHeadless', $false) | Out-Null
-  $wb.Save()
-  $wb.Close($true)
+  $wb.Close($false)
 
   Write-Host ""
   Write-Host "VERIFICATION PASSED -- blank WO/DI handled cleanly" -ForegroundColor Green

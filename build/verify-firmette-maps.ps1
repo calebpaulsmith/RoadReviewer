@@ -71,10 +71,10 @@ try {
   Write-Host ""
   Write-Host "=== PrepareMapPages ===" -ForegroundColor Cyan
   $excel.Run('PrepareMapPages') | Out-Null
-  if (-not ($wb.Worksheets | ForEach-Object { $_.Name } | Where-Object { $_ -eq 'MapPages' })) {
-    throw "MapPages sheet was not created"
+  if (-not ($wb.Worksheets | ForEach-Object { $_.Name } | Where-Object { $_ -eq 'Map Pages' })) {
+    throw "Map Pages sheet was not created"
   }
-  $wsMap = $wb.Worksheets('MapPages')
+  $wsMap = $wb.Worksheets('Map Pages')
   $shapeCount = $wsMap.Shapes.Count
   $mergedCheck = $wsMap.Range('A1').MergeArea.Address
   Write-Host ("  MapPages created with " + $shapeCount + " shape(s); A1 merge range=" + $mergedCheck)
@@ -102,9 +102,8 @@ try {
   $wb.Names('JobApplicant').RefersToRange.Value2 = ''
   $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''
   $excel.DisplayAlerts = $false
-  $wb.Worksheets('MapPages').Delete()
-  $wb.Save()
-  $wb.Close($true)
+  $wb.Worksheets('Map Pages').Delete()
+  $wb.Close($false)
 
   Write-Host ""
   Write-Host "VERIFICATION PASSED (Workflow 3 ported)" -ForegroundColor Green
