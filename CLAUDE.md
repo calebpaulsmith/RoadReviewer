@@ -1753,6 +1753,82 @@ Needs the local Windows rebuild + verify pass (§9.2) before hand-off.
 
 ---
 
+## 7d. Map Pages hero redesign + "Tools and Exports" (2026-07-14) — CURRENT shape
+
+A full UI restructure of the inspector product, per user direction across one
+long session. **This supersedes the §7c sheet layout for the inspector.** The
+prior design is archived: tag `start-here-hero` (commit `74b1d43`) + byte-exact
+workbooks in `archive/start-here-hero/`.
+
+### Sheet roles per product
+
+| | Inspector (`Site Inspector Review Tool.xlsm`) | Standard (`RoadReviewer.xlsm`) |
+|---|---|---|
+| Landing (tab 1) | **Map Pages** (visible) | **Start Here** (visible hub, unchanged role) |
+| Tab 2 | Sites | Sites |
+| Hidden | **"Tools and Exports"** (the old Start Here, renamed; reached via the grey "Exports & other tools →" button on Map Pages, `GoToOtherTools`; "← Back to Map Pages" = `GoToMapPages`) and Sources | **Map Pages** (opt-in: any map action calls `modMaps.ShowMapPages` and reveals it with FULL functionality) |
+
+The hub sheet is named per product — `modUtil.StartSheetName()` returns
+`SH_START` ("Start Here", standard) or `SH_TOOLS` ("Tools and Exports",
+inspector); every hub lookup goes through it. The map tab is `SH_MAPPAGES` =
+**"Map Pages"** (renamed from "MapPages" — verifiers with hardcoded sheet-name
+literals broke once already).
+
+### Map Pages is a PERMANENT sheet
+
+Built by `BuildWorkbook` → `modMaps.EnsureMapPagesSheet` (it used to be created
+and DELETED by `PrepareMapPages`; that lifecycle is gone). `PrepareMapPages`
+rebuilds only the page blocks (`ClearMapPages`) and preserves the header band +
+job values — safe to re-run. The header band (rows 1..`MAP_HEADER_ROWS`, short
+rows; pages start at `MAP_FIRST_PAGE_ROW`; PrintArea starts there so the band
+never prints) holds:
+
+- the 4-step ribbon: **1 Export to KML → 2 Prepare Pages → 3 Insert Images →
+  4 Export PDF**, each with a one-line caption (exact wording per user);
+- the job block: WO / DI / Disaster (bare number, e.g. 4882) / **State**
+  (inspector only; drives classification AND the filename tag) / Applicant /
+  Output Folder (+ Browse) — these carry the `JobWO`/`JobDI`/`JobDisaster`/
+  `JobState`/`JobApplicant`/`JobOutputFolder` named ranges on the inspector
+  (standard keeps State/Output Folder/AGOL/buffer on Start Here; its Map Pages
+  shows a read-only Output Folder mirror so the name isn't defined twice);
+- a **live filename preview** (`="File name:  "&FirmettePreview()`, volatile);
+- the ghost "↻ Re-stamp pages" button → `UpdateMapStamps`. Stamps are static
+  text baked at page creation (each stamp remembers its Sites row in the
+  shape's AlternativeText); filling the job boxes BEFORE Prepare stamps
+  correctly with no extra click — Re-stamp exists only for edits made after
+  pages exist, hence demoted out of the numbered flow;
+- the FIRMettes block (Download / Re-run Failed).
+
+### Shared file-name convention (modUtil)
+
+`JobFileStem()` = `"WO123 DI5 - DR-4882-MI"` → used by **every** export
+(Location Map PDF, per-site FIRMettes, KML, CSV, GeoJSON), suffixed per type
+(`... - Sites.kml` etc.). `DisasterTag()` composes the user's `DR-####-ST`
+convention: bare digits get `DR-` (typed `DR-`/`EM-` prefixes kept), State
+appended when set. All-blank job info falls back to a `yyyy-mm-dd HHmm` stamp
+so repeated exports never overwrite.
+
+### State handling
+
+State ships **blank by default** (both products). The two state-dependent NFC
+link columns (13 "NFC Layer (Map Viewer)", 15 "State NFC App") show — on the
+FIRST data row only, other rows blank — a working `HYPERLINK("#JobState","Set
+State →")` instead of silently defaulting to Michigan. `modClassify` still
+treats blank as MI (revisit when MN/IL/OH get wired). The State dropdown lists
+only wired states (`STATE_LIST = "WI,IN,MI"`); the ACUB-only path for typed
+unwired states still works.
+
+### Hard-won operational rules (cost real corruption this session)
+
+- **Verifiers must NEVER save the committed workbook.** All of them used to
+  end `$wb.Save(); $wb.Close($true)` — after Map Pages became permanent, the
+  ones that deleted it broke `JobWO`→`#REF!` in the committed file. Every
+  verifier now closes with `Close($false)`; verify-skeleton reopens READONLY
+  for its write-cells phase (in-memory edits work fine readonly).
+- **OneDrive AutoSave persists macro effects into any workbook opened
+  read-write.** Automated tests must run on a COPY of the built workbook (see
+  the temp-copy pattern in the session scripts), or open readonly.
+
 ## 8. Design decisions (resolved) and remaining open questions
 
 ### Resolved (do not relitigate)
@@ -2142,4 +2218,74 @@ everywhere:
 - **Scope:** overrides cover the classification *query* endpoints only,
   not the Map-Viewer deep-link templates (`URL_NFC_MAPVIEW*`) or the
   FIRMette GP service.
+
+### 9.8 Map-page PDF export — Excel printable-area geometry (2026-07-14)
+
+The "40 pages for 10 sites" / "images in slivers" / "giant whitespace" family
+of bugs all trace to ONE fact, plus a stack of Excel quirks discovered while
+fixing it. Recorded here because it is completely non-obvious and we may
+revisit (e.g. if a FEMA laptop lacks Microsoft Print to PDF).
+
+**The fact:** Excel paginates against the ACTIVE PRINTER's *usable area* =
+paper − max(page-setup margin, driver hard margin) per side — even for
+`ExportAsFixedFormat` PDF export, where no paper exists. Drivers reserve far
+more than you'd guess, and it varies per machine:
+
+| Driver (landscape Letter 792×612, margins 0) | measured usable |
+|---|---|
+| Brother HL-L2420DW (WSD) | 749 × 552 pt |
+| **Microsoft Print to PDF** (Windows inbox) | **769.5 × 576 pt** |
+
+Content ≥ usable is auto-split onto overflow pages (a 792×612 block became a
+2×2 four-page tile). **Equality also loses** — device-unit rounding tips a
+block sized exactly to the usable area over the edge, so strict slack is
+mandatory. And **fit-to-page scaling is NOT a fix**: it silently discards the
+manual `HPageBreaks` and reflows all blocks as one continuous ~80% strip
+floating in whitespace (the symptom the user caught in a real export).
+
+**The fix (modMaps.ExportCombinedMapPdf + modConstants):**
+
+1. Blocks are sized to Microsoft Print to PDF's floor — `MAP_PAGE_WIDTH_PTS
+   = 760`, `MAP_PAGE_HEIGHT_PTS = 568` (4 rows × 142pt) — strictly under
+   769.5×576. Margins 0 + `CenterHorizontally/Vertically` leave a 16pt side /
+   22pt top-bottom frame. (True borderless is impossible: every driver,
+   including MS PDF, reserves an edge.)
+2. The export **temporarily switches `Application.ActivePrinter` to
+   "Microsoft Print to PDF"** so the pagination uses that machine-constant
+   inbox driver, then restores the user's printer (also on the Fail path).
+   Port resolution: read `HKCU\Software\Microsoft\Windows NT\CurrentVersion\
+   Devices\Microsoft Print to PDF` → `"winspool,Ne0X:"` → `"Microsoft Print
+   to PDF on Ne0X:"`; probing Ne00..Ne31 is only the fallback (port numbers
+   shuffle between sessions — a hardcoded Ne00 worked once by luck).
+3. Excel traps hit on the way (each cost a debugging round):
+   - `ActivePrinter` **cannot be set when no workbook is open** (a probe
+     doing so silently kept the old printer and mismeasured).
+   - **Switching printers resets the sheet's page setup** — orientation
+     flipped back to portrait. `ConfigureMapPageSetup` + `SetMapPrintArea`
+     must re-run AFTER the switch, before export.
+   - `modMapImage.PageTopPts` must compute page tops with the same
+     `MAP_FIRST_PAGE_ROW` offset as `modMaps.CreateMapPage` — when the
+     header band moved pages down, the stale formula piled every inserted
+     image at the top of the sheet, overlapping (each printed page showed
+     slivers of several screenshots).
+   - `IMG_INSET_PTS = 1`: a picture ending exactly ON a page-break line gets
+     tipped onto an overflow page by rounding (12 pages for 6 sites — full
+     page + sliver page alternating).
+4. Fallback when MS Print to PDF is absent (it's a removable Windows
+   feature): `FitToPagesWide=1 / FitToPagesTall=MapPageCount` — right page
+   count, shrunken content with whitespace; better than a spill.
+
+**The measurement technique (re-run this if pages ever split again):** build a
+probe sheet — 200 rows × 6pt with a value in each, 50 narrow columns, target
+page setup, desired printer active — and read `ws.HPageBreaks(1).Location.Row`
+/ `ws.VPageBreaks(1).Location.Column`. (rows−1)×6pt = the driver's true usable
+height; likewise width. That is the ceiling any block must stay strictly under.
+
+**Verification done:** end-to-end with the user's six real Google Earth
+screenshots on a copy of the built inspector — `PrepareMapPages` →
+`InsertMapImages` → `ExportCombinedMapPdf` produced exactly 6 PDF pages, one
+near-full-bleed image per page, stamp on top, default printer restored after.
+Page counts and placements checked with PyMuPDF (`fitz`); note
+`page.get_image_rects()` returns the **uncropped** image extents, which
+mislead — trust page count + rendered pixels, not those rects.
 
