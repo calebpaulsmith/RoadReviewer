@@ -251,15 +251,27 @@ try {
       throw "Col $k should carry the blank-State 'Set State' placeholder branch"
     }
   }
-  # And that it actually fires: blank JobState, recalc, expect the directive.
+  # Standard's placeholder is a real HYPERLINK to the JobState cell; inspector's
+  # is plain text (its State cell is on a hidden sheet).
+  if (-not $isInspector -and [string]$sites.Cells($FirstDataRow, 13).Formula -notmatch 'HYPERLINK\("#JobState"') {
+    throw "Standard col 13 placeholder should hyperlink to #JobState"
+  }
+  # Fires only on the FIRST data row: give rows 2 AND 3 coords, blank JobState,
+  # recalc; row 2 shows the directive, row 3 stays blank.
   $sites.Cells($FirstDataRow, 5).Value2 = [double]42.28536
+  $sites.Cells($FirstDataRow+1, 5).Value2 = [double]42.29
+  $sites.Cells($FirstDataRow+1, 6).Value2 = [double]-85.57
   $jsOld = [string]$wb.Names('JobState').RefersToRange.Value2
   $wb.Names('JobState').RefersToRange.Value2 = ''
   $excel.Calculate()
-  $ph = [string]$sites.Cells($FirstDataRow, 13).Value2
-  if ($ph -notmatch 'Set State') { throw "Blank State should show a 'Set State' placeholder in col 13, got '$ph'" }
-  Write-Host ("  blank-State placeholder: '{0}'" -f $ph)
+  $ph2 = [string]$sites.Cells($FirstDataRow, 13).Value2
+  $ph3 = [string]$sites.Cells($FirstDataRow+1, 13).Value2
+  if ($ph2 -notmatch 'Set State') { throw "Blank State should show the directive in col 13 row 2, got '$ph2'" }
+  if ($ph3 -ne '') { throw "Col 13 row 3 should be BLANK when State is blank (first-row-only), got '$ph3'" }
+  Write-Host ("  blank-State placeholder (row 2 only): '{0}'  row 3: '{1}'" -f $ph2, $ph3)
   $wb.Names('JobState').RefersToRange.Value2 = $jsOld
+  $sites.Cells($FirstDataRow+1, 5).Value2 = ''
+  $sites.Cells($FirstDataRow+1, 6).Value2 = ''
   $excel.Calculate()
 
   Write-Host "=== Sites validation ===" -ForegroundColor Cyan

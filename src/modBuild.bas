@@ -820,16 +820,26 @@ Private Sub SetNfcMapFormula(ByVal ws As Worksheet, ByVal r1 As Long, ByVal r2 A
     ws.Range(ws.Cells(r1, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP)).Formula = f
 End Sub
 
-' The two NFC-map link columns depend on the State dropdown. When State is blank
-' the link would silently fall back to Michigan, so instead show a short
-' directive that points at wherever State is set (Start Here on the standard
-' product, the hidden Tools and Exports sheet on the inspector). Only the
-' state-dependent columns get this; the plain lat/lon imagery links don't.
+' The two state-dependent NFC-map link columns (NFC Layer / State NFC App). When
+' State is blank the link would silently fall back to Michigan, so instead of a
+' link every row shows a directive to set the State - but ONLY on the first data
+' row (the rest stay blank, so the column isn't a wall of the same message).
+'   Standard: a real HYPERLINK to the JobState cell (it's on the visible Start
+'     Here sheet), so clicking jumps straight there.
+'   Inspector: State lives on the HIDDEN "Tools and Exports" sheet, and Excel
+'     can't follow a hyperlink to a hidden cell - so it's plain directive text
+'     pointing at the "Exports & other tools" button that reveals that sheet.
 Private Function NfcLinkFormula(ByVal latC As String, ByVal lonC As String, ByVal urlExpr As String) As String
-    Dim ph As String
-    ph = ExcelStr("Set State (" & StartSheetName() & ")")
-    NfcLinkFormula = "=IF(OR(" & latC & "="""" ," & lonC & "=""""),""""," & _
-        "IF(" & NR_STATE & "=""""," & ph & ",HYPERLINK(" & urlExpr & ",""Open"")))"
+    Dim ph As String, phCell As String
+    If ProductIsInspector() Then
+        ph = ExcelStr("Set State (Exports & other tools)")
+    Else
+        ph = "HYPERLINK(" & ExcelStr("#" & NR_STATE) & "," & ExcelStr("Set State " & ChrW$(8594)) & ")"
+    End If
+    ' First data row only; every other row blank when State is blank.
+    phCell = "IF(ROW()=" & SITES_FIRST_DATA_ROW & "," & ph & ","""")"
+    NfcLinkFormula = "=IF(OR(" & latC & "=""""," & lonC & "=""""),""""," & _
+        "IF(" & NR_STATE & "=""""," & phCell & ",HYPERLINK(" & urlExpr & ",""Open"")))"
 End Function
 
 ' AGOL NFC Layer column (COL_NFCAGOL): the state functional-class layer in
