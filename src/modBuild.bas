@@ -1025,16 +1025,16 @@ Private Sub ApplyProductColumns(ByVal ws As Worksheet)
     ' surface in the Federal Aid Status column, so nothing is lost by hiding it.
     ws.Columns(COL_GEOCODE).Hidden = True      ' L
 
-    ' Photo links (PR #37): Google Maps, Bing and the FEMA Viewer are hidden
-    ' by default in BOTH products - the FEMA pin now lives in the AGOL
-    ' column's default "FEMA AGOL Map Viewer" link, and Street View stays as
-    ' the visible photo link. Google Earth keeps its per-product split
-    ' (inspector hidden, standard shown).
+    ' Photo links (PR #37, per-column split revised 2026-07-15 per user):
+    ' Google Maps, Bing and the FEMA Viewer are hidden by default in BOTH
+    ' products - the FEMA pin lives in the AGOL column's default "FEMA AGOL
+    ' Map Viewer" link. Street View and Google Earth are the two visible
+    ' photo links in BOTH products (Google Earth used to be inspector-hidden).
     ws.Columns(COL_GMAP).Hidden = True
     ws.Columns(COL_BING).Hidden = True
     ws.Columns(COL_FEMAVIEW).Hidden = True
     ws.Columns(COL_STREETVIEW).Hidden = False
-    ws.Columns(COL_GEARTH).Hidden = ProductIsInspector()
+    ws.Columns(COL_GEARTH).Hidden = False
 
     ' Auto-reviewer output columns start hidden (and, on the inspector, so do
     ' the two NFC map-link columns - they only mean something once a row has a

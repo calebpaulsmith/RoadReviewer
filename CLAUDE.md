@@ -907,8 +907,11 @@ src/                                    Shared VBA source (importable .bas modul
                                           KML export, output-folder resolution
   modMapFetch.bas                       Fetch Imagery — auto-download a site-centered aerial
                                           per map page (Esri World Imagery /export or a pasted
-                                          ArcGIS MapServer), center pin, attribution, re-run
+                                          ArcGIS MapServer), yellow pushpin, attribution, re-run
                                           failed (§7e)
+  modPdf.bas                            direct PDF writer for the Location Map export (§7g) —
+                                          JPEG pages + vector stamp/pin/attribution; bypasses
+                                          Excel's (machine-dependently broken) print renderer
   modExport.bas                         Sites table → CSV with resolved link URLs, product-
                                           filtered columns (F10)
 build/                                  Local assembly + verification scripts (not for end users)
@@ -932,6 +935,8 @@ build/                                  Local assembly + verification scripts (n
   verify-imagery.ps1                    §7e — Fetch Imagery end-to-end: 3 sites, failure path,
                                           re-run-failed, imagery-URL override, PDF checked with
                                           PyMuPDF (page count, attribution text, pixels, pin)
+  verify-screenshot-pdf.ps1             §7g — manual screenshot flow + exact PDF block geometry
+                                          (760x568 on every page), incl. a sheet-sabotage leg
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
                                           for reference (not version-controlled)
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
@@ -1077,25 +1082,29 @@ job values — safe to re-run. The header band (rows 1..`MAP_HEADER_ROWS`, short
 rows; pages start at `MAP_FIRST_PAGE_ROW`; PrintArea starts there so the band
 never prints) holds:
 
-- the 3-step hero ribbon (reworked in PR #35, §7e): **1 Prepare Pages →
-  2 Fetch Imagery → 3 Export PDF**, with a ghost "↻ Re-run failed imagery"
-  under step 2 and, below the ribbon, the labeled **manual alternative**
-  (Export to KML + Insert Images — the old Google Earth screenshot flow,
-  kept as an option per user direction, just no longer the hero);
+- the ONE-CLICK hero (2026-07-16, superseding PR #35's 3-step ribbon per
+  user direction "make the three buttons a single button"): **Create Map
+  Pages PDF** = `CreateMapPagesPdf`, which chains `PreparePagesCore` →
+  `FetchImageryCore` → `ExportMapPdfCore` with a single summary MsgBox.
+  **Download FIRMettes** sits beside it as the other primary deliverable.
+  Everything else lives behind a collapsed **"Advanced options ▸"** ghost
+  toggle (`ToggleMapAdvanced`; state in the toggle shape's AlternativeText,
+  respected by `SetMapEditControlsVisible` when it restores controls after an
+  export): the individual steps (1 Prepare Pages / 2 Fetch Imagery / 3 Export
+  PDF), ghost "↻ Re-run failed imagery" / "↻ Re-stamp pages" / "↻ Re-run
+  failed FIRMettes", and the labeled **manual alternative** (Export to KML +
+  Insert Images — the Google Earth screenshot flow). Advanced shapes are
+  named `MapCtrl_Adv*` and ship hidden;
 - the job block: WO / DI / Disaster (bare number, e.g. 4882) / **State**
   (inspector only; drives classification AND the filename tag) / Applicant /
   Output Folder (+ Browse) / **Imagery URL (optional, PR #35)** — these carry
   the `JobWO`/`JobDI`/`JobDisaster`/
   `JobState`/`JobApplicant`/`JobOutputFolder`/`JobImagerySvc` named ranges on the inspector
   (standard keeps State/Output Folder/AGOL/buffer on Start Here; its Map Pages
-  shows a read-only Output Folder mirror so the name isn't defined twice);
-- a **live filename preview** (`="File name:  "&FirmettePreview()`, volatile);
-- the ghost "↻ Re-stamp pages" button → `UpdateMapStamps`. Stamps are static
-  text baked at page creation (each stamp remembers its Sites row in the
-  shape's AlternativeText); filling the job boxes BEFORE Prepare stamps
-  correctly with no extra click — Re-stamp exists only for edits made after
-  pages exist, hence demoted out of the numbered flow;
-- the FIRMettes block (Download / Re-run Failed).
+  shows a read-only Output Folder mirror so the name isn't defined twice).
+  Band constants moved for the new layout: `MAP_HEADER_ROWS` 20→22,
+  `MAP_JOB_FIRST_ROW` 11→14;
+- a **live filename preview** (`="File name:  "&FirmettePreview()`, volatile).
 
 ### Shared file-name convention (modUtil)
 
@@ -1119,24 +1128,30 @@ longer silently means Michigan. The State dropdown lists all six wired states
 (`STATE_LIST = "WI,IN,MI,MN,IL,OH"`); the ACUB-only path for typed
 out-of-region states still works.
 
-### Hard-won operational rules (cost real corruption this session)
+### Hard-won operational rules (cost real corruption TWICE)
 
-- **Verifiers must NEVER save the committed workbook.** All of them used to
-  end `$wb.Save(); $wb.Close($true)` — after Map Pages became permanent, the
-  ones that deleted it broke `JobWO`→`#REF!` in the committed file. Every
-  verifier now closes with `Close($false)`; verify-skeleton reopens READONLY
-  for its write-cells phase (in-memory edits work fine readonly).
-- **OneDrive AutoSave persists macro effects into any workbook opened
-  read-write.** Automated tests must run on a COPY of the built workbook (see
-  the temp-copy pattern in the session scripts), or open readonly.
+- **Verifiers must NEVER open the committed workbook read-write. Period.**
+  `Close($false)` is NOT enough — OneDrive AutoSave persists macro side
+  effects the moment they happen. This bit twice: first the verifiers that
+  ended `$wb.Save()`, then AGAIN on 2026-07-16 when verify-firmette-maps
+  (temp-copy rule not yet applied to it) deleted the permanent Map Pages
+  sheet as "cleanup" and AutoSave synced `JobWO`→`#REF!#REF!` into the
+  committed inspector file. Every verifier that runs macros now COPIES the
+  workbook to %TEMP% first; verify-skeleton (inspection only) opens READONLY.
+  A corrupted committed workbook is repaired by a plain rebuild — the .xlsm
+  is fully generated from `src/`.
+- **Never delete the Map Pages sheet** (in a verifier or anywhere): it is
+  permanent (§7d) and carries the JobWO/JobDI/... named ranges.
 
 ## 7e. Fetch Imagery — automatic aerial download for Map Pages (PR #35, 2026-07-15)
 
 Map Pages no longer needs manual screenshots as its primary flow. The ribbon
-hero is **1 Prepare Pages → 2 Fetch Imagery → 3 Export PDF**; the Google Earth
-screenshot path (Export to KML + Insert Images) is preserved below it as the
-labeled "Manual alternative" (user direction: keep it as an option, not the
-hero). The **PR #34 workbooks are archived byte-exact** in
+hero was **1 Prepare Pages → 2 Fetch Imagery → 3 Export PDF** — since
+2026-07-16 those three are chained behind the single **Create Map Pages PDF**
+button and live individually under "Advanced options" (§7d/§7g); the Google
+Earth screenshot path (Export to KML + Insert Images) is preserved there as
+the labeled "Manual alternative" (user direction: keep it as an option, not
+the hero). The **PR #34 workbooks are archived byte-exact** in
 `archive/pr34-manual-screenshots/`.
 
 **How it works (`modMapFetch.bas`):** for every map page that references a
@@ -1205,8 +1220,8 @@ Fetch (2 placed, 1 Failed, batch continues) → sentinel + re-run-failed (only
 the failed row retried) → imagery-URL override re-fetch (World_Street_Map,
 attribution switches) → Export PDF → PyMuPDF asserts page count == 3,
 attribution + stamp text on every page, ~90% non-white imagery coverage, and
-red pin pixels at page center (per §9.8: rendered pixels, never
-`get_image_rects`). Known risk (stated in the commit): reachability of
+yellow pushpin pixels just above page center (per §9.8: rendered pixels,
+never `get_image_rects`). Known risk (stated in the commit): reachability of
 `services.arcgisonline.com` from a hardened FEMA laptop is untested.
 
 ## 7f. UX pass: naming, output folder, columns & links (PR #37, 2026-07-15)
@@ -1251,6 +1266,65 @@ DRTEST filenames) and the whole §9.2 suite passes on the rebuilt workbooks.
 7. **`docs/Region V Test Coordinates.xlsx`** — the 19 live-verified test
    points for all six states (coords + expected verdict/class/ACUB +
    sources), for hand smoke-testing without digging through CLAUDE.md.
+
+## 7g. Direct PDF export + one-click Map Pages (2026-07-16)
+
+Driven by the user's report that a real Location Map PDF had the screenshots
+"outside the print area again". Four changes shipped together; the first is
+the important one.
+
+### 1. The Location Map PDF is now WRITTEN DIRECTLY (`modPdf.bas`) — Excel's print renderer is broken on real machines
+
+**The discovery (measure output with PyMuPDF, never trust "looks close").**
+On the dev laptop, `ExportAsFixedFormat` renders the whole page **vertically
+stretched ~7%** (and ~±2% horizontally) while paginating with nominal sizes.
+Proven minimal: a bare 100×100 pt square on a *fresh workbook* prints as
+97.9×105.1 pt; a 405-pt block of 17-pt rows prints 434.9 pt tall. It affects
+cells AND shapes, Brother driver AND Microsoft Print to PDF, interactive AND
+headless COM. So every map image printed ~760×606 instead of 760×568,
+bleeding to the page edge — the §9.8 work calibrated *pagination* (which is
+correct) but the *render* scale was invisible until measured. Two secondary
+bugs found on the way and also fixed, though neither was sufficient alone:
+`PictureFormat.Crop` metadata is IGNORED by the PDF exporter (the full
+uncropped bitmap prints — so crops are now baked into the pixels via WIA in
+`PlaceImageOnPage`/`CropImageFileToAspect`), and `xlMoveAndSize` anchoring
+let row-height drift stretch pictures (now `xlMove` + an export-time
+re-snap: `NormalizeMapLayoutForPrint` → `SnapShapesToPages`).
+
+**The fix:** `ExportMapPdfCore` first calls `modPdf.BuildMapPdfDirect`,
+which writes the PDF byte-by-byte: PDF 1.4, one JPEG per page (PNG→JPEG via
+WIA, quality 88; JPEG passes through as `/DCTDecode`) cover-cropped into the
+760×568 block by a clip path, the stamp + attribution as REAL vector text
+(base-14 Helvetica/Helvetica-Bold, WinAnsi — searchable, crisper than
+printing), and the site pushpin as vector art. No printer, no page breaks,
+no driver margins, no DPI — identical output on every machine.
+`verify-screenshot-pdf.ps1` asserts the imagery lands at exactly
+(17,23)-(776,589) on every page. The §9.8 print pipeline survives as the
+FALLBACK (WIA unavailable, or a page's image source file missing) — the
+image source path is remembered in each picture's AlternativeText
+(`TagImageSource`; the fetch flow points it at the durable `maps\` copy).
+Pages with no image (placeholder state) render as white + stamp.
+
+### 2. One-click hero + Advanced options (§7d has the layout)
+
+"Create Map Pages PDF" (`CreateMapPagesPdf`) chains
+`PreparePagesCore → FetchImageryCore → ExportMapPdfCore` (the old public
+subs are thin wrappers over these cores and remain as the Advanced-options
+step buttons). Everything non-primary is collapsed behind "Advanced
+options ▸" per user direction — the band shows exactly two green buttons
+(Create Map Pages PDF, Download FIRMettes) plus the job boxes.
+
+### 3. Yellow Google Earth-style pushpin
+
+`modMapFetch.AddSitePin` now builds a grouped vector pushpin (grey needle +
+yellow ball + glint) whose **tip** sits exactly on the site; the old red dot
+is gone (user direction). Convention: the pin group's bottom-center IS the
+site point — `SnapShapesToPages` and `modPdf.PushpinOps` both rely on it.
+
+### 4. Sites photo links (per user): Street View AND Google Earth visible in BOTH products
+
+Google Maps (23), Bing (25), FEMA Viewer (27) stay hidden everywhere; Google
+Earth (26) lost its inspector-hidden split.
 
 ## 8. Design decisions (resolved) and remaining open questions
 
@@ -1388,6 +1462,7 @@ product has no FIRMette buttons or WO/DI named ranges).
 | `verify-rerun-and-state.ps1` | §5.7 + §5.8 — blank State refuses ("Failed - no State selected"); typed TN gates NFC; MN classifies for real; ReRunFailedRows only retries `Failed - ` rows | standard (or either) | MDOT + MnDOT + NTAD |
 | `verify-firmette-maps.ps1` | Inspector workflow 3 — DownloadFirmettes + PrepareMapPages + ExportCombinedMapPdf on one Kalamazoo site | inspector | FEMA Print FIRMette GP |
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
+| `verify-screenshot-pdf.ps1` | §7g — the manual screenshot flow end-to-end with 6 synthetic GE-aspect images (Prepare → Insert → Export), PyMuPDF asserts the imagery fills EXACTLY the 760×568 block on every page and the right image is on the right page; then sabotages the sheet geometry (rows 142→152, a picture displaced/stretched) and asserts the re-export is still exact | inspector | no |
 | `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
 
 Run the whole suite from a clean state:
@@ -1637,6 +1712,13 @@ everywhere:
   FIRMette GP service.
 
 ### 9.8 Map-page PDF export — Excel printable-area geometry (2026-07-14)
+
+> **2026-07-16 — this whole pipeline is now the FALLBACK.** The Location Map
+> PDF is written directly by `modPdf.bas` (§7g) because Excel's print
+> RENDERER (as distinct from its paginator, which everything below concerns)
+> was measured drawing the whole page vertically stretched ~7% on a real
+> machine — no geometry below can fix that. Everything below stays true and
+> load-bearing for the fallback path (WIA missing / image source file gone).
 
 The "40 pages for 10 sites" / "images in slivers" / "giant whitespace" family
 of bugs all trace to ONE fact, plus a stack of Excel quirks discovered while

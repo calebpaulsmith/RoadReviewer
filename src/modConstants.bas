@@ -372,7 +372,7 @@ Public Const MAP_ATTR_PREFIX As String = "MapAttr_Page_"
 ' and page 1 starts at MAP_FIRST_PAGE_ROW. The pages' print area starts there
 ' too, so the header never prints. Buttons are absolute-positioned shapes over
 ' this band, so they're free of the tall page-row heights.
-Public Const MAP_HEADER_ROWS As Long = 20
+Public Const MAP_HEADER_ROWS As Long = 22
 Public Const MAP_FIRST_PAGE_ROW As Long = MAP_HEADER_ROWS + 1
 Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
 ' Job-block cells inside that band. Labels merge A:B, values merge C:F (the page
@@ -380,9 +380,10 @@ Public Const MAP_HEADER_ROW_HEIGHT As Double = 17
 Public Const MAP_JOB_LABEL_COL As Long = 1      ' A (merged A:B)
 Public Const MAP_JOB_VALUE_COL As Long = 3      ' C (merged C:F)
 Public Const MAP_JOB_VALUE_LAST_COL As Long = 6 ' F
-' The job block sits under the workflow ribbon + the manual-alternative line
-' (which together occupy roughly rows 3-9 of the band).
-Public Const MAP_JOB_FIRST_ROW As Long = 11     ' WO # ... Output Folder run 11..16
+' The job block sits under the one-click hero button + the collapsed Advanced
+' section (which together occupy roughly rows 1-12 of the band; the "Job info"
+' label sits on row 13).
+Public Const MAP_JOB_FIRST_ROW As Long = 14     ' WO # ... Imagery URL run 14..20
 
 ' Returns the FHWA functional-class label for a bare FHWA 1-7 code. MDOT
 ' (layer 353, LrseFunctionalSystem domain), Indiana (LRSE_Functional_Class,

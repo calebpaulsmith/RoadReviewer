@@ -427,15 +427,33 @@ Public Function MapPageCount(ByVal wsMap As Worksheet) As Long
     MapPageCount = n
 End Function
 
+' Advanced-options step 1 (also runnable on its own). The one-click
+' CreateMapPagesPdf chains PreparePagesCore -> FetchImageryCore ->
+' ExportMapPdfCore with a single summary message at the end.
 Public Sub PrepareMapPages()
+    Dim pages As Long
+    pages = PreparePagesCore()
+    If pages > 0 And Not gHeadless Then
+        MsgBox "Created " & pages & " map page(s) on the '" & SH_MAPPAGES & "' sheet." & vbCrLf & vbCrLf & _
+            "Next steps (Advanced options):" & vbCrLf & _
+            "2. Click 'Fetch Imagery' - an aerial image is downloaded and placed on every page" & vbCrLf & _
+            "   automatically (or use the manual Google Earth screenshot buttons instead)." & vbCrLf & _
+            "3. Click 'Export PDF' when done.", _
+            vbInformation, "Map Pages Ready"
+    End If
+End Sub
+
+' Builds one page per Sites row with valid coordinates. Returns the page count
+' (0 when there was nothing to do or the build failed non-headless).
+Public Function PreparePagesCore() As Long
     Dim wsSites As Worksheet, wsMap As Worksheet, last As Long, r As Long
-    Dim pageIdx As Long, pages As Long
+    Dim pageIdx As Long
 
     Set wsSites = SitesSheet()
     last = SitesLastRow()
     If last < SITES_FIRST_DATA_ROW Then
         If Not gHeadless Then MsgBox "No site rows found.", vbInformation, "Prepare Map Pages"
-        Exit Sub
+        Exit Function
     End If
 
     Application.ScreenUpdating = False
@@ -457,7 +475,7 @@ Public Sub PrepareMapPages()
             pageIdx = pageIdx + 1
         End If
     Next r
-    pages = pageIdx
+    PreparePagesCore = pageIdx
 
     AddMapPageControls wsMap
     SetMapPrintArea wsMap
@@ -466,25 +484,17 @@ Public Sub PrepareMapPages()
     Application.ScreenUpdating = True
     wsMap.Activate
     On Error GoTo 0
-
-    If Not gHeadless Then
-        MsgBox "Created " & pages & " map page(s) on the '" & SH_MAPPAGES & "' sheet." & vbCrLf & vbCrLf & _
-            "Next steps:" & vbCrLf & _
-            "2. Click 'Fetch Imagery' - an aerial image is downloaded and placed on every page" & vbCrLf & _
-            "   automatically (or use the manual Google Earth screenshot buttons instead)." & vbCrLf & _
-            "3. Click 'Export PDF' when done.", _
-            vbInformation, "Map Pages Ready"
-    End If
-    Exit Sub
+    Exit Function
 Fail:
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
+    PreparePagesCore = 0
     If gHeadless Then
         Err.Raise Err.Number, "PrepareMapPages", Err.Description
     Else
         MsgBox "Map page creation failed: " & Err.Description, vbCritical, "Prepare Map Pages"
     End If
-End Sub
+End Function
 
 ' Wipe the pages (shapes + merged grid) WITHOUT touching the header band, the
 ' job inputs or the tools panel.
@@ -521,7 +531,7 @@ Public Sub UpdateMapStamps()
     Dim siteRow As Long, txt As String, n As Long, firstLineLen As Long
 
     If Not SheetExists(SH_MAPPAGES) Then
-        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet yet. Click 'Prepare Map Pages' first.", _
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet yet. Click 'Create Map Pages PDF' first.", _
             vbExclamation, "Update Stamps"
         Exit Sub
     End If
@@ -716,10 +726,13 @@ End Sub
 
 ' Everything actionable in the header band, all shapes (MAP_CTRL_PREFIX named).
 ' Idempotent - safe to call on every EnsureMapPagesSheet / PrepareMapPages.
-' Layout, top to bottom, all ABOVE the print area so none of it prints:
-'   - a horizontal 4-step workflow ribbon (the hero: KML -> Prepare -> Insert -> PDF)
-'   - by the job boxes: a small "Re-stamp pages" ghost button (secondary) + Browse
-'   - a FIRMettes block (Download / Re-run) to the right of the job info
+' Redesigned 2026-07-15 per user direction ("one button; sideline the rest"):
+'   - ONE hero button: "Create Map Pages PDF" (Prepare -> Fetch -> Export)
+'   - "Download FIRMettes" beside it (the other primary deliverable)
+'   - everything else - the individual steps, the re-run/re-stamp refreshers
+'     and the manual Google Earth screenshot flow - lives under a collapsed
+'     "Advanced options" toggle so the default view stays uncluttered.
+' All shapes sit ABOVE the print area so none of it prints.
 Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     Const GREEN As Long = 4563272          ' primary (matches the Start Here "Go")
     Const BLUE As Long = 12419407          ' Browse / secondary action on a field
@@ -754,88 +767,91 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         tbtn.OnAction = "GoToOtherTools"
     End If
 
-    ' ---- the 3-step hero ribbon: Prepare -> Fetch Imagery -> Export PDF ----
-    ' Fetch Imagery (PR #35) downloads a site-centered aerial per page, so the
-    ' default flow needs no screenshots at all. The Google Earth screenshot
-    ' path (KML + Insert Images) stays below as the labeled manual alternative.
-    Const RIB_TOP As Double = 34, BTN_H As Double = 30, BTN_W As Double = 190, GAP As Double = 10
-    Dim x0 As Double
-    x0 = 8
-    MapRibbonStep wsMap, "Prepare", x0 + 0 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "1.  Prepare Pages", "PrepareMapPages", "One page per site. Re-run if you add sites."
-    MapRibbonStep wsMap, "Fetch", x0 + 1 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "2.  Fetch Imagery", "FetchMapImagery", ""
-    MapRibbonStep wsMap, "Export", x0 + 2 * (BTN_W + GAP), RIB_TOP, BTN_W, BTN_H, GREEN, _
-        "3.  Export PDF", "ExportCombinedMapPdf", "Exports Location Maps as a single PDF."
-
-    ' Under the Fetch step: a ghost re-run button (retries only rows whose Map
-    ' Status says "Failed - ...", same model as the FIRMette re-run), then the
-    ' step caption below it.
-    Dim fetchX As Double
-    fetchX = x0 + 1 * (BTN_W + GAP)
-    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, fetchX, RIB_TOP + BTN_H + 2, 140, 15)
-    shp.Name = MAP_CTRL_PREFIX & "FetchRe"
-    shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
-    shp.Line.Visible = msoTrue
-    shp.Line.ForeColor.RGB = RGB(150, 150, 150)
-    shp.Line.Weight = 0.75
-    shp.Shadow.Visible = msoFalse
-    With shp.TextFrame2.TextRange
-        .Text = ChrW$(8635) & " Re-run failed imagery"     ' U+21BB (ChrW$, >255)
-        .Font.Size = 8
+    ' ---- the hero: one click does the whole map flow ----
+    Dim hero As Shape
+    Set hero = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 32, 250, 42)
+    hero.Name = MAP_CTRL_PREFIX & "CreatePdf"
+    hero.Fill.ForeColor.RGB = GREEN
+    hero.Line.Visible = msoFalse
+    hero.Shadow.Visible = msoFalse
+    With hero.TextFrame2.TextRange
+        .Text = "Create Map Pages PDF"
+        .Font.Size = 13
         .Font.Bold = msoTrue
-        .Font.Fill.ForeColor.RGB = RGB(90, 90, 90)
+        .Font.Fill.ForeColor.RGB = vbWhite
         .ParagraphFormat.Alignment = msoAlignCenter
     End With
-    shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
-    shp.OnAction = "ReRunFailedImagery"
-    MapCtrlLabel wsMap, "Fetch_Note", fetchX + 2, RIB_TOP + BTN_H + 20, BTN_W - 2, 26, _
-        "Auto-downloads an aerial image centered on every site (red dot marks the site).", _
-        8, False, RGB(110, 110, 110)
+    hero.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    hero.OnAction = "CreateMapPagesPdf"
+    MapCtrlLabel wsMap, "CreatePdf_Note", 10, 78, 300, 26, _
+        "One click: builds a page for every site, downloads aerial imagery " & _
+        "(a yellow pin marks each site), and saves a combined PDF.", 8, False, RGB(110, 110, 110)
 
-    ' ---- manual alternative: Google Earth screenshots ----
-    Const MAN_TOP As Double = 116
-    MapCtrlLabel wsMap, "ManualLabel", 8, MAN_TOP, 300, 14, _
-        "Manual alternative - Google Earth screenshots:", 9, True, RGB(90, 90, 90)
-    MapRibbonStep wsMap, "KML", 8, MAN_TOP + 16, 130, 20, BLUE, _
-        "Export to KML", "ExportSitesToKML", ""
-    MapRibbonStep wsMap, "Insert", 146, MAN_TOP + 16, 130, 20, BLUE, _
-        "Insert Images", "InsertMapImages", ""
-    MapCtrlLabel wsMap, "ManualNote", 284, MAN_TOP + 12, 250, 34, _
-        "KML opens in Google Earth Desktop - screenshot each site (Win+Shift+S), " & _
-        "save as Site_1, Site_2..., then Insert Images.", 8, False, RGB(110, 110, 110)
+    ' ---- FIRMettes: the other primary deliverable, beside the hero ----
+    MapCtrlLabel wsMap, "FirmLabel", 540, 32, 240, 16, "FIRMettes  (FEMA flood maps)", 11, True, RGB(47, 79, 79)
+    MapRibbonStep wsMap, "Firm", 540, 50, 180, 28, GREEN, _
+        "Download FIRMettes", "DownloadFirmettes", "One FEMA FIRMette PDF per site."
 
-    ' ---- by the job boxes ----
-    ' Re-stamp: a GHOST button (white fill, grey outline+text) so it reads as a
-    ' secondary refresh, distinct from the green steps and the blue Browse. It
-    ' is NOT part of the numbered flow: filling the boxes BEFORE Prepare already
-    ' stamps correctly; this is only for edits made AFTER the pages exist.
-    Dim reTop As Double, reLeft As Double
-    reLeft = wsMap.Cells(MAP_JOB_FIRST_ROW, MAP_JOB_VALUE_LAST_COL + 1).Left + 6
-    reTop = wsMap.Cells(MAP_JOB_FIRST_ROW, 1).Top
-    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, reLeft, reTop, 120, 18)
-    shp.Name = MAP_CTRL_PREFIX & "Restamp"
+    ' ---- Advanced options toggle (collapsed by default) ----
+    ' Expansion state rides in the toggle shape's AlternativeText ("1" = open),
+    ' so SetMapEditControlsVisible can restore the right state after an export.
+    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 112, 150, 17)
+    shp.Name = MAP_CTRL_PREFIX & "AdvToggle"
+    shp.AlternativeText = "0"
     shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
     shp.Line.Visible = msoTrue
     shp.Line.ForeColor.RGB = RGB(150, 150, 150)
     shp.Line.Weight = 0.75
     shp.Shadow.Visible = msoFalse
     With shp.TextFrame2.TextRange
-        .Text = ChrW$(8635) & " Re-stamp pages"     ' U+21BB clockwise arrow (ChrW$, not Chr$: >255)
+        .Text = "Advanced options  " & ChrW$(9656)          ' U+25B8 right triangle
         .Font.Size = 9
         .Font.Bold = msoTrue
         .Font.Fill.ForeColor.RGB = RGB(90, 90, 90)
         .ParagraphFormat.Alignment = msoAlignCenter
     End With
     shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
-    shp.OnAction = "UpdateMapStamps"
-    MapCtrlLabel wsMap, "RestampNote", reLeft, reTop + 20, 200, 28, _
-        "only after editing the job info once pages exist", 8, False, RGB(140, 140, 140)
+    shp.OnAction = "ToggleMapAdvanced"
+
+    ' ---- Advanced content (every shape named MapCtrl_Adv*; hidden by default) ----
+    ' Everything fits above y=204 (= the top of the "Job info" label row 13).
+    ' Row 1: the three steps the hero chains, runnable one at a time, plus the
+    ' ghost refresh/re-run actions.
+    MapCtrlLabel wsMap, "Adv_StepsLabel", 8, 134, 250, 12, _
+        "Run the steps one at a time:", 8, True, RGB(90, 90, 90)
+    MapRibbonStep wsMap, "Adv_Prepare", 8, 147, 118, 18, BLUE, _
+        "1. Prepare Pages", "PrepareMapPages", ""
+    MapRibbonStep wsMap, "Adv_Fetch", 132, 147, 118, 18, BLUE, _
+        "2. Fetch Imagery", "FetchMapImagery", ""
+    MapRibbonStep wsMap, "Adv_Export", 256, 147, 118, 18, BLUE, _
+        "3. Export PDF", "ExportCombinedMapPdf", ""
+    MapGhostButton wsMap, "Adv_FetchRe", 388, 147, 138, 18, _
+        ChrW$(8635) & " Re-run failed imagery", "ReRunFailedImagery"
+    MapGhostButton wsMap, "Adv_Restamp", 532, 147, 108, 18, _
+        ChrW$(8635) & " Re-stamp pages", "UpdateMapStamps"
+    MapGhostButton wsMap, "Adv_FirmRe", 646, 147, 142, 18, _
+        ChrW$(8635) & " Re-run failed FIRMettes", "ReRunFailedFirmettes"
+
+    ' Row 2: the manual Google Earth screenshot flow.
+    MapCtrlLabel wsMap, "Adv_ManualLabel", 8, 169, 300, 12, _
+        "Manual alternative - Google Earth screenshots:", 8, True, RGB(90, 90, 90)
+    MapRibbonStep wsMap, "Adv_KML", 8, 182, 118, 18, BLUE, _
+        "Export to KML", "ExportSitesToKML", ""
+    MapRibbonStep wsMap, "Adv_Insert", 132, 182, 118, 18, BLUE, _
+        "Insert Images", "InsertMapImages", ""
+    MapCtrlLabel wsMap, "Adv_ManualNote", 256, 180, 400, 22, _
+        "KML opens in Google Earth Desktop - screenshot each site (Win+Shift+S), save as " & _
+        "Site_1, Site_2..., then Insert Images. 'Re-stamp pages' refreshes stamps after job-info edits.", _
+        8, False, RGB(110, 110, 110)
+
+    ' ---- by the job boxes ----
+    Dim reLeft As Double
+    reLeft = wsMap.Cells(MAP_JOB_FIRST_ROW, MAP_JOB_VALUE_LAST_COL + 1).Left + 6
 
     ' Browse next to the Output Folder value - inspector only (Output Folder is
     ' canonical on MapPages there). The standard product browses on Start Here.
     If ProductIsInspector() Then
-        ' Output Folder is the last job field: WO,DI,Disaster,State,Applicant,
+        ' Output Folder is the sixth job field: WO,DI,Disaster,State,Applicant,
         ' Output Folder = MAP_JOB_FIRST_ROW+5 on the inspector.
         Dim brTop As Double
         brTop = wsMap.Cells(MAP_JOB_FIRST_ROW + 5, 1).Top + 1
@@ -863,14 +879,69 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         "Blank = Esri World Imagery. Paste another ArcGIS MapServer URL to fetch from it.", _
         8, False, RGB(120, 120, 120)
 
-    ' ---- FIRMettes block, to the right of the job info ----
-    Dim fx As Double, fy As Double
-    fx = 540: fy = wsMap.Cells(MAP_JOB_FIRST_ROW - 1, 1).Top
-    MapCtrlLabel wsMap, "FirmLabel", fx, fy, 240, 18, "FIRMettes  (FEMA flood maps)", 11, True, RGB(47, 79, 79)
-    MapRibbonStep wsMap, "Firm", fx, fy + 22, 180, 28, GREEN, _
-        "Download FIRMettes", "DownloadFirmettes", "One FEMA FIRMette PDF per site."
-    MapRibbonStep wsMap, "FirmRe", fx, fy + 74, 180, 24, BLUE, _
-        "Re-run Failed FIRMettes", "ReRunFailedFirmettes", ""
+    ' Collapse the advanced shapes to the toggle's remembered state (fresh
+    ' controls default to "0" = collapsed).
+    ApplyAdvancedVisibility wsMap
+End Sub
+
+' Ghost button style: white fill, grey outline + text. Reads as a secondary
+' refresh action, distinct from the green hero and the blue steps.
+Private Sub MapGhostButton(ByVal wsMap As Worksheet, ByVal key As String, _
+        ByVal leftPt As Double, ByVal topPt As Double, ByVal w As Double, ByVal h As Double, _
+        ByVal caption As String, ByVal macroName As String)
+    Dim shp As Shape
+    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, leftPt, topPt, w, h)
+    shp.Name = MAP_CTRL_PREFIX & key
+    shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
+    shp.Line.Visible = msoTrue
+    shp.Line.ForeColor.RGB = RGB(150, 150, 150)
+    shp.Line.Weight = 0.75
+    shp.Shadow.Visible = msoFalse
+    With shp.TextFrame2.TextRange
+        .Text = caption
+        .Font.Size = 8
+        .Font.Bold = msoTrue
+        .Font.Fill.ForeColor.RGB = RGB(90, 90, 90)
+        .ParagraphFormat.Alignment = msoAlignCenter
+    End With
+    shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    shp.OnAction = macroName
+End Sub
+
+' Button: the "Advanced options" toggle - shows/hides every MapCtrl_Adv* shape.
+Public Sub ToggleMapAdvanced()
+    If Not SheetExists(SH_MAPPAGES) Then Exit Sub
+    Dim wsMap As Worksheet, tog As Shape
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    On Error Resume Next
+    Set tog = wsMap.Shapes(MAP_CTRL_PREFIX & "AdvToggle")
+    On Error GoTo 0
+    If tog Is Nothing Then Exit Sub
+    tog.AlternativeText = IIf(tog.AlternativeText = "1", "0", "1")
+    ApplyAdvancedVisibility wsMap
+End Sub
+
+Private Function AdvancedExpanded(ByVal wsMap As Worksheet) As Boolean
+    On Error Resume Next
+    AdvancedExpanded = (wsMap.Shapes(MAP_CTRL_PREFIX & "AdvToggle").AlternativeText = "1")
+    On Error GoTo 0
+End Function
+
+' Show/hide the MapCtrl_Adv* shapes per the toggle's state and refresh the
+' toggle caption's expand/collapse arrow.
+Private Sub ApplyAdvancedVisibility(ByVal wsMap As Worksheet)
+    Dim expanded As Boolean, shp As Shape
+    Const ADV As String = "MapCtrl_Adv"
+    expanded = AdvancedExpanded(wsMap)
+    For Each shp In wsMap.Shapes
+        If Left$(shp.Name, Len(ADV)) = ADV And shp.Name <> MAP_CTRL_PREFIX & "AdvToggle" Then
+            shp.Visible = IIf(expanded, msoTrue, msoFalse)
+        End If
+    Next shp
+    On Error Resume Next
+    wsMap.Shapes(MAP_CTRL_PREFIX & "AdvToggle").TextFrame2.TextRange.Text = _
+        "Advanced options  " & IIf(expanded, ChrW$(9662), ChrW$(9656))
+    On Error GoTo 0
 End Sub
 
 ' A non-interactive text label in the header band.
@@ -1038,6 +1109,7 @@ Private Sub CreateMapPage(ByVal wsMap As Worksheet, ByVal wsSites As Worksheet, 
         5, pageTopPts + 5, MAP_TEXTBOX_WIDTH, MAP_TEXTBOX_HEIGHT)
     With txtBox
         .Name = "Textbox_Page_" & CStr(pageIdx + 1)
+        .Placement = xlMove          ' never let row drift resize a shape (§9.8)
         ' Remember which Sites row this page came from, so UpdateMapStamps can
         ' re-derive the stamp after the job info changes. Blank pages get "0".
         .AlternativeText = CStr(IIf(wsSites Is Nothing, 0, siteRow))
@@ -1089,7 +1161,7 @@ Private Sub AddPickButton(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
     With btn
         .Name = MAP_PICKBTN_PREFIX & CStr(pageIdx + 1)
         .OnAction = "PickImageForPage"
-        .Placement = xlMoveAndSize
+        .Placement = xlMove          ' never let row drift resize a shape (§9.8)
         With .Fill
             .Visible = msoTrue
             .ForeColor.RGB = RGB(0, 112, 192)
@@ -1117,6 +1189,9 @@ Public Sub SetMapEditControlsVisible(ByVal wsMap As Worksheet, ByVal vis As Bool
             shp.Visible = vv
         End If
     Next shp
+    ' Restoring after an export must respect the Advanced section's collapsed
+    ' state - otherwise every export would pop the advanced controls open.
+    If vis Then ApplyAdvancedVisibility wsMap
 End Sub
 
 ' Build the WO #... / Applicant / Site N / lat,lon / Cat ... / desc textbox stamp.
@@ -1181,13 +1256,51 @@ Private Function BuildMapTextboxString(ByVal wsSites As Worksheet, ByVal r As Lo
     If Len(workComp) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Work: " & workComp
 End Function
 
+' The ONE-CLICK hero (user request 2026-07-15): Prepare Pages -> Fetch
+' Imagery -> Export PDF as a single button, one summary message at the end.
+' The individual steps stay available under "Advanced options" for partial
+' re-runs and for the manual Google Earth screenshot flow.
+Public Sub CreateMapPagesPdf()
+    Dim pages As Long, ok As Long, failed As Long, pdfPath As String
+
+    pages = PreparePagesCore()
+    If pages < 1 Then Exit Sub          ' no rows / build error - already reported
+
+    FetchImageryCore False, ok, failed
+
+    pdfPath = ExportMapPdfCore()
+    If Len(pdfPath) = 0 Then Exit Sub   ' export error - already reported
+
+    If Not gHeadless Then
+        Dim msg As String
+        msg = "Map Pages PDF created." & vbCrLf & vbCrLf & _
+              "Pages: " & pages & vbCrLf & _
+              "Aerial imagery placed: " & ok & IIf(failed > 0, "   (failed: " & failed & ")", "") & _
+              vbCrLf & vbCrLf & "Saved to:" & vbCrLf & pdfPath
+        If failed > 0 Then msg = msg & vbCrLf & vbCrLf & _
+            "Some imagery could not be downloaded (see the Map Status column on Sites). " & _
+            "Fix the rows, then use Advanced options: 'Re-run failed imagery', then 'Export PDF'."
+        MsgBox msg, IIf(failed = 0, vbInformation, vbExclamation), "Create Map Pages PDF"
+    End If
+End Sub
+
+' Advanced-options step 3 (also runnable on its own).
 Public Sub ExportCombinedMapPdf()
+    Dim pdfPath As String
+    pdfPath = ExportMapPdfCore()
+    If Len(pdfPath) > 0 And Not gHeadless Then
+        MsgBox "Combined map PDF exported:" & vbCrLf & pdfPath, vbInformation, "Export Map PDF"
+    End If
+End Sub
+
+' Exports the map pages to "<stem> - Location Map.pdf". Returns the full path,
+' or "" when preconditions failed / the export errored non-headless.
+Public Function ExportMapPdfCore() As String
     Dim wsMap As Worksheet, folder As String, fileName As String, fullPath As String
-    Dim disaster As String, wo As String, di As String
 
     If Not SheetExists(SH_MAPPAGES) Then
-        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click 'Prepare Map Pages' first.", vbExclamation, "Export Map PDF"
-        Exit Sub
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click 'Create Map Pages PDF' first.", vbExclamation, "Export Map PDF"
+        Exit Function
     End If
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
     ShowMapPages
@@ -1195,15 +1308,31 @@ Public Sub ExportCombinedMapPdf()
     folder = ResolveOutputFolder()
     If Not EnsureFolderExists(folder) Then
         If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Export Map PDF"
-        Exit Sub
+        Exit Function
     End If
     fileName = CleanFileName(JobFileStem() & " - Location Map.pdf")
     fullPath = folder & fileName
 
     ' Bring text boxes to the front in case the inspector's pasted screenshot covered them.
     EnsureTextboxesOnTop wsMap
-    ' Hide the on-sheet editing aids (per-page "Select photo" buttons + the
-    ' off-grid controls) so they don't print.
+    ' Keep the on-screen geometry canonical (self-healing for drifted sheets;
+    ' also what the print fallback below relies on).
+    NormalizeMapLayoutForPrint wsMap
+
+    ' PRIMARY: write the PDF directly from the page shapes + image files
+    ' (modPdf). No printer driver involved, so the machine-specific
+    ' print-render distortion (see modPdf's header) can never touch it.
+    Dim directErr As String
+    If BuildMapPdfDirect(wsMap, fullPath, directErr) Then
+        SurfaceFolder folder
+        ExportMapPdfCore = fullPath
+        Exit Function
+    End If
+    TraceLine "Direct PDF export unavailable (" & directErr & ") - using the print-driver fallback"
+
+    ' FALLBACK: the §9.8 print pipeline. Hide the on-sheet editing aids
+    ' (per-page "Select photo" buttons + the off-grid controls) so they
+    ' don't print.
     SetMapEditControlsVisible wsMap, False
 
     ' Export through "Microsoft Print to PDF": Excel paginates against the
@@ -1223,6 +1352,13 @@ Public Sub ExportCombinedMapPdf()
     borderless = SwitchToPdfPrinter()
     On Error Resume Next
     ConfigureMapPageSetup wsMap
+    ' Self-healing geometry (2026-07-15): re-assert row heights + manual page
+    ' breaks from the constants and re-pin every printed shape to its page
+    ' block. A sheet whose rows drifted (older-build layout, hand edits,
+    ' OneDrive AutoSave persisting a half-migrated state) used to print the
+    ' images stretched past the page blocks - the "screenshots outside the
+    ' print area" bug. Now the export normalizes everything first.
+    NormalizeMapLayoutForPrint wsMap
     SetMapPrintArea wsMap
     If Not borderless Then
         With wsMap.PageSetup
@@ -1241,14 +1377,41 @@ Public Sub ExportCombinedMapPdf()
     RestorePrinter savedPrinter
     SetMapEditControlsVisible wsMap, True
     SurfaceFolder folder
-
-    If Not gHeadless Then MsgBox "Combined map PDF exported:" & vbCrLf & fullPath, vbInformation, "Export Map PDF"
-    Exit Sub
+    ExportMapPdfCore = fullPath
+    Exit Function
 Fail:
     RestorePrinter savedPrinter
     SetMapEditControlsVisible wsMap, True
+    ExportMapPdfCore = ""
     If gHeadless Then Err.Raise Err.Number, "ExportCombinedMapPdf", Err.Description Else _
         MsgBox "Export failed: " & Err.Description, vbCritical, "Export Map PDF"
+End Function
+
+' Re-assert the printed geometry from the current constants: header + page row
+' heights, one manual page break after each page block, and every printed
+' shape snapped back onto its block (modMapImage.SnapShapesToPages). Wrapped
+' in On Error Resume Next - hardening must never block an export.
+Private Sub NormalizeMapLayoutForPrint(ByVal wsMap As Worksheet)
+    Dim nPages As Long, r As Long, pageIdx As Long, rowH As Double
+    nPages = MapPageCount(wsMap)
+    If nPages < 1 Then Exit Sub
+
+    On Error Resume Next
+    For r = 1 To MAP_HEADER_ROWS
+        wsMap.Rows(r).RowHeight = MAP_HEADER_ROW_HEIGHT
+    Next r
+    rowH = MAP_PAGE_HEIGHT_PTS / MAP_ROWS_PER_PAGE
+    For r = MAP_FIRST_PAGE_ROW To MAP_FIRST_PAGE_ROW + nPages * MAP_ROWS_PER_PAGE - 1
+        wsMap.Rows(r).RowHeight = rowH
+    Next r
+
+    wsMap.ResetAllPageBreaks
+    For pageIdx = 0 To nPages - 1
+        wsMap.HPageBreaks.Add Before:=wsMap.Rows(MAP_FIRST_PAGE_ROW + (pageIdx + 1) * MAP_ROWS_PER_PAGE)
+    Next pageIdx
+
+    SnapShapesToPages wsMap, nPages
+    On Error GoTo 0
 End Sub
 
 ' Make "Microsoft Print to PDF" the active printer for the export. The reliable

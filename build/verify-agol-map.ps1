@@ -14,11 +14,16 @@ $ErrorActionPreference = 'Stop'
 $XlsmPath = [System.IO.Path]::GetFullPath($XlsmPath)
 if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmPath" }
 
+# NEVER open the committed workbook read-write: OneDrive AutoSave persists
+# macro side effects (§7d). Work on a %TEMP% copy instead.
+$tempXlsm = Join-Path $env:TEMP 'rr-verify-agol-copy.xlsm'
+Copy-Item -LiteralPath $XlsmPath -Destination $tempXlsm -Force
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-  $wb = $excel.Workbooks.Open($XlsmPath)
+  $wb = $excel.Workbooks.Open($tempXlsm)
   $sites = $wb.Worksheets('Sites')
   $sites.Range($sites.Cells(2,1), $sites.Cells(10,27)).ClearContents()
   $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear

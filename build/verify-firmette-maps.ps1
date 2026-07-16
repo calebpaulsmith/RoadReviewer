@@ -22,11 +22,18 @@ if (Test-Path -LiteralPath $outFolder) {
   New-Item -ItemType Directory -Path $outFolder -Force | Out-Null
 }
 
+# NEVER open the committed workbook read-write: OneDrive AutoSave persists
+# macro side effects (§7d) - this script's old sheet-delete "cleanup" once
+# corrupted the committed file's job named ranges to #REF! that way. Work on
+# a %TEMP% copy instead.
+$tempXlsm = Join-Path $env:TEMP 'rr-verify-w3-copy.xlsm'
+Copy-Item -LiteralPath $XlsmPath -Destination $tempXlsm -Force
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-  $wb = $excel.Workbooks.Open($XlsmPath)
+  $wb = $excel.Workbooks.Open($tempXlsm)
   $sites = $wb.Worksheets('Sites')
 
   # Setup values
@@ -91,19 +98,10 @@ try {
   if ($pdfFiles[0].Length -lt 1000) { throw ("Map PDF suspiciously small: " + $pdfFiles[0].Length + " bytes") }
   Write-Host "  Map PDF export OK" -ForegroundColor Green
 
-  # ---- Cleanup workbook state ----
-  $excel.Run('SetHeadless', $false) | Out-Null
-  $excel.Run('SetTrace', '') | Out-Null
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
-  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
-  # Reset Setup so the user's saved workbook doesn't carry test values
-  $wb.Names('JobWO').RefersToRange.Value2 = ''
-  $wb.Names('JobDI').RefersToRange.Value2 = ''
-  $wb.Names('JobDisaster').RefersToRange.Value2 = ''
-  $wb.Names('JobApplicant').RefersToRange.Value2 = ''
-  $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''
-  $excel.DisplayAlerts = $false
-  $wb.Worksheets('Map Pages').Delete()
+  # No workbook "cleanup" needed: everything ran on a throwaway %TEMP% copy.
+  # (The old cleanup deleted the Map Pages sheet - which is PERMANENT since
+  # §7d and carries the job named ranges - and AutoSave synced that
+  # corruption into the committed file once. Never again.)
   $wb.Close($false)
 
   Write-Host ""

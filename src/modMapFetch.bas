@@ -35,33 +35,55 @@ Private Const IMG_SUBFOLDER As String = "maps\"
 ' ---- entry points ---------------------------------------------------------
 
 Public Sub FetchMapImagery()
-    FetchImageryRun False
+    Dim ok As Long, failed As Long
+    If Not FetchImageryCore(False, ok, failed) Then Exit Sub
+    ShowFetchSummary ok, failed
 End Sub
 
 Public Sub ReRunFailedImagery()
-    FetchImageryRun True
+    Dim ok As Long, failed As Long
+    If Not FetchImageryCore(True, ok, failed) Then Exit Sub
+    ShowFetchSummary ok, failed
+End Sub
+
+Private Sub ShowFetchSummary(ByVal ok As Long, ByVal failed As Long)
+    If gHeadless Then Exit Sub
+    MsgBox "Imagery fetch complete." & vbCrLf & _
+        "Placed: " & ok & vbCrLf & _
+        "Failed: " & failed & vbCrLf & vbCrLf & _
+        "PNG copies: " & ResolveOutputFolder() & IMG_SUBFOLDER & vbCrLf & vbCrLf & _
+        "Each image is centered on the site (the yellow pin marks it). " & _
+        "Prefer Google Earth instead? Use the manual alternative under Advanced options.", _
+        IIf(failed = 0, vbInformation, vbExclamation), "Fetch Imagery"
 End Sub
 
 ' ---- batch driver ----------------------------------------------------------
 
-Private Sub FetchImageryRun(ByVal onlyFailed As Boolean)
+' Downloads + places imagery for every (or just-failed) site page. Returns
+' True when a run actually happened; okOut/failedOut carry the counts. The
+' final summary MsgBox lives in the wrappers so CreateMapPagesPdf can chain
+' this silently and report once at the end.
+Public Function FetchImageryCore(ByVal onlyFailed As Boolean, _
+        ByRef okOut As Long, ByRef failedOut As Long) As Boolean
     Dim wsMap As Worksheet, wsSites As Worksheet
     Dim nPages As Long, pageIdx As Long
     Dim total As Long, processed As Long, ok As Long, failed As Long
 
+    okOut = 0
+    failedOut = 0
     If Not SheetExists(SH_MAPPAGES) Then
-        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click '1. Prepare Pages' first.", _
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click 'Create Map Pages PDF' first.", _
             vbExclamation, "Fetch Imagery"
-        Exit Sub
+        Exit Function
     End If
     Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
     Set wsSites = SitesSheet()
 
     nPages = MapPageCount(wsMap)
     If nPages < 1 Then
-        If Not gHeadless Then MsgBox "No map pages found. Click '1. Prepare Pages' first.", _
+        If Not gHeadless Then MsgBox "No map pages found. Click 'Create Map Pages PDF' first.", _
             vbExclamation, "Fetch Imagery"
-        Exit Sub
+        Exit Function
     End If
     ' Reveal only once there's real work: the compile check no-op-runs this sub
     ' against the COMMITTED workbook, and an unconditional ShowMapPages up top
@@ -82,7 +104,7 @@ Private Sub FetchImageryRun(ByVal onlyFailed As Boolean)
     If total = 0 Then
         If Not gHeadless Then MsgBox IIf(onlyFailed, "No failed imagery rows to re-run.", _
             "No site pages to fetch imagery for."), vbInformation, "Fetch Imagery"
-        Exit Sub
+        Exit Function
     End If
 
     ' Stay on Map Pages with redraw ON: each page is one network round trip,
@@ -114,16 +136,10 @@ NextPage:
     ClearStatus
     If ok > 0 Then SurfaceFolder folder
 
-    If Not gHeadless Then
-        MsgBox "Imagery fetch complete." & vbCrLf & _
-            "Placed: " & ok & vbCrLf & _
-            "Failed: " & failed & vbCrLf & vbCrLf & _
-            "PNG copies: " & mapsFolder & vbCrLf & vbCrLf & _
-            "Each image is centered on the site (the red dot marks it). " & _
-            "Prefer Google Earth instead? Use the manual alternative buttons.", _
-            IIf(failed = 0, vbInformation, vbExclamation), "Fetch Imagery"
-    End If
-End Sub
+    okOut = ok
+    failedOut = failed
+    FetchImageryCore = True
+End Function
 
 ' A page is fetchable when it references a Sites row (blank AddMapPage pages
 ' carry "0" and are skipped). Coordinate validity is deliberately NOT checked
@@ -192,6 +208,9 @@ Private Function FetchOnePage(ByVal wsMap As Worksheet, ByVal wsSites As Workshe
     ' previous pin/attribution for the page, so a re-fetch never stacks shapes.
     RemoveImageOnPage wsMap, pageIdx
     PlaceImageOnPage wsMap, pageIdx, tempPath
+    ' The %TEMP% download gets overwritten by later runs; point the shape's
+    ' remembered source (used by the direct PDF export) at the durable copy.
+    If Len(Dir$(mapsFolder & destName)) > 0 Then TagImageSource wsMap, pageIdx, mapsFolder & destName
     AddSitePin wsMap, pageIdx
     AddAttribution wsMap, pageIdx
     On Error GoTo 0
@@ -279,26 +298,56 @@ End Function
 
 ' ---- printed overlays -------------------------------------------------------
 
-' Small red dot with a white ring at the exact center of the page block = the
-' site itself (it is always the bbox center of the fetched image). Added AFTER
-' the picture, which PlaceImageOnPage sent to back, so it draws on top; the
-' stamp textbox is brought to front at export (EnsureTextboxesOnTop) and never
-' overlaps the center anyway.
+' Google Earth-style yellow pushpin whose needle TIP sits exactly on the site
+' (= the geometric center of the page block; the fetched image is bbox-centered
+' on the site). Built from grouped shapes - a grey needle, a yellow ball head
+' with a darker outline, and a small highlight glint - because no image asset
+' ships with the workbook. Replaced the old red dot per user direction
+' (2026-07-15). The group's bottom-center IS the site point; SnapShapesToPages
+' relies on that convention when it re-pins the group at export time. Added
+' AFTER the picture, which PlaceImageOnPage sent to back, so it draws on top.
 Private Sub AddSitePin(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
-    Const PIN_D As Double = 13
-    Dim cx As Double, cy As Double, shp As Shape
+    Const HEAD_D As Double = 15        ' pushpin head diameter
+    Const NEEDLE_W As Double = 4.5     ' needle width at the head
+    Const NEEDLE_H As Double = 13      ' needle length (head -> tip)
+    Const OVERLAP As Double = 2        ' head overlaps the needle top
+
+    Dim cx As Double, cy As Double
     cx = PageWidthPts(wsMap) / 2#
     cy = PageTopPts(wsMap, pageIdx) + MAP_PAGE_HEIGHT_PTS / 2#
-    Set shp = wsMap.Shapes.AddShape(msoShapeOval, cx - PIN_D / 2#, cy - PIN_D / 2#, PIN_D, PIN_D)
-    With shp
+
+    Dim needle As Shape, head As Shape, glint As Shape, grp As Shape
+
+    ' Needle: downward triangle, tip exactly on the site.
+    Set needle = wsMap.Shapes.AddShape(msoShapeIsoscelesTriangle, _
+        cx - NEEDLE_W / 2#, cy - NEEDLE_H, NEEDLE_W, NEEDLE_H)
+    needle.Rotation = 180
+    needle.Fill.ForeColor.RGB = RGB(110, 110, 110)
+    needle.Line.Visible = msoTrue
+    needle.Line.ForeColor.RGB = RGB(70, 70, 70)
+    needle.Line.Weight = 0.5
+    needle.Shadow.Visible = msoFalse
+
+    ' Head: the yellow ball.
+    Set head = wsMap.Shapes.AddShape(msoShapeOval, _
+        cx - HEAD_D / 2#, cy - NEEDLE_H - HEAD_D + OVERLAP, HEAD_D, HEAD_D)
+    head.Fill.ForeColor.RGB = RGB(255, 204, 0)
+    head.Line.Visible = msoTrue
+    head.Line.ForeColor.RGB = RGB(150, 110, 0)
+    head.Line.Weight = 0.75
+    head.Shadow.Visible = msoFalse
+
+    ' Highlight glint, upper-left of the head (the Google Earth look).
+    Set glint = wsMap.Shapes.AddShape(msoShapeOval, _
+        head.Left + HEAD_D * 0.22, head.Top + HEAD_D * 0.18, HEAD_D * 0.3, HEAD_D * 0.3)
+    glint.Fill.ForeColor.RGB = RGB(255, 244, 180)
+    glint.Line.Visible = msoFalse
+    glint.Shadow.Visible = msoFalse
+
+    Set grp = wsMap.Shapes.Range(Array(needle.Name, head.Name, glint.Name)).Group
+    With grp
         .Name = MAP_PIN_PREFIX & CStr(pageIdx + 1)
-        .Placement = xlMoveAndSize
-        .Shadow.Visible = msoFalse
-        .Fill.Visible = msoTrue
-        .Fill.ForeColor.RGB = RGB(220, 30, 30)
-        .Line.Visible = msoTrue
-        .Line.ForeColor.RGB = RGB(255, 255, 255)
-        .Line.Weight = 1.5
+        .Placement = xlMove          ' never let row drift resize the pin (§9.8)
         .ZOrder msoBringToFront
     End With
 End Sub
@@ -313,7 +362,7 @@ Private Sub AddAttribution(ByVal wsMap As Worksheet, ByVal pageIdx As Long)
     Set shp = wsMap.Shapes.AddTextbox(msoTextOrientationHorizontal, 2, t, ATTR_W, ATTR_H)
     With shp
         .Name = MAP_ATTR_PREFIX & CStr(pageIdx + 1)
-        .Placement = xlMoveAndSize
+        .Placement = xlMove          ' never let row drift resize a shape (§9.8)
         With .Fill
             .Visible = msoTrue
             .ForeColor.RGB = RGB(255, 255, 255)

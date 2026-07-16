@@ -26,11 +26,16 @@ if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmP
 # Columns (PR #37 reorder): SiteName=4, Lat=5, Lon=6, Elig=16, Review=17,
 # Class=18, Urban/Rural=19, ACUB=20.
 
+# NEVER open the committed workbook read-write: OneDrive AutoSave persists
+# macro side effects (§7d). Work on a %TEMP% copy instead.
+$tempXlsm = Join-Path $env:TEMP 'rr-verify-rerun-copy.xlsm'
+Copy-Item -LiteralPath $XlsmPath -Destination $tempXlsm -Force
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-  $wb = $excel.Workbooks.Open($XlsmPath)
+  $wb = $excel.Workbooks.Open($tempXlsm)
   $sites = $wb.Worksheets('Sites')
 
   Write-Host "Clearing rows..."

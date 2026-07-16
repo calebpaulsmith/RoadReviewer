@@ -22,11 +22,16 @@ function Split-StampLines([string]$s) {
   return ($s -replace "`r","" -split "`n")
 }
 
+# NEVER open the committed workbook read-write: OneDrive AutoSave persists
+# macro side effects (§7d). Work on a %TEMP% copy instead.
+$tempXlsm = Join-Path $env:TEMP 'rr-verify-blankwodi-copy.xlsm'
+Copy-Item -LiteralPath $XlsmPath -Destination $tempXlsm -Force
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-  $wb = $excel.Workbooks.Open($XlsmPath)
+  $wb = $excel.Workbooks.Open($tempXlsm)
   $sites = $wb.Worksheets('Sites')
 
   $wb.Names('JobWO').RefersToRange.Value2 = ''
@@ -110,16 +115,9 @@ try {
   if ($stampB.Contains('DI #')) { throw ("Expected no DI # in stamp, got: " + $stampB) }
   Write-Host "  Case B textbox clean (WO # only)" -ForegroundColor Green
 
-  # Cleanup
-  $wb.Worksheets('Map Pages').Delete()
-  $sites.Range($sites.Cells(3,1), $sites.Cells(11,30)).ClearContents()
-  $excel.Run('RefreshSitesFormulas') | Out-Null   # restore link-col formulas after the wide clear
-  $wb.Names('JobWO').RefersToRange.Value2 = ''
-  $wb.Names('JobDI').RefersToRange.Value2 = ''
-  $wb.Names('JobDisaster').RefersToRange.Value2 = ''
-  $wb.Names('JobApplicant').RefersToRange.Value2 = ''
-  $wb.Names('JobOutputFolder').RefersToRange.Value2 = ''
-  $excel.Run('SetHeadless', $false) | Out-Null
+  # No workbook cleanup needed: everything ran on a throwaway %TEMP% copy.
+  # (Never delete the Map Pages sheet - it is permanent since §7d and holds
+  # the job named ranges; doing so on the committed file corrupted them once.)
   $wb.Close($false)
 
   Write-Host ""

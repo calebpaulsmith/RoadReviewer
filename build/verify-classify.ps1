@@ -76,11 +76,16 @@ $tests = @(
   @{ Row=21; State='OH'; Name='Marion County Rural Local';       Lat=40.320352; Lon=-83.302785; ExpectElig='Non-federal aid - Rural Local'; ExpectClass='Local'; ExpectAcub='' }
 )
 
+# NEVER open the committed workbook read-write: OneDrive AutoSave persists
+# macro side effects (§7d). Work on a %TEMP% copy instead.
+$tempXlsm = Join-Path $env:TEMP 'rr-verify-classify-copy.xlsm'
+Copy-Item -LiteralPath $XlsmPath -Destination $tempXlsm -Force
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-  $wb = $excel.Workbooks.Open($XlsmPath)
+  $wb = $excel.Workbooks.Open($tempXlsm)
   $sites = $wb.Worksheets('Sites')
   $tracePath = Join-Path $env:TEMP 'RoadReviewer_classify_trace.txt'
   $excel.Run('SetHeadless', $true) | Out-Null

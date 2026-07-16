@@ -36,6 +36,7 @@ $job = Start-Job -ScriptBlock {
     [void]$x.Run('ExportItemCount')                   # modExportMenu (pure hook)
     $x.Run('RemoveMapImages') | Out-Null              # modMapImage (no-op w/o MapPages)
     $x.Run('ReRunFailedImagery') | Out-Null           # modMapFetch (no-op: 0 pages + headless)
+    [void]$x.Run('PdfSelfTest')                       # modPdf (direct PDF writer)
     $wb.Close($false)
     'COMPILE OK'
   } catch {

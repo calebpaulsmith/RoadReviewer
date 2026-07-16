@@ -5,7 +5,7 @@
 #   (expect 2 placed / 1 Failed, batch keeps going) -> restore + sentinel ->
 #   ReRunFailedImagery (ONLY the failed row is retried) -> ExportCombinedMapPdf
 #   -> PyMuPDF asserts: page count == site count, attribution + stamp text on
-#   every page, real imagery pixels, red site pin at page center.
+#   every page, real imagery pixels, yellow pushpin at page center.
 #   (Per §9.8: trust page count + rendered pixels, never get_image_rects.)
 #
 # Network: services.arcgisonline.com World_Imagery export (one ~1 MB PNG per
@@ -175,20 +175,22 @@ for yy in range(0, h, 7):
 frac = nonwhite / total
 assert frac > 0.5, f"page 1 looks blank: only {frac:.0%} non-white"
 
-# Red site pin at the geometric center of the page.
+# Yellow pushpin (2026-07-15): the needle TIP is at the page center, so the
+# yellow head sits just ABOVE center. Scan a window from the center upward for
+# strongly yellow pixels (high R+G, low B).
 cx, cy = w // 2, h // 2
 found = False
-for yy in range(cy - h // 12, cy + h // 12):
-    for xx in range(cx - w // 12, cx + w // 12):
+for yy in range(cy - h // 10, cy + 4):
+    for xx in range(cx - w // 20, cx + w // 20):
         r, g, b = pix.pixel(xx, yy)[:3]
-        if r > 150 and g < 90 and b < 90:
+        if r > 200 and g > 150 and b < 110:
             found = True
             break
     if found:
         break
-assert found, "no red pin pixels near page center"
+assert found, "no yellow pushpin pixels above page center"
 
-print(f"PYMUPDF OK: 3 pages, attribution+stamp text, {frac:.0%} imagery coverage, center pin found")
+print(f"PYMUPDF OK: 3 pages, attribution+stamp text, {frac:.0%} imagery coverage, yellow pushpin found")
 '@ | Set-Content -Path $pyScript -Encoding utf8
   $pyOut = & $py $pyScript $pdf.FullName
   Write-Host ("  " + $pyOut)

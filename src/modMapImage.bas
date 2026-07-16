@@ -64,7 +64,7 @@ Public Sub InsertMapImages()
     On Error GoTo Fail
 
     If Not SheetExists(SH_MAPPAGES) Then
-        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click 'Prepare Map Pages' first.", _
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet. Click 'Prepare Pages' (Advanced options) first.", _
             vbExclamation, "Insert Map Images"
         Exit Sub
     End If
@@ -94,7 +94,7 @@ Public Sub InsertMapImages()
     Dim nPages As Long
     nPages = PageCount(wsMap)
     If nPages < 1 Then
-        If Not gHeadless Then MsgBox "No map pages found. Click 'Prepare Map Pages' first.", _
+        If Not gHeadless Then MsgBox "No map pages found. Click 'Prepare Pages' (Advanced options) first.", _
             vbExclamation, "Insert Map Images"
         Exit Sub
     End If
@@ -472,14 +472,93 @@ Public Function PageWidthPts(ByVal wsMap As Worksheet) As Double
     PageWidthPts = w
 End Function
 
+' Re-pin every per-page printed shape (picture, site pin, attribution line,
+' stamp textbox) to its computed page geometry. Called by the PDF export AFTER
+' the rows/breaks are normalized to the current constants, so a sheet whose
+' geometry drifted (built by an older version, rows nudged by hand, OneDrive
+' AutoSave persisting a half-updated state) still prints every page exactly
+' as designed instead of stretching or spilling shapes across page breaks.
+' The demo-workbook autopsy behind this: images stored 758x566 printed 760x606
+' because their move-and-size anchors followed re-heighted rows.
+Public Sub SnapShapesToPages(ByVal wsMap As Worksheet, ByVal nPages As Long)
+    Dim pageIdx As Long, pageTop As Double, pageW As Double, shp As Shape
+    pageW = PageWidthPts(wsMap)
+
+    For pageIdx = 0 To nPages - 1
+        pageTop = PageTopPts(wsMap, pageIdx)
+
+        ' Picture: cover the block minus the 1pt inset (same as placement).
+        Set shp = ShapeOrNothing(wsMap, SHAPE_PREFIX & CStr(pageIdx + 1))
+        If Not shp Is Nothing Then
+            shp.Placement = xlMove
+            shp.LockAspectRatio = msoFalse
+            shp.Left = IMG_INSET_PTS
+            shp.Top = pageTop + IMG_INSET_PTS
+            shp.Width = pageW - IMG_INSET_PTS * 2
+            shp.Height = MAP_PAGE_HEIGHT_PTS - IMG_INSET_PTS * 2
+        End If
+
+        ' Site pin: its TIP is the shape's bottom-center, on the site = the
+        ' geometric center of the page block (modMapFetch.AddSitePin).
+        Set shp = ShapeOrNothing(wsMap, MAP_PIN_PREFIX & CStr(pageIdx + 1))
+        If Not shp Is Nothing Then
+            shp.Placement = xlMove
+            shp.Left = pageW / 2# - shp.Width / 2#
+            shp.Top = pageTop + MAP_PAGE_HEIGHT_PTS / 2# - shp.Height
+        End If
+
+        ' Attribution line: bottom-left corner of the block.
+        Set shp = ShapeOrNothing(wsMap, MAP_ATTR_PREFIX & CStr(pageIdx + 1))
+        If Not shp Is Nothing Then
+            shp.Placement = xlMove
+            shp.Left = 2
+            shp.Top = pageTop + MAP_PAGE_HEIGHT_PTS - shp.Height - 2
+        End If
+
+        ' Stamp textbox: top-left of the block (matches CreateMapPage).
+        Set shp = ShapeOrNothing(wsMap, "Textbox_Page_" & CStr(pageIdx + 1))
+        If Not shp Is Nothing Then
+            shp.Placement = xlMove
+            shp.Left = 5
+            shp.Top = pageTop + 5
+        End If
+    Next pageIdx
+End Sub
+
+Private Function ShapeOrNothing(ByVal wsMap As Worksheet, ByVal shapeName As String) As Shape
+    On Error Resume Next
+    Set ShapeOrNothing = wsMap.Shapes(shapeName)
+    On Error GoTo 0
+End Function
+
+' Re-point a placed picture's remembered source file (modMapFetch calls this
+' after copying its download into <output folder>\maps\, which outlives the
+' %TEMP% download the picture was placed from).
+Public Sub TagImageSource(ByVal wsMap As Worksheet, ByVal pageIdx As Long, ByVal srcPath As String)
+    On Error Resume Next
+    wsMap.Shapes(SHAPE_PREFIX & CStr(pageIdx + 1)).AlternativeText = srcPath
+    On Error GoTo 0
+End Sub
+
 ' ---- placement ------------------------------------------------------------
 
-' Insert the picture, CROP it to the page area's aspect ratio (no distortion),
-' then scale the cropped remainder to exactly fill the area edge-to-edge,
-' push it behind the WO/DI textbox, and clear the placeholder text from the
-' merged cell underneath. Public - modMapFetch places its downloads through
-' this same pipeline (its 1520x1136 frames match the block aspect exactly,
-' so the crop step is a no-op there).
+' Insert the picture CROPPED to the page area's aspect ratio (no distortion),
+' scaled to exactly fill the area edge-to-edge, pushed behind the WO/DI
+' textbox; the placeholder text in the merged cell underneath is cleared.
+' Public - modMapFetch places its downloads through this same pipeline (its
+' 1520x1136 frames match the block aspect exactly, so the crop is a no-op).
+'
+' THE CROP IS BAKED INTO THE PIXELS (WIA), NOT PictureFormat.Crop*.
+' ExportAsFixedFormat renders a PictureFormat-cropped picture WRONG: the PDF
+' gets the FULL uncropped bitmap, vertically stretched past the page block
+' (a 758x566 shape with side crops printed as ~760x606 - the "screenshots
+' outside the print area" bug, confirmed live 2026-07-15 with both the
+' user's real Google Earth captures and synthetic test images; Excel's UI
+' meanwhile displays the crop correctly, which is why the sheet looked fine).
+' So CropImageFileToAspect center-crops the image FILE itself via WIA (ships
+' with every Windows since XP - no new dependency) and the inserted picture
+' carries no crop metadata at all. PictureFormat.Crop remains only as the
+' fallback when WIA is unavailable - on-screen correct, PDF slightly off.
 Public Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
                              ByVal imgPath As String)
     Dim areaTop As Double, areaLeft As Double, areaW As Double, areaH As Double
@@ -487,46 +566,61 @@ Public Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
     areaLeft = IMG_INSET_PTS
     areaW = PageWidthPts(wsMap) - IMG_INSET_PTS * 2
     areaH = MAP_PAGE_HEIGHT_PTS - IMG_INSET_PTS * 2
+    If areaW <= 0 Or areaH <= 0 Then Exit Sub
+
+    Dim targetAspect As Double, usePath As String, baked As Boolean
+    targetAspect = areaW / areaH
+    usePath = CropImageFileToAspect(imgPath, targetAspect)
+    baked = (Len(usePath) > 0)
+    If Not baked Then usePath = imgPath
 
     Dim shp As Shape
     ' LinkToFile:=False, SaveWithDocument:=True -> the workbook stays portable
-    ' after the PNG folder is deleted.
-    Set shp = wsMap.Shapes.AddPicture(Filename:=imgPath, _
+    ' after the PNG folder (and the temp cropped copy) is deleted.
+    Set shp = wsMap.Shapes.AddPicture(Filename:=usePath, _
         LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
         Left:=areaLeft, Top:=areaTop, Width:=-1, Height:=-1)
+    If baked Then
+        On Error Resume Next
+        Kill usePath                     ' picture is embedded; drop the temp file
+        On Error GoTo 0
+    End If
 
     With shp
         .Name = SHAPE_PREFIX & CStr(pageIdx + 1)
-        If .Width <= 0 Or .Height <= 0 Or areaW <= 0 Or areaH <= 0 Then Exit Sub
+        ' Remember the ORIGINAL source file: the direct PDF writer (modPdf)
+        ' re-reads it at export time (and re-crops by clipping, so stashing
+        ' the uncropped original is correct even on the baked-crop path).
+        .AlternativeText = imgPath
+        If .Width <= 0 Or .Height <= 0 Then Exit Sub
 
-        ' "Cover" crop: trim the picture (in its own native point-space, which
-        ' PictureFormat.Crop* always uses regardless of later resizing) down
-        ' to the page area's aspect ratio, cutting evenly off both sides of
-        ' whichever axis has surplus, then scale the trimmed remainder up to
-        ' fill the area exactly. No stretching/distortion, no letterbox gaps.
-        Dim natW As Double, natH As Double, targetAspect As Double, nativeAspect As Double
-        natW = .Width
-        natH = .Height
-        targetAspect = areaW / areaH
-        nativeAspect = natW / natH
+        If Not baked Then
+            ' FALLBACK ONLY (WIA unavailable): metadata crop in the picture's
+            ' native point-space. Displays correctly; the PDF export renders
+            ' it uncropped/stretched (see header comment).
+            Dim natW As Double, natH As Double, nativeAspect As Double
+            natW = .Width
+            natH = .Height
+            nativeAspect = natW / natH
 
-        With .PictureFormat
-            If nativeAspect > targetAspect Then
-                Dim cropW As Double
-                cropW = natW - natH * targetAspect
-                .CropLeft = cropW / 2
-                .CropRight = cropW / 2
-                .CropTop = 0
-                .CropBottom = 0
-            Else
-                Dim cropH As Double
-                cropH = natH - natW / targetAspect
-                .CropTop = cropH / 2
-                .CropBottom = cropH / 2
-                .CropLeft = 0
-                .CropRight = 0
-            End If
-        End With
+            With .PictureFormat
+                If nativeAspect > targetAspect Then
+                    Dim cropW As Double
+                    cropW = natW - natH * targetAspect
+                    .CropLeft = cropW / 2
+                    .CropRight = cropW / 2
+                    .CropTop = 0
+                    .CropBottom = 0
+                Else
+                    Dim cropH As Double
+                    cropH = natH - natW / targetAspect
+                    .CropTop = cropH / 2
+                    .CropBottom = cropH / 2
+                    .CropLeft = 0
+                    .CropRight = 0
+                End If
+            End With
+        End If
 
         .LockAspectRatio = msoFalse
         .Width = areaW
@@ -534,12 +628,62 @@ Public Sub PlaceImageOnPage(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
         .Left = areaLeft
         .Top = areaTop
 
-        .Placement = xlMoveAndSize
+        ' xlMove, NOT xlMoveAndSize: a move-AND-SIZE picture is silently
+        ' re-stretched whenever the anchor rows' heights change afterwards
+        ' (stale-layout sheets, workbooks passed between build generations).
+        ' SnapShapesToPages re-pins the geometry at export time regardless.
+        .Placement = xlMove
         .ZOrder msoSendToBack          ' keep the WO/DI textbox readable on top
     End With
 
     ClearPlaceholderText wsMap, pageIdx
 End Sub
+
+' Center-crop the image FILE to the given aspect ratio (surplus trimmed evenly
+' off whichever axis is too long) using WIA - Windows Image Acquisition
+' automation (wiaaut.dll, inbox on every supported Windows; created
+' late-bound, so no reference needed). Returns the cropped temp-file path,
+' or "" when no crop is needed (aspect already matches) or WIA failed -
+' the caller falls back to the on-screen-only PictureFormat crop.
+Private Function CropImageFileToAspect(ByVal srcPath As String, _
+        ByVal targetAspect As Double) As String
+    On Error GoTo Fail
+    Dim img As Object, ip As Object
+    Set img = CreateObject("WIA.ImageFile")
+    img.LoadFile srcPath
+
+    Dim w As Double, h As Double, curAspect As Double
+    w = img.Width
+    h = img.Height
+    If w <= 0 Or h <= 0 Or targetAspect <= 0 Then Exit Function
+    curAspect = w / h
+    ' Within ~0.2% of the target (e.g. the 1520x1136 fetched frames): no crop.
+    If Abs(curAspect / targetAspect - 1#) < 0.002 Then Exit Function
+
+    Set ip = CreateObject("WIA.ImageProcess")
+    ip.Filters.Add ip.FilterInfos("Crop").FilterID
+    Dim cut As Long
+    If curAspect > targetAspect Then
+        cut = CLng((w - h * targetAspect) / 2#)      ' too wide - trim the sides
+        ip.Filters(1).Properties("Left") = cut
+        ip.Filters(1).Properties("Right") = cut
+    Else
+        cut = CLng((h - w / targetAspect) / 2#)      ' too tall - trim top/bottom
+        ip.Filters(1).Properties("Top") = cut
+        ip.Filters(1).Properties("Bottom") = cut
+    End If
+    Set img = ip.Apply(img)
+
+    ' Keep the source's own format/extension (WIA preserves FormatID).
+    Dim dst As String
+    dst = Environ$("TEMP") & "\rr_crop_" & Mid$(srcPath, InStrRev(srcPath, "\") + 1)
+    If Len(Dir$(dst)) > 0 Then Kill dst              ' SaveFile errors on overwrite
+    img.SaveFile dst
+    CropImageFileToAspect = dst
+    Exit Function
+Fail:
+    CropImageFileToAspect = ""
+End Function
 
 ' The merged cell carries grey italic "Paste screenshot here" prompt text.
 ' Once a real image is in place that prompt would print over/behind it.
