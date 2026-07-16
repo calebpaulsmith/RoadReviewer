@@ -1326,8 +1326,9 @@ let row-height drift stretch pictures (now `xlMove` + an export-time
 re-snap: `NormalizeMapLayoutForPrint` → `SnapShapesToPages`).
 
 **The fix:** `ExportMapPdfCore` first calls `modPdf.BuildMapPdfDirect`,
-which writes the PDF byte-by-byte: PDF 1.4, one JPEG per page (PNG→JPEG via
-WIA, quality 88; JPEG passes through as `/DCTDecode`) cover-cropped into the
+which writes the PDF byte-by-byte: PDF 1.4, one JPEG per page (every source
+re-encoded via WIA at `JPEG_QUALITY`, downscaled to `MAP_MAX_PX_W`, embedded
+as `/DCTDecode`) cover-cropped into the
 760×568 block by a clip path, the stamp + attribution as REAL vector text
 (base-14 Helvetica/Helvetica-Bold, WinAnsi — searchable, crisper than
 printing), and the site pushpin as vector art. No printer, no page breaks,
@@ -1338,6 +1339,17 @@ FALLBACK (WIA unavailable, or a page's image source file missing) — the
 image source path is remembered in each picture's AlternativeText
 (`TagImageSource`; the fetch flow points it at the durable `maps\` copy).
 Pages with no image (placeholder state) render as white + stamp.
+
+**File size (2026-07-16).** Every page image is re-encoded through WIA before
+embedding — downscaled to `MAP_MAX_PX_W` (1400 px, ~133 DPI across the block)
+and JPEG `JPEG_QUALITY` (80) — so a manual screenshot inserted as a large JPEG
+is compressed too (it used to pass through un-recompressed). This roughly
+halves the PDF: a 3-page real-aerial export dropped to ~219 KB/page (~450 KB
+before). Both constants live at the top of `modPdf.bas`; lower them for even
+smaller files (the aerial carries no fine text — stamp/pin/attribution are
+vector, so quality can go well below 80 before it shows). A source already
+narrower than the cap isn't upscaled; if WIA is unavailable an already-JPEG
+source still embeds as-is (uncompressed).
 
 ### 2. One-click hero + Advanced options (§7d has the layout)
 

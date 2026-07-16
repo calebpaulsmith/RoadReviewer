@@ -46,8 +46,19 @@ Private Const IMG_INSET As Double = 1#
 Private Const STAMP_FONT_PT As Double = 11#
 Private Const STAMP_LINE_H As Double = 13.2
 
-' JPEG conversion quality for PNG sources (aerials / screenshots).
-Private Const JPEG_QUALITY As Long = 88
+' JPEG encode quality for the aerials/screenshots embedded in the Location Map
+' PDF. 80 is visually indistinguishable from 88 on aerial imagery (no fine text
+' - the stamp/pin/attribution are drawn as vector, not baked into the JPEG) but
+' meaningfully smaller. Every source is re-encoded at this quality, so a manual
+' screenshot inserted as a large JPEG is compressed too (it used to pass through
+' un-recompressed). Lower this toward ~70 for even smaller files.
+Private Const JPEG_QUALITY As Long = 80
+
+' Cap the embedded image width (px). Screenshots are often far larger than the
+' ~760x568-pt page block needs; 1400 px across that block is ~133 DPI, ample for
+' a location map, and downscaling to it is the biggest single lever on file size
+' for oversized captures. Images already narrower than this are left as-is.
+Private Const MAP_MAX_PX_W As Long = 1400
 
 ' One page's worth of gathered material.
 Private Type PdfPageInfo
@@ -192,19 +203,24 @@ End Function
 Private Function JpegBytesFor(ByVal imgPath As String, ByRef jpegBytes() As Byte, _
         ByRef pxW As Long, ByRef pxH As Long, ByRef comps As Long, _
         ByRef errMsg As String) As Boolean
-    Dim ext As String, p As Long, jpgPath As String, madeTemp As Boolean
+    Dim ext As String, p As Long, jpgPath As String, madeTemp As Boolean, isJpeg As Boolean
     p = InStrRev(imgPath, ".")
     If p > 0 Then ext = LCase$(Mid$(imgPath, p))
+    isJpeg = (ext = ".jpg" Or ext = ".jpeg")
 
-    If ext = ".jpg" Or ext = ".jpeg" Then
+    ' Re-encode EVERY source to a size-capped JPEG (downscale to MAP_MAX_PX_W +
+    ' JPEG_QUALITY) so the PDF stays small even for big manual screenshots - a
+    ' JPEG source used to be embedded whole. If WIA is unavailable an already-
+    ' JPEG source still works (embedded as-is, just uncompressed); a PNG can't be
+    ' embedded without WIA, so that still falls back to the print path.
+    jpgPath = NormalizeToJpeg(imgPath)
+    If Len(jpgPath) > 0 Then
+        madeTemp = True
+    ElseIf isJpeg Then
         jpgPath = imgPath
     Else
-        jpgPath = ConvertToJpeg(imgPath)
-        If Len(jpgPath) = 0 Then
-            errMsg = "PNG->JPEG conversion unavailable (WIA)"
-            Exit Function
-        End If
-        madeTemp = True
+        errMsg = "PNG->JPEG conversion unavailable (WIA)"
+        Exit Function
     End If
 
     jpegBytes = ReadFileBytes(jpgPath)
@@ -225,27 +241,40 @@ Private Function JpegBytesFor(ByVal imgPath As String, ByRef jpegBytes() As Byte
     JpegBytesFor = True
 End Function
 
-' PNG (or anything WIA reads) -> JPEG temp file. "" on failure.
-Private Function ConvertToJpeg(ByVal srcPath As String) As String
+' Any image WIA reads (PNG or JPEG) -> a size-capped JPEG temp file: downscale
+' proportionally to MAP_MAX_PX_W when wider than the cap, then encode at
+' JPEG_QUALITY. "" on failure (WIA unavailable / unreadable source).
+Private Function NormalizeToJpeg(ByVal srcPath As String) As String
     On Error GoTo Fail
     Const WIA_FORMAT_JPEG As String = "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}"
     Dim img As Object, ip As Object
     Set img = CreateObject("WIA.ImageFile")
     img.LoadFile srcPath
     Set ip = CreateObject("WIA.ImageProcess")
+
+    ' Downscale first (proportionally) when wider than the cap - fewer pixels to
+    ' encode is the biggest lever on size. The Scale filter fits within
+    ' MaximumWidth x MaximumHeight preserving aspect; bounding height by the
+    ' source height leaves WIDTH as the single binding constraint.
+    If img.Width > MAP_MAX_PX_W Then
+        ip.Filters.Add ip.FilterInfos("Scale").FilterID
+        ip.Filters(ip.Filters.Count).Properties("MaximumWidth") = MAP_MAX_PX_W
+        ip.Filters(ip.Filters.Count).Properties("MaximumHeight") = img.Height
+    End If
+
     ip.Filters.Add ip.FilterInfos("Convert").FilterID
-    ip.Filters(1).Properties("FormatID") = WIA_FORMAT_JPEG
-    ip.Filters(1).Properties("Quality") = JPEG_QUALITY
+    ip.Filters(ip.Filters.Count).Properties("FormatID") = WIA_FORMAT_JPEG
+    ip.Filters(ip.Filters.Count).Properties("Quality") = JPEG_QUALITY
     Set img = ip.Apply(img)
 
     Dim dst As String
     dst = Environ$("TEMP") & "\rr_pdf_" & Mid$(srcPath, InStrRev(srcPath, "\") + 1) & ".jpg"
     If Len(Dir$(dst)) > 0 Then Kill dst
     img.SaveFile dst
-    ConvertToJpeg = dst
+    NormalizeToJpeg = dst
     Exit Function
 Fail:
-    ConvertToJpeg = ""
+    NormalizeToJpeg = ""
 End Function
 
 Private Function ReadFileBytes(ByVal path As String) As Byte()
