@@ -303,8 +303,17 @@ End Function
 '   JobFileStem() & " - Location Map.pdf"
 '   JobFileStem() & " - Sites.kml"
 Public Function JobFileStem() As String
+    JobFileStem = JobFileStemFor(SetupValue(NR_WO), SetupValue(NR_DI))
+End Function
+
+' Same stem, but with explicit WO/DI - so a per-site export (FIRMette, per-site
+' Location Map) can pass a row's OWN WO/DI, which override the Setup values for
+' that row (F14 / §9.5, same rule the stamp already applies). The Disaster tag
+' stays job-wide (there is no per-row Disaster cell). Blank wo/di collapse away
+' via JobIds exactly as the Setup-level path does.
+Public Function JobFileStemFor(ByVal wo As String, ByVal di As String) As String
     Dim jobs As String, tag As String, stem As String
-    jobs = JobIds(SetupValue(NR_WO), SetupValue(NR_DI), " ", "WO", "DI")
+    jobs = JobIds(wo, di, " ", "WO", "DI")
     tag = DisasterTag()
     stem = jobs
     If Len(tag) > 0 Then
@@ -312,7 +321,7 @@ Public Function JobFileStem() As String
         stem = stem & tag
     End If
     If Len(stem) = 0 Then stem = Format$(Now(), "yyyy-mm-dd HHmm")
-    JobFileStem = CleanFileName(stem)
+    JobFileStemFor = CleanFileName(stem)
 End Function
 
 ' Show the output folder to the user after an export (user direction, PR #37:

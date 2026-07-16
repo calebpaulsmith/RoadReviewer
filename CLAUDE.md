@@ -1717,7 +1717,17 @@ pieces:
 
 A row's own WO/DI cells (Sites cols A/B) take precedence over the
 Setup values for that row, which is the per-row override path noted
-in F14.
+in F14. **This applies to per-site FILE NAMES too, not just the stamp
+(fixed 2026-07-16).** `JobFileStem()` reads only the Setup WO/DI, so
+the per-site exports — `FirmetteFileName` and the per-site Location Map
+PDF — route through `modMaps.RowJobFileStem(wsSites, r)` instead, which
+takes the row's WO/DI (falling back to Setup per field when a row cell
+is blank), then calls `modUtil.JobFileStemFor(wo, di)`. Whole-set
+exports (combined Map PDF, KML, CSV, GeoJSON) have no single row and
+stay on the job-level `JobFileStem()`. The Disaster tag is always
+job-wide (no per-row Disaster cell). `verify-firmette-maps.ps1` asserts
+the override via `FirmettePreview()` (row WO/DI → name, per-field
+fallback, full Setup fallback) with no network before the download leg.
 
 ### 9.6 Useful trace switches
 

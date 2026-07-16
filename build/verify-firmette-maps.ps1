@@ -57,6 +57,32 @@ try {
   $excel.Run('SetHeadless', $true) | Out-Null
   $excel.Run('SetTrace', (Join-Path $env:TEMP 'RoadReviewer_w3_trace.txt')) | Out-Null
 
+  # ---- Per-row WO/DI override in the FIRMette namer (F14 / §9.5, no network) ----
+  # The row's own WO/DI (Sites cols A/B) must override the Setup WO/DI in the
+  # file name, the same way the stamp already does. FirmettePreview() names the
+  # first valid row (row 3 here), so it exercises the exact FirmetteFileName path.
+  # Use NON-numeric Setup WO/DI here so Excel doesn't coerce them (e.g. '0001'
+  # -> 1); restore the real ones afterwards for the download leg below.
+  Write-Host "=== Per-row WO/DI override (FirmettePreview, no network) ===" -ForegroundColor Cyan
+  $wb.Names('JobWO').RefersToRange.Value2 = 'AAA'
+  $wb.Names('JobDI').RefersToRange.Value2 = 'BBB'
+  $sites.Cells(3, 1).Value2 = '999'   # COL_WO row override
+  $sites.Cells(3, 2).Value2 = '888'   # COL_DI row override
+  $ovr = [string]$excel.Run('FirmettePreview')
+  Write-Host ("  row override  : " + $ovr)
+  if ($ovr -notlike '*WO999 DI888*') { throw ("Row WO/DI did not override Setup in the FIRMette name: '" + $ovr + "'") }
+  $sites.Cells(3, 2).ClearContents()  # blank the row DI only -> Setup DI, row WO kept
+  $mix = [string]$excel.Run('FirmettePreview')
+  Write-Host ("  mixed (WO row, DI setup): " + $mix)
+  if ($mix -notlike '*WO999 DIBBB*') { throw ("Per-field WO/DI fallback wrong: '" + $mix + "'") }
+  $sites.Cells(3, 1).ClearContents()  # blank both -> full Setup fallback
+  $fb = [string]$excel.Run('FirmettePreview')
+  Write-Host ("  setup fallback: " + $fb)
+  if ($fb -notlike '*WOAAA DIBBB*') { throw ("Blank row WO/DI did not fall back to Setup: '" + $fb + "'") }
+  $wb.Names('JobWO').RefersToRange.Value2 = 'TEST'   # restore for the download leg
+  $wb.Names('JobDI').RefersToRange.Value2 = '0001'
+  Write-Host "  per-row override OK" -ForegroundColor Green
+
   # ---- DownloadFirmettes ----
   Write-Host "=== DownloadFirmettes (hits FEMA Print FIRMette GP service) ===" -ForegroundColor Cyan
   $sw = [Diagnostics.Stopwatch]::StartNew()

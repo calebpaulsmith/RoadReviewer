@@ -263,7 +263,7 @@ Private Sub FirmetteRunRows(ByVal onlyFailed As Boolean)
 
         lat = InvariantNum(ws.Cells(r, COL_LAT).Value)
         lon = InvariantNum(ws.Cells(r, COL_LON).Value)
-        fileName = FirmetteFileName(siteName)
+        fileName = FirmetteFileName(ws, r, siteName)
         fullPath = folder & fileName
 
         msg = ""
@@ -301,10 +301,28 @@ Private Function ShouldRunFirmetteRow(ByVal ws As Worksheet, ByVal r As Long, _
     End If
 End Function
 
-' "WO123 DI5 - DR-4882-IN - SiteName FIRMette.pdf" - the shared JobFileStem
-' (WO/DI/Disaster-State, or a date-time when all blank) plus the per-site name.
-Private Function FirmetteFileName(ByVal siteName As String) As String
-    FirmetteFileName = CleanFileName(JobFileStem() & " - " & siteName & " FIRMette.pdf")
+' "WO123 DI5 - DR-4882-IN - SiteName FIRMette.pdf" - the row-aware JobFileStem
+' (the ROW's WO/DI override the Setup WO/DI, F14 / §9.5) plus the per-site name.
+Private Function FirmetteFileName(ByVal wsSites As Worksheet, ByVal r As Long, ByVal siteName As String) As String
+    FirmetteFileName = CleanFileName(RowJobFileStem(wsSites, r) & " - " & siteName & " FIRMette.pdf")
+End Function
+
+' The shared file-name stem for a SINGLE site row: the row's own WO/DI cells
+' take precedence over the Setup (Start Here / Map Pages) WO/DI, falling back to
+' Setup when a row cell is blank - the same per-row override the stamp applies
+' (BuildMapTextboxString). r < the first data row (or no sheet) means "no row",
+' so it falls back to the plain job-level JobFileStem.
+Private Function RowJobFileStem(ByVal wsSites As Worksheet, ByVal r As Long) As String
+    Dim wo As String, di As String
+    If wsSites Is Nothing Or r < SITES_FIRST_DATA_ROW Then
+        RowJobFileStem = JobFileStem()
+        Exit Function
+    End If
+    wo = Trim$(CStr(wsSites.Cells(r, COL_WO).Value))
+    di = Trim$(CStr(wsSites.Cells(r, COL_DI).Value))
+    If Len(wo) = 0 Then wo = SetupValue(NR_WO)
+    If Len(di) = 0 Then di = SetupValue(NR_DI)
+    RowJobFileStem = JobFileStemFor(wo, di)
 End Function
 
 ' Live example of what DownloadFirmettes will name its files, built from the
@@ -326,15 +344,16 @@ Public Function FirmettePreview() As String
         If HasValidCoords(ws, r) Then
             siteName = Trim$(CStr(ws.Cells(r, COL_SITENAME).Value))
             If Len(siteName) = 0 Then siteName = "Site " & CStr(r - SITES_FIRST_DATA_ROW + 1)
-            FirmettePreview = FirmetteFileName(siteName)
+            FirmettePreview = FirmetteFileName(ws, r, siteName)
             Exit Function
         End If
     Next r
 
 Fallback:
-    ' No site rows yet - show the shape of the name with a placeholder site.
+    ' No site rows yet - show the shape of the name with a placeholder site
+    ' (Nothing/0 -> job-level stem, no row override).
     ' NB: no angle brackets - CleanFileName turns them into underscores.
-    FirmettePreview = FirmetteFileName("(site name)")
+    FirmettePreview = FirmetteFileName(Nothing, 0, "(site name)")
 End Function
 
 ' Submit → poll → fetch OutputFile → download. Returns True on success.
@@ -1480,7 +1499,9 @@ Public Sub CreateIndividualMapPagePdfs()
 
     For pageIdx = 0 To nPages - 1
         siteName = MapPageSiteName(wsMap, pageIdx)
-        fileName = CleanFileName(JobFileStem() & " - " & siteName & " Location Map.pdf")
+        ' Per-site file: the site row's WO/DI override Setup (F14 / §9.5).
+        fileName = CleanFileName(RowJobFileStem(SitesSheet(), MapPageSiteRow(wsMap, pageIdx)) & _
+            " - " & siteName & " Location Map.pdf")
         fullPath = folder & fileName
         SetStatus "Exporting map page " & (pageIdx + 1) & " of " & nPages & " - " & siteName
         DoEvents
@@ -1512,12 +1533,19 @@ End Sub
 ' Falls back to "Page N" for a blank/manual page so a file is still named.
 Private Function MapPageSiteName(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As String
     Dim siteRow As Long, nm As String
-    On Error Resume Next
-    siteRow = CLng(Val(wsMap.Shapes("Textbox_Page_" & CStr(pageIdx + 1)).AlternativeText))
-    On Error GoTo 0
+    siteRow = MapPageSiteRow(wsMap, pageIdx)
     If siteRow >= SITES_FIRST_DATA_ROW Then nm = Trim$(CStr(SitesSheet().Cells(siteRow, COL_SITENAME).Value))
     If Len(nm) = 0 Then nm = "Page " & CStr(pageIdx + 1)
     MapPageSiteName = nm
+End Function
+
+' The Sites row a map page was built from (stored in the page's stamp textbox
+' AlternativeText, CreateMapPage), or 0 when unknown - so per-site exports can
+' apply that row's WO/DI override.
+Private Function MapPageSiteRow(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As Long
+    On Error Resume Next
+    MapPageSiteRow = CLng(Val(wsMap.Shapes("Textbox_Page_" & CStr(pageIdx + 1)).AlternativeText))
+    On Error GoTo 0
 End Function
 
 ' Print-pipeline fallback for a SINGLE page (only when the direct writer is
