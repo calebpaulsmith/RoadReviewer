@@ -64,30 +64,45 @@ End Function
 
 ' ---- entry point ------------------------------------------------------------
 
-' Build the combined Location Map PDF straight from the Map Pages sheet's
-' shapes + their source image files. True on success; False (with errMsg) on
-' anything the fallback print path should handle instead.
+' Build the COMBINED Location Map PDF (every page) straight from the Map Pages
+' sheet's shapes + their source image files. True on success; False (with
+' errMsg) on anything the fallback print path should handle instead.
 Public Function BuildMapPdfDirect(ByVal wsMap As Worksheet, ByVal fullPath As String, _
         ByRef errMsg As String) As Boolean
-    On Error GoTo Fail
-
-    Dim nPages As Long
+    Dim nPages As Long, idx() As Long, i As Long
     nPages = MapPageCount(wsMap)
     If nPages < 1 Then errMsg = "no map pages": Exit Function
+    ReDim idx(0 To nPages - 1)
+    For i = 0 To nPages - 1
+        idx(i) = i
+    Next i
+    BuildMapPdfDirect = BuildMapPdfForPages(wsMap, idx, fullPath, errMsg)
+End Function
+
+' Build a PDF for an explicit list of 0-based page indices (one page per index,
+' in the given order). The combined export passes all pages; the per-site
+' export passes a single index. True on success; False (with errMsg) otherwise.
+Public Function BuildMapPdfForPages(ByVal wsMap As Worksheet, ByRef pageIdx() As Long, _
+        ByVal fullPath As String, ByRef errMsg As String) As Boolean
+    On Error GoTo Fail
+
+    Dim cnt As Long
+    cnt = UBound(pageIdx) - LBound(pageIdx) + 1
+    If cnt < 1 Then errMsg = "no pages selected": Exit Function
 
     ' Gather per-page material first so any missing piece fails BEFORE a
     ' partial file is written.
     Dim pages() As PdfPageInfo, i As Long
-    ReDim pages(0 To nPages - 1)
-    For i = 0 To nPages - 1
-        If Not GatherPage(wsMap, i, pages(i), errMsg) Then Exit Function
+    ReDim pages(0 To cnt - 1)
+    For i = 0 To cnt - 1
+        If Not GatherPage(wsMap, pageIdx(LBound(pageIdx) + i), pages(i), errMsg) Then Exit Function
     Next i
 
     ' Convert every image to JPEG bytes (pass-through when already JPEG).
     Dim jpegs() As Variant, dims() As Variant
-    ReDim jpegs(0 To nPages - 1)
-    ReDim dims(0 To nPages - 1)
-    For i = 0 To nPages - 1
+    ReDim jpegs(0 To cnt - 1)
+    ReDim dims(0 To cnt - 1)
+    For i = 0 To cnt - 1
         If Len(pages(i).ImagePath) > 0 Then
             Dim jb() As Byte, jw As Long, jh As Long, jc As Long
             If Not JpegBytesFor(pages(i).ImagePath, jb, jw, jh, jc, errMsg) Then Exit Function
@@ -97,11 +112,11 @@ Public Function BuildMapPdfDirect(ByVal wsMap As Worksheet, ByVal fullPath As St
     Next i
 
     WriteMapPdf fullPath, pages, jpegs, dims
-    BuildMapPdfDirect = True
+    BuildMapPdfForPages = True
     Exit Function
 Fail:
     errMsg = Err.Description
-    BuildMapPdfDirect = False
+    BuildMapPdfForPages = False
 End Function
 
 ' Collect one page's stamp text, image file, pin + attribution presence.

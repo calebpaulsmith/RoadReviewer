@@ -137,7 +137,7 @@ try {
   # One-click hero (CreateMapPagesPdf, 2026-07-15) + FIRMettes, with the
   # individual steps (Prepare / Fetch / Export), the re-run/re-stamp refreshers
   # and the manual Google Earth alternative behind the Advanced toggle.
-  foreach ($a in @('CreateMapPagesPdf','ToggleMapAdvanced','PrepareMapPages','FetchMapImagery','ReRunFailedImagery','ExportCombinedMapPdf','ExportSitesToKML','InsertMapImages','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
+  foreach ($a in @('CreateMapPagesPdf','ToggleMapAdvanced','CreateIndividualMapPagePdfs','PrepareMapPages','FetchMapImagery','ReRunFailedImagery','ExportCombinedMapPdf','ExportSitesToKML','InsertMapImages','UpdateMapStamps','DownloadFirmettes','ReRunFailedFirmettes')) {
     if (-not $mapActions.ContainsKey($a)) { throw "MapPages tools panel missing button for: $a" }
   }
   # Advanced shapes ship hidden (collapsed) - the uncluttered default view.

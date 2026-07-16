@@ -638,10 +638,10 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     ' Output Folder: canonical here for the inspector; a read-only mirror on the
     ' standard product (canonical on its Start Here) so the name isn't defined twice.
     If ProductIsInspector() Then
-        MapJobField wsMap, rr, "Output Folder", NR_OUTFOLDER
+        MapJobField wsMap, rr, "Output Folder (optional)", NR_OUTFOLDER
     Else
         With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_JOB_LABEL_COL + 1))
-            .Merge: .Value = "Output Folder": .Font.Bold = True
+            .Merge: .Value = "Output Folder (optional)": .Font.Bold = True
         End With
         With wsMap.Range(wsMap.Cells(rr, MAP_JOB_VALUE_COL), wsMap.Cells(rr, MAP_JOB_VALUE_LAST_COL))
             .Merge
@@ -658,10 +658,36 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
     MapJobField wsMap, rr, "Imagery URL (optional)", NR_IMAGERYSVC
     rr = rr + 1
 
-    ' Live file-name preview (updates as the job cells change; FirmettePreview is
-    ' volatile). Same JobFileStem every export uses, so this is exactly what the
-    ' FIRMette / Location Map / KML / CSV files will be called.
-    With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_COLS_WIDE))
+    ' ---- right-hand previews (formula-driven, update live as the user types) ----
+    ' Stamp preview: a formula-built replica of the textbox stamped on every map
+    ' page, driven by the FIRST Sites data row + the job boxes, so the inspector
+    ' can see what each page's stamp will read BEFORE clicking Create Combined
+    ' Map Pages PDF. Cols I:M, rows aligned with the job block; the "Job info"
+    ' label row carries a matching caption on the right.
+    With wsMap.Cells(MAP_JOB_FIRST_ROW - 1, 9)
+        .Value = "Stamp preview (first Sites row):"
+        .Font.Size = 9
+        .Font.Bold = True
+        .Font.Color = RGB(47, 79, 79)
+    End With
+    With wsMap.Range(wsMap.Cells(MAP_JOB_FIRST_ROW, 9), wsMap.Cells(MAP_JOB_FIRST_ROW + 5, MAP_COLS_WIDE))
+        .Merge
+        .Formula = StampPreviewFormula()
+        .Font.Name = "Segoe UI"
+        .Font.Size = 10
+        .Font.Color = RGB(0, 0, 0)
+        .Interior.Color = RGB(255, 255, 255)
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(150, 150, 150)
+        .WrapText = True
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlTop
+        .IndentLevel = 1
+    End With
+
+    ' FIRMette / file-name preview directly UNDER the stamp box (same JobFileStem
+    ' every export uses; FirmettePreview is volatile so it tracks the job cells).
+    With wsMap.Range(wsMap.Cells(MAP_JOB_FIRST_ROW + 6, 9), wsMap.Cells(MAP_JOB_FIRST_ROW + 6, MAP_COLS_WIDE))
         .Merge
         .Formula = "=""File name:   ""&FirmettePreview()"
         .Font.Size = 9
@@ -669,19 +695,67 @@ Private Sub BuildMapHeaderBand(ByVal wsMap As Worksheet)
         .Font.Color = RGB(90, 90, 90)
         .HorizontalAlignment = xlLeft
     End With
-    rr = rr + 1
 
-    ' WO/DI note (user wording): they fill in blank WO#/DI# on the Sites rows.
-    With wsMap.Range(wsMap.Cells(rr, MAP_JOB_LABEL_COL), wsMap.Cells(rr, MAP_COLS_WIDE))
+    ' WO/DI note (left, below the job block; kept clear of the right previews).
+    With wsMap.Range(wsMap.Cells(MAP_JOB_FIRST_ROW + 7, MAP_JOB_LABEL_COL), wsMap.Cells(MAP_JOB_FIRST_ROW + 8, 8))
         .Merge
         .Value = "WO # and DI # here fill in blank WO #/DI # cells on the Sites tab (a value typed on the row wins)."
         .Font.Size = 9
         .Font.Italic = True
         .Font.Color = RGB(120, 120, 120)
         .HorizontalAlignment = xlLeft
-        .WrapText = False
+        .VerticalAlignment = xlTop
+        .WrapText = True
     End With
 End Sub
+
+' The stamp-preview cell formula: a live replica of BuildMapTextboxString driven
+' by the FIRST Sites data row (row 2) and the job named ranges. Blank lines are
+' skipped (each present line is prefixed with CHAR(10); the leading one is
+' stripped with MID(...,2)). Kept as one self-contained formula - no helper
+' cells - so the header band stays clean. Line order matches the VBA stamp:
+' WO/DI, Applicant, Site, lat/lon, Category+Desc, Cost, Work.
+Private Function StampPreviewFormula() As String
+    Dim q As String, EMP As String
+    q = Chr$(34)
+    EMP = q & q                                  ' the "" empty-string literal
+
+    ' WO/DI honour a row override then the Setup box, same as the real stamp.
+    Dim effWO As String, effDI As String
+    effWO = "IF(Sites!$A$2<>" & EMP & ",Sites!$A$2,JobWO)"
+    effDI = "IF(Sites!$B$2<>" & EMP & ",Sites!$B$2,JobDI)"
+
+    Dim ln1 As String, appL As String, siteL As String, latL As String
+    Dim catL As String, costL As String, workL As String
+    ln1 = "TRIM(IF(" & effWO & "<>" & EMP & "," & q & "WO #" & q & "&" & effWO & "," & EMP & ")&" & _
+          q & " " & q & "&IF(" & effDI & "<>" & EMP & "," & q & "DI #" & q & "&" & effDI & "," & EMP & "))"
+    appL = "JobApplicant"
+    siteL = "IF(Sites!$C$2<>" & EMP & "," & q & "Site " & q & "&Sites!$C$2&" & q & " " & q & _
+            "&Sites!$D$2,Sites!$D$2)"
+    latL = "IF(AND(Sites!$E$2<>" & EMP & ",Sites!$F$2<>" & EMP & ")," & _
+           "TEXT(Sites!$E$2," & q & "0.00000" & q & ")&" & q & ", " & q & _
+           "&TEXT(Sites!$F$2," & q & "0.00000" & q & ")," & EMP & ")"
+    catL = "IF(AND(Sites!$I$2<>" & EMP & ",Sites!$G$2<>" & EMP & ")," & _
+           q & "Cat " & q & "&Sites!$I$2&" & q & ", " & q & "&Sites!$G$2," & _
+           "IF(Sites!$I$2<>" & EMP & "," & q & "Cat " & q & "&Sites!$I$2," & _
+           "IF(Sites!$G$2<>" & EMP & ",Sites!$G$2," & EMP & ")))"
+    costL = "IF(Sites!$J$2<>" & EMP & "," & q & "Cost: " & q & "&Sites!$J$2," & EMP & ")"
+    workL = "IF(Sites!$K$2<>" & EMP & "," & q & "Work: " & q & "&Sites!$K$2," & EMP & ")"
+
+    Dim big As String
+    big = PreviewNl(ln1) & "&" & PreviewNl(appL) & "&" & PreviewNl(siteL) & "&" & _
+          PreviewNl(latL) & "&" & PreviewNl(catL) & "&" & PreviewNl(costL) & "&" & PreviewNl(workL)
+
+    StampPreviewFormula = "=IF(LEN(" & big & ")=0," & q & "(fill in the job info + first Sites row)" & q & _
+                          ",MID(" & big & ",2,32767))"
+End Function
+
+' IF(expr<>"", CHAR(10)&expr, "")  - one stamp line, blank-skipping.
+Private Function PreviewNl(ByVal expr As String) As String
+    Dim EMP As String
+    EMP = Chr$(34) & Chr$(34)
+    PreviewNl = "IF(" & expr & "<>" & EMP & ",CHAR(10)&" & expr & "," & EMP & ")"
+End Function
 
 ' State dropdown validation for the Map Pages State cell (mirrors modBuild's).
 Private Sub AddMapStateValidation(ByVal cell As Range)
@@ -744,38 +818,21 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
         If Left$(shp.Name, Len(MAP_CTRL_PREFIX)) = MAP_CTRL_PREFIX Then shp.Delete
     Next i
 
+    Const GREY As Long = 7895160           ' "Exports & other tools" door
+
     ' Title.
     MapCtrlLabel wsMap, "Title", 8, 5, 300, 22, "Map Pages", 15, True, RGB(47, 79, 79)
 
-    ' Top-right: door to the hidden "Tools & Exports" sheet (inspector only - the
-    ' standard product keeps Start Here visible as its own hub).
-    If ProductIsInspector() Then
-        Dim tbtn As Shape
-        Set tbtn = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 620, 6, 165, 20)
-        tbtn.Name = MAP_CTRL_PREFIX & "Tools"
-        tbtn.Fill.ForeColor.RGB = RGB(120, 120, 120)
-        tbtn.Line.Visible = msoFalse
-        tbtn.Shadow.Visible = msoFalse
-        With tbtn.TextFrame2.TextRange
-            .Text = "Exports & other tools  " & ChrW$(8594)
-            .Font.Size = 9
-            .Font.Bold = msoTrue
-            .Font.Fill.ForeColor.RGB = vbWhite
-            .ParagraphFormat.Alignment = msoAlignCenter
-        End With
-        tbtn.TextFrame2.VerticalAnchor = msoAnchorMiddle
-        tbtn.OnAction = "GoToOtherTools"
-    End If
-
-    ' ---- the hero: one click does the whole map flow ----
+    ' ---- the two primary deliverables, side by side ----
+    ' Hero: one click does the whole combined map flow (Prepare -> Fetch -> Export).
     Dim hero As Shape
-    Set hero = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 32, 250, 42)
+    Set hero = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 32, 300, 42)
     hero.Name = MAP_CTRL_PREFIX & "CreatePdf"
     hero.Fill.ForeColor.RGB = GREEN
     hero.Line.Visible = msoFalse
     hero.Shadow.Visible = msoFalse
     With hero.TextFrame2.TextRange
-        .Text = "Create Map Pages PDF"
+        .Text = "Create Combined Map Pages PDF"
         .Font.Size = 13
         .Font.Bold = msoTrue
         .Font.Fill.ForeColor.RGB = vbWhite
@@ -783,19 +840,28 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     End With
     hero.TextFrame2.VerticalAnchor = msoAnchorMiddle
     hero.OnAction = "CreateMapPagesPdf"
-    MapCtrlLabel wsMap, "CreatePdf_Note", 10, 78, 300, 26, _
-        "One click: builds a page for every site, downloads aerial imagery " & _
-        "(a yellow pin marks each site), and saves a combined PDF.", 8, False, RGB(110, 110, 110)
 
-    ' ---- FIRMettes: the other primary deliverable, beside the hero ----
-    MapCtrlLabel wsMap, "FirmLabel", 540, 32, 240, 16, "FIRMettes  (FEMA flood maps)", 11, True, RGB(47, 79, 79)
-    MapRibbonStep wsMap, "Firm", 540, 50, 180, 28, GREEN, _
-        "Download FIRMettes", "DownloadFirmettes", "One FEMA FIRMette PDF per site."
+    ' Download FIRMettes right beside it (the other primary deliverable).
+    Dim firm As Shape
+    Set firm = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 320, 32, 220, 42)
+    firm.Name = MAP_CTRL_PREFIX & "Firm"
+    firm.Fill.ForeColor.RGB = GREEN
+    firm.Line.Visible = msoFalse
+    firm.Shadow.Visible = msoFalse
+    With firm.TextFrame2.TextRange
+        .Text = "Download FIRMettes"
+        .Font.Size = 13
+        .Font.Bold = msoTrue
+        .Font.Fill.ForeColor.RGB = vbWhite
+        .ParagraphFormat.Alignment = msoAlignCenter
+    End With
+    firm.TextFrame2.VerticalAnchor = msoAnchorMiddle
+    firm.OnAction = "DownloadFirmettes"
 
     ' ---- Advanced options toggle (collapsed by default) ----
     ' Expansion state rides in the toggle shape's AlternativeText ("1" = open),
     ' so SetMapEditControlsVisible can restore the right state after an export.
-    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 112, 150, 17)
+    Set shp = wsMap.Shapes.AddShape(msoShapeRoundedRectangle, 8, 84, 160, 17)
     shp.Name = MAP_CTRL_PREFIX & "AdvToggle"
     shp.AlternativeText = "0"
     shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
@@ -817,29 +883,37 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     ' Everything fits above y=204 (= the top of the "Job info" label row 13).
     ' Row 1: the three steps the hero chains, runnable one at a time, plus the
     ' ghost refresh/re-run actions.
-    MapCtrlLabel wsMap, "Adv_StepsLabel", 8, 134, 250, 12, _
+    MapCtrlLabel wsMap, "Adv_StepsLabel", 8, 106, 250, 12, _
         "Run the steps one at a time:", 8, True, RGB(90, 90, 90)
-    MapRibbonStep wsMap, "Adv_Prepare", 8, 147, 118, 18, BLUE, _
+    MapRibbonStep wsMap, "Adv_Prepare", 8, 120, 118, 18, BLUE, _
         "1. Prepare Pages", "PrepareMapPages", ""
-    MapRibbonStep wsMap, "Adv_Fetch", 132, 147, 118, 18, BLUE, _
+    MapRibbonStep wsMap, "Adv_Fetch", 132, 120, 118, 18, BLUE, _
         "2. Fetch Imagery", "FetchMapImagery", ""
-    MapRibbonStep wsMap, "Adv_Export", 256, 147, 118, 18, BLUE, _
+    MapRibbonStep wsMap, "Adv_Export", 256, 120, 118, 18, BLUE, _
         "3. Export PDF", "ExportCombinedMapPdf", ""
-    MapGhostButton wsMap, "Adv_FetchRe", 388, 147, 138, 18, _
+    MapGhostButton wsMap, "Adv_FetchRe", 388, 120, 138, 18, _
         ChrW$(8635) & " Re-run failed imagery", "ReRunFailedImagery"
-    MapGhostButton wsMap, "Adv_Restamp", 532, 147, 108, 18, _
+    MapGhostButton wsMap, "Adv_Restamp", 532, 120, 108, 18, _
         ChrW$(8635) & " Re-stamp pages", "UpdateMapStamps"
-    MapGhostButton wsMap, "Adv_FirmRe", 646, 147, 142, 18, _
+    MapGhostButton wsMap, "Adv_FirmRe", 646, 120, 142, 18, _
         ChrW$(8635) & " Re-run failed FIRMettes", "ReRunFailedFirmettes"
 
-    ' Row 2: the manual Google Earth screenshot flow.
-    MapCtrlLabel wsMap, "Adv_ManualLabel", 8, 169, 300, 12, _
+    ' Row 2: an individual-PDFs export + the door to the Tools & Exports sheet.
+    MapRibbonStep wsMap, "Adv_Individual", 8, 142, 236, 18, BLUE, _
+        "Create Individual Map Pages PDFs", "CreateIndividualMapPagePdfs", ""
+    If ProductIsInspector() Then
+        MapRibbonStep wsMap, "Adv_Tools", 250, 142, 190, 18, GREY, _
+            "Exports & other tools  " & ChrW$(8594), "GoToOtherTools", ""
+    End If
+
+    ' Row 3: the manual Google Earth screenshot flow.
+    MapCtrlLabel wsMap, "Adv_ManualLabel", 8, 164, 300, 12, _
         "Manual alternative - Google Earth screenshots:", 8, True, RGB(90, 90, 90)
-    MapRibbonStep wsMap, "Adv_KML", 8, 182, 118, 18, BLUE, _
+    MapRibbonStep wsMap, "Adv_KML", 8, 178, 118, 18, BLUE, _
         "Export to KML", "ExportSitesToKML", ""
-    MapRibbonStep wsMap, "Adv_Insert", 132, 182, 118, 18, BLUE, _
+    MapRibbonStep wsMap, "Adv_Insert", 132, 178, 118, 18, BLUE, _
         "Insert Images", "InsertMapImages", ""
-    MapCtrlLabel wsMap, "Adv_ManualNote", 256, 180, 400, 22, _
+    MapCtrlLabel wsMap, "Adv_ManualNote", 256, 174, 400, 22, _
         "KML opens in Google Earth Desktop - screenshot each site (Win+Shift+S), save as " & _
         "Site_1, Site_2..., then Insert Images. 'Re-stamp pages' refreshes stamps after job-info edits.", _
         8, False, RGB(110, 110, 110)
@@ -875,8 +949,8 @@ Private Sub AddMapPageControls(ByVal wsMap As Worksheet)
     ' inspector, whose job block also carries State; +5 on the standard product).
     Dim imTop As Double
     imTop = wsMap.Cells(MAP_JOB_FIRST_ROW + IIf(ProductIsInspector(), 6, 5), 1).Top
-    MapCtrlLabel wsMap, "ImgSvcNote", reLeft, imTop, 175, 30, _
-        "Blank = Esri World Imagery. Paste another ArcGIS MapServer URL to fetch from it.", _
+    MapCtrlLabel wsMap, "ImgSvcNote", reLeft, imTop, 105, 30, _
+        "Esri World Imagery by Default.", _
         8, False, RGB(120, 120, 120)
 
     ' Collapse the advanced shapes to the toggle's remembered state (fresh
@@ -1292,6 +1366,126 @@ Public Sub ExportCombinedMapPdf()
         MsgBox "Combined map PDF exported:" & vbCrLf & pdfPath, vbInformation, "Export Map PDF"
     End If
 End Sub
+
+' Advanced option: one PDF PER SITE instead of a single combined file. Each is
+' named exactly like that site's FIRMette but with "Location Map" in place of
+' "FIRMette" (JobFileStem - <site name> - Location Map.pdf), so a site's map and
+' FIRMette sit side by side in the folder. Uses the same direct writer as the
+' combined export (one page each); the print pipeline is the per-page fallback.
+Public Sub CreateIndividualMapPagePdfs()
+    Dim wsMap As Worksheet, folder As String
+    Dim nPages As Long, pageIdx As Long, ok As Long, failed As Long
+    Dim siteName As String, fileName As String, fullPath As String, emsg As String
+    Dim onePage(0 To 0) As Long
+
+    If Not SheetExists(SH_MAPPAGES) Then
+        If Not gHeadless Then MsgBox "No '" & SH_MAPPAGES & "' sheet yet. Click 'Create Combined Map Pages PDF' first.", _
+            vbExclamation, "Individual Map PDFs"
+        Exit Sub
+    End If
+    Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+    ShowMapPages
+
+    nPages = MapPageCount(wsMap)
+    If nPages < 1 Then
+        If Not gHeadless Then MsgBox "No map pages found. Click 'Create Combined Map Pages PDF' (or '1. Prepare Pages') first.", _
+            vbExclamation, "Individual Map PDFs"
+        Exit Sub
+    End If
+
+    folder = ResolveOutputFolder()
+    If Not EnsureFolderExists(folder) Then
+        If Not gHeadless Then MsgBox "Could not create the output folder:" & vbCrLf & folder, vbExclamation, "Individual Map PDFs"
+        Exit Sub
+    End If
+
+    EnsureTextboxesOnTop wsMap
+    NormalizeMapLayoutForPrint wsMap
+
+    For pageIdx = 0 To nPages - 1
+        siteName = MapPageSiteName(wsMap, pageIdx)
+        fileName = CleanFileName(JobFileStem() & " - " & siteName & " Location Map.pdf")
+        fullPath = folder & fileName
+        SetStatus "Exporting map page " & (pageIdx + 1) & " of " & nPages & " - " & siteName
+        DoEvents
+
+        onePage(0) = pageIdx
+        emsg = ""
+        If BuildMapPdfForPages(wsMap, onePage, fullPath, emsg) Then
+            ok = ok + 1
+        ElseIf ExportOnePagePrint(wsMap, pageIdx, fullPath) Then
+            ok = ok + 1
+        Else
+            failed = failed + 1
+        End If
+        DoEvents
+    Next pageIdx
+    ClearStatus
+    If ok > 0 Then SurfaceFolder folder
+
+    If Not gHeadless Then
+        MsgBox "Individual map-page PDFs created." & vbCrLf & vbCrLf & _
+            "Files written: " & ok & IIf(failed > 0, "   (failed: " & failed & ")", "") & vbCrLf & _
+            "One PDF per site, named like the FIRMettes (""... Location Map.pdf"")." & vbCrLf & vbCrLf & _
+            "Folder: " & folder, _
+            IIf(failed = 0, vbInformation, vbExclamation), "Individual Map PDFs"
+    End If
+End Sub
+
+' The site name for a map page (from the page stamp's remembered Sites row).
+' Falls back to "Page N" for a blank/manual page so a file is still named.
+Private Function MapPageSiteName(ByVal wsMap As Worksheet, ByVal pageIdx As Long) As String
+    Dim siteRow As Long, nm As String
+    On Error Resume Next
+    siteRow = CLng(Val(wsMap.Shapes("Textbox_Page_" & CStr(pageIdx + 1)).AlternativeText))
+    On Error GoTo 0
+    If siteRow >= SITES_FIRST_DATA_ROW Then nm = Trim$(CStr(SitesSheet().Cells(siteRow, COL_SITENAME).Value))
+    If Len(nm) = 0 Then nm = "Page " & CStr(pageIdx + 1)
+    MapPageSiteName = nm
+End Function
+
+' Print-pipeline fallback for a SINGLE page (only when the direct writer is
+' unavailable). Mirrors ExportMapPdfCore's fallback but with the print area
+' restricted to the one page's rows. True on success.
+Private Function ExportOnePagePrint(ByVal wsMap As Worksheet, ByVal pageIdx As Long, _
+        ByVal fullPath As String) As Boolean
+    Dim savedPrinter As String, borderless As Boolean, r1 As Long, r2 As Long, savedAlerts As Boolean
+    On Error GoTo Fail
+    SetMapEditControlsVisible wsMap, False
+    On Error Resume Next
+    savedPrinter = Application.ActivePrinter
+    On Error GoTo Fail
+    borderless = SwitchToPdfPrinter()
+    ConfigureMapPageSetup wsMap
+    NormalizeMapLayoutForPrint wsMap
+    r1 = MAP_FIRST_PAGE_ROW + pageIdx * MAP_ROWS_PER_PAGE
+    r2 = r1 + MAP_ROWS_PER_PAGE - 1
+    savedAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    wsMap.PageSetup.PrintArea = wsMap.Range(wsMap.Cells(r1, 1), wsMap.Cells(r2, MAP_COLS_WIDE)).Address
+    Application.DisplayAlerts = savedAlerts
+    If Not borderless Then
+        With wsMap.PageSetup
+            .Zoom = False
+            .FitToPagesWide = 1
+            .FitToPagesTall = 1
+        End With
+    End If
+    wsMap.ExportAsFixedFormat Type:=xlTypePDF, fileName:=fullPath, _
+        Quality:=xlQualityStandard, IncludeDocProperties:=False, _
+        IgnorePrintAreas:=False, OpenAfterPublish:=False
+    RestorePrinter savedPrinter
+    SetMapPrintArea wsMap
+    SetMapEditControlsVisible wsMap, True
+    ExportOnePagePrint = True
+    Exit Function
+Fail:
+    RestorePrinter savedPrinter
+    On Error Resume Next
+    SetMapPrintArea wsMap
+    SetMapEditControlsVisible wsMap, True
+    On Error GoTo 0
+End Function
 
 ' Exports the map pages to "<stem> - Location Map.pdf". Returns the full path,
 ' or "" when preconditions failed / the export errored non-headless.

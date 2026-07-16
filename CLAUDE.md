@@ -1083,28 +1083,38 @@ rows; pages start at `MAP_FIRST_PAGE_ROW`; PrintArea starts there so the band
 never prints) holds:
 
 - the ONE-CLICK hero (2026-07-16, superseding PR #35's 3-step ribbon per
-  user direction "make the three buttons a single button"): **Create Map
-  Pages PDF** = `CreateMapPagesPdf`, which chains `PreparePagesCore` →
+  user direction "make the three buttons a single button"): **Create Combined
+  Map Pages PDF** = `CreateMapPagesPdf`, which chains `PreparePagesCore` →
   `FetchImageryCore` → `ExportMapPdfCore` with a single summary MsgBox.
-  **Download FIRMettes** sits beside it as the other primary deliverable.
-  Everything else lives behind a collapsed **"Advanced options ▸"** ghost
-  toggle (`ToggleMapAdvanced`; state in the toggle shape's AlternativeText,
-  respected by `SetMapEditControlsVisible` when it restores controls after an
-  export): the individual steps (1 Prepare Pages / 2 Fetch Imagery / 3 Export
-  PDF), ghost "↻ Re-run failed imagery" / "↻ Re-stamp pages" / "↻ Re-run
-  failed FIRMettes", and the labeled **manual alternative** (Export to KML +
-  Insert Images — the Google Earth screenshot flow). Advanced shapes are
-  named `MapCtrl_Adv*` and ship hidden;
+  **Download FIRMettes** sits right beside it as the other primary
+  deliverable. Everything else lives behind a collapsed **"Advanced
+  options ▸"** ghost toggle (`ToggleMapAdvanced`; state in the toggle shape's
+  AlternativeText, respected by `SetMapEditControlsVisible` when it restores
+  controls after an export): the individual steps (1 Prepare Pages / 2 Fetch
+  Imagery / 3 Export PDF), ghost "↻ Re-run failed imagery" / "↻ Re-stamp
+  pages" / "↻ Re-run failed FIRMettes", **Create Individual Map Pages PDFs**
+  (`CreateIndividualMapPagePdfs` — one PDF per site named exactly like the
+  FIRMette but "… Location Map.pdf"; direct writer per page,
+  `ExportOnePagePrint` fallback), the **Exports & other tools →** door
+  (`GoToOtherTools`, inspector only — moved here from the top-right), and the
+  labeled **manual alternative** (Export to KML + Insert Images — the Google
+  Earth screenshot flow). Advanced shapes are named `MapCtrl_Adv*` and ship
+  hidden;
 - the job block: WO / DI / Disaster (bare number, e.g. 4882) / **State**
   (inspector only; drives classification AND the filename tag) / Applicant /
-  Output Folder (+ Browse) / **Imagery URL (optional, PR #35)** — these carry
-  the `JobWO`/`JobDI`/`JobDisaster`/
+  Output Folder (optional, + Browse) / **Imagery URL (optional, PR #35)** —
+  these carry the `JobWO`/`JobDI`/`JobDisaster`/
   `JobState`/`JobApplicant`/`JobOutputFolder`/`JobImagerySvc` named ranges on the inspector
   (standard keeps State/Output Folder/AGOL/buffer on Start Here; its Map Pages
   shows a read-only Output Folder mirror so the name isn't defined twice).
   Band constants moved for the new layout: `MAP_HEADER_ROWS` 20→22,
   `MAP_JOB_FIRST_ROW` 11→14;
-- a **live filename preview** (`="File name:  "&FirmettePreview()`, volatile).
+- to the RIGHT of the job boxes, a **formula-driven stamp preview** (cols I:M,
+  `StampPreviewFormula`) — a live Excel-formula replica of
+  `BuildMapTextboxString` driven by the first Sites data row + the job named
+  ranges (blank lines skipped via a leading-`CHAR(10)` strip), so the
+  inspector sees each page's stamp as they type — with the **filename
+  preview** (`="File name:  "&FirmettePreview()`, volatile) directly under it.
 
 ### Shared file-name convention (modUtil)
 
