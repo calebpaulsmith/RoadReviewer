@@ -72,8 +72,10 @@ REST = {
     "MI_ROUTE":       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
     # Nationwide 2020 Adjusted Census Urban Boundary (USDOT NTAD)
     "ACUB":           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
-    # Indiana INDOT — functional class + separate road-name centerline layer
-    "IN_NFC":         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+    # Indiana INDOT — authoritative Roads_and_Highways functional-class layer
+    # (the one behind INDOT's official Functional Class Map) + separate
+    # road-name centerline layer
+    "IN_NFC":         "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
     "IN_ROADNAME":    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
     # Minnesota / Illinois / Ohio (wired PR #36) — bare FHWA 1-7 class, no filter needed
     "MN_NFC":         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
@@ -296,8 +298,8 @@ def query_with_fallback(base_url, lat, lon, out_fields, where_clause, fallback_f
 #
 # Each returns `(segments, roads)` where `segments` is `[{code, name, distFt}]` (bare FHWA class
 # per detected road segment, nearest measured) and `roads` is a separate `[{name, distFt}]` list
-# for the merged Road Name display. Retired-segment filters (`RHRetireDate IS NULL` for MI,
-# `record_status=5` for IN) come straight from `web/sources.html`.
+# for the merged Road Name display. Retired-segment filters (`RHRetireDate IS NULL` for MI)
+# come straight from `web/sources.html`; Indiana's authoritative RO layer needs none (`1=1`).
 
 # %%
 def query_michigan_nfc(lat, lon, buffer_ft):
@@ -328,12 +330,15 @@ def query_michigan_nfc(lat, lon, buffer_ft):
     return segments, roads
 
 def query_indiana_nfc(lat, lon, buffer_ft):
-    """INDOT LRSE_Functional_Class (record_status=5 Active) + separate centerline road name."""
-    nfc = query_with_fallback(svc("IN_NFC"), lat, lon, "functional_class",
-                              "record_status=5", buffer_ft, True)
+    """Authoritative INDOT Roads_and_Highways LRSE_Functional_Class (UPPERCASE
+    FUNCTIONAL_CLASS, where=1=1 — no record-status filter; the layer holds only
+    statuses {1,4,5,null}, none retired, and null-status segments carry real
+    classes) + separate centerline road name."""
+    nfc = query_with_fallback(svc("IN_NFC"), lat, lon, "FUNCTIONAL_CLASS",
+                              "1=1", buffer_ft, True)
     segments = []
     for e in feature_entries(nfc, lat, lon):
-        raw = e["attrs"].get("functional_class")
+        raw = e["attrs"].get("FUNCTIONAL_CLASS")
         if clean_str(raw) == "":
             continue
         try:
@@ -479,18 +484,56 @@ def _dist(x):
     d = x.get("distFt")
     return math.inf if d is None else d
 
+_COMPASS_TOKENS = {"N", "S", "E", "W", "NE", "NW", "SE", "SW",
+                   "NORTH", "SOUTH", "EAST", "WEST"}
+_STREET_TYPE_CANON = {
+    "ST": "ST", "STREET": "ST", "RD": "RD", "ROAD": "RD", "AVE": "AVE",
+    "AV": "AVE", "AVENUE": "AVE", "PKWY": "PKWY", "PKY": "PKWY",
+    "PARKWAY": "PKWY", "PKWAY": "PKWY", "DR": "DR", "DRIVE": "DR", "LN": "LN",
+    "LANE": "LN", "CT": "CT", "COURT": "CT", "BLVD": "BLVD",
+    "BOULEVARD": "BLVD", "TRL": "TRL", "TRAIL": "TRL", "HWY": "HWY",
+    "HIGHWAY": "HWY", "CIR": "CIR", "CIRCLE": "CIR", "PL": "PL", "PLACE": "PL",
+    "TER": "TER", "TERR": "TER", "TERRACE": "TER", "PT": "PT", "POINT": "PT",
+    "SQ": "SQ", "SQUARE": "SQ", "CV": "CV", "COVE": "CV", "WAY": "WAY",
+}
+
+def normalize_road_key(name):
+    """Canonical dedup key so the same road written two ways ('N Meridian St'
+    vs 'MERIDIAN ST', 'Harrison Pkwy' vs 'HARRISON PKY') collapses to one entry
+    (modClassify.NormalizeRoadKey / rr-core normalizeRoadKey)."""
+    toks = [t for t in re.sub(r"[^A-Z0-9]+", " ", str(name).upper()).split() if t]
+    if not toks:
+        return ""
+    if len(toks) > 1 and toks[0] in _COMPASS_TOKENS:
+        toks = toks[1:]
+    if len(toks) > 1 and toks[-1] in _COMPASS_TOKENS:
+        toks = toks[:-1]
+    if len(toks) > 1:
+        toks[-1] = _STREET_TYPE_CANON.get(toks[-1], toks[-1])
+    return " ".join(toks)
+
 def merge_road_list(roads):
-    """Merge detected roads into one nearest-first list, deduped by name keeping each name's
-    nearest distance (rr-core mergeRoadList / modClassify.FormatRoadList)."""
+    """Merge detected roads into one nearest-first list, deduped by NORMALIZED
+    name (keeping the nearest distance, preferring a mixed-case display over
+    ALL-CAPS) — rr-core mergeRoadList / modClassify.FormatRoadList."""
     best = {}
     for r in roads:
         nm = clean_str(r.get("name"))
         if not nm:
             continue
-        k = nm.lower()
+        k = normalize_road_key(nm) or nm.lower()
         d = _dist(r)
-        if k not in best or d < best[k]["distFt"]:
-            best[k] = {"name": nm, "distFt": d}
+        mixed = (nm != nm.upper())
+        if k not in best:
+            best[k] = {"name": nm, "distFt": d, "mixed": mixed, "nameDist": d}
+            continue
+        cur = best[k]
+        if d < cur["distFt"]:
+            cur["distFt"] = d
+        if mixed and not cur["mixed"]:
+            cur["name"], cur["mixed"], cur["nameDist"] = nm, True, d
+        elif mixed == cur["mixed"] and d < cur["nameDist"]:
+            cur["name"], cur["nameDist"] = nm, d
     return sorted(best.values(), key=lambda r: r["distFt"])
 
 def format_road_list(road_list):
@@ -507,9 +550,14 @@ def class_is_federal(code, is_urban):
         return is_urban
     return False
 
-def compute_verdict(segments, exact_urban, boundary_ambiguous, buffer_ft):
+def compute_verdict(segments, exact_urban, boundary_ambiguous, buffer_ft,
+                    named_road_nearby=False):
     """The core verdict — direct port of rr-core computeVerdict. Returns (verdict, reason)."""
     if not segments:
+        # A named road is present but the state layer assigns it no functional
+        # class (e.g. Mohawk Trail) — flag for review rather than "no road".
+        if named_road_nearby:
+            return ("Review - road not classified", "Unclassified road")
         return ("Review - no road within {} ft".format(buffer_ft), "No road found")
     ordered = sorted(segments, key=_dist)
     p = ordered[0]
@@ -606,7 +654,8 @@ def classify_point(lat, lon, state_code, buffer_ft=DEFAULT_BUFFER_FEET):
     out["roadList"] = merge_road_list(roads)
     out["roadName"] = format_road_list(out["roadList"])
     out["classLabel"] = class_labels(out["segments"], buffer_ft)
-    verdict, reason = compute_verdict(out["segments"], acub["exact_urban"], acub["boundary"], buffer_ft)
+    verdict, reason = compute_verdict(out["segments"], acub["exact_urban"], acub["boundary"], buffer_ft,
+                                      len(out["roadList"]) > 0)
     out["verdict"] = verdict
     out["reviewReason"] = reason
     return out

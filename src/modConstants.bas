@@ -186,7 +186,7 @@ Public Const URL_NFC_MAPVIEW As String = "https://fema.maps.arcgis.com/apps/mapv
 ' visibleLayers param was added (see the note above). Degrades gracefully
 ' even if the Map Viewer version in use doesn't render the `url=` layer -
 ' the pin+zoom still resolves correctly either way.
-Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
+Public Const URL_NFC_MAPVIEW_IN As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgis.indot.in.gov%2Fro%2Frest%2Fservices%2FRAH_GIO_Collaboration%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 Public Const URL_NFC_MAPVIEW_WI As String = "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16"
 ' Wisconsin's LOCAL ROADS layer side-loaded the same way (PR #37): WI's
 ' primary link column reviews the local-roads layer (it carries most points),
@@ -223,11 +223,19 @@ Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/
 Public Const REST_MDOT_ROUTE As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"
 Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"
 
-' Indiana NFC (§4.2a). LRSE_Functional_Class carries the bare FHWA 1-7 code
-' (field functional_class) with no urban/rural embedded - same shape as MDOT
-' 353. Road name is NOT on this layer (no shared LRS join key), so it's a
-' separate point-intersect query against the statewide centerline layer.
-Public Const REST_IN_NFC As String = "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22"
+' Indiana NFC (§4.2a). Switched 2026-07-16 to the AUTHORITATIVE layer that
+' backs INDOT's official "INDOT Functional Class Map" Experience (APP_IN):
+' the Roads_and_Highways collaboration service on gis.indot.in.gov/ro, NOT the
+' staler gisdata.in.gov open-data mirror (153,740 vs 148,185 segments live).
+' Field is FUNCTIONAL_CLASS (UPPERCASE on this service - ArcGIS JSON keys are
+' case-sensitive, §9.3) carrying the bare FHWA 1-7 code, no urban/rural
+' embedded. NO record-status filter: this layer holds only statuses {1,4,5,
+' null} - none retired/replaced - and the official app applies no filter, so
+' where=1=1 matches it. The old record_status=5 filter silently dropped 16,830
+' valid null-status segments (e.g. Wolf Run Rd, a Major Collector - test 7.16).
+' Road name is NOT on this layer (no shared LRS join key), so it's a separate
+' point-intersect query against the statewide centerline layer (unchanged).
+Public Const REST_IN_NFC As String = "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22"
 Public Const REST_IN_ROADNAME As String = "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15"
 
 ' Wisconsin NFC (§4.2b) - two layers. The LOCAL Road Network layer

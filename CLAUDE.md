@@ -439,25 +439,28 @@ above.
 
 ### 4.2a Indiana road classification (V1)
 
-Source: INDOT's public GIS platform at `gisdata.in.gov` (the "IndianaMap"
-hosted-services back end), confirmed live 2026-07-01.
+Source (updated 2026-07-16, test 7.16): the **authoritative INDOT
+Roads_and_Highways collaboration service** on `gis.indot.in.gov/ro` — the
+exact layer that backs INDOT's official "INDOT Functional Class Map"
+Experience (`APP_IN`, item `e388c2aa14aa4788a702705620567589`, owner
+`MMcMahan@indot.IN.gov`). The tool previously read the `gisdata.in.gov`
+open-data mirror; that copy is staler (148,185 vs 153,740 segments live) and
+was missing/mis-filtering local roads the official map shows. Confirmed live
+2026-07-16.
 
 #### Layer `LRSE_Functional_Class` — the class code
 
-- URL: `https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22`
-- Type: `Feature Layer` (esriGeometryPolyline), spatial reference WKID
-  26916 (NAD83 UTM 16N). Hand it WGS84 with `inSR=4326`, same pattern as
-  MDOT.
-- displayField: `from_date`
-- Confirmed fields: `from_date`, `to_date` (Date), `event_id` (String),
-  `route_id` (String — LRS event key), `from_measure`/`to_measure`
-  (Double), `record_status` (SmallInteger), **`functional_class`**
-  (SmallInteger), `created_by`, `date_created`, `edited_by`,
-  `date_edited`, `locerror` (String), `objectid` (OID),
-  `date_attr_effective` (Date), `globalid` (GlobalID),
-  `SHAPE__Length`.
-- **`functional_class` coded-value domain (`dFunctionalClass`)** — same
-  structure and numbering as MDOT's `LrseFunctionalSystem` domain, no
+- URL: `https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22`
+- Type: `Feature Layer` (esriGeometryPolyline), native WKID 26916 (NAD83 UTM
+  16N). Hand it WGS84 with `inSR=4326`, same pattern as MDOT. Capabilities:
+  `Query,Sync,ChangeTracking` (anonymous read OK).
+- **Field names are UPPERCASE on this service** (ArcGIS JSON keys are
+  case-sensitive, §9.3): `FROM_DATE`, `TO_DATE`, `EVENT_ID`, `ROUTE_ID`,
+  `FROM_MEASURE`/`TO_MEASURE`, `RECORD_STATUS` (SmallInteger),
+  **`FUNCTIONAL_CLASS`** (SmallInteger), audit fields, `OBJECTID`,
+  `GLOBALID`, `Shape__Length`. (The old gisdata mirror used lowercase
+  `functional_class`/`record_status`.)
+- **`FUNCTIONAL_CLASS` values** — bare FHWA 1-7, same numbering as MDOT, no
   urban/rural embedded:
 
   | code | name |
@@ -470,22 +473,22 @@ hosted-services back end), confirmed live 2026-07-01.
   | 6 | Minor Collector |
   | 7 | Local |
 
-- **`record_status` coded-value domain (`dRecordCode`)** — Indiana's
-  analog to Michigan's `RHRetireDate IS NULL` filter:
-
-  | code | name |
-  |---|---|
-  | 0 | Work In Progress |
-  | 1 | Proposed |
-  | 2 | Withdrawn |
-  | 3 | Rejected |
-  | 4 | Accepted |
-  | 5 | Active |
-  | 6 | Replaced |
-  | 7 | Retired |
-
-  Production queries filter **`where=record_status=5`** (Active). All
-  live test points below returned status 5.
+- **No record-status filter — query `where=1=1`.** This authoritative layer
+  contains only `RECORD_STATUS` values **{1, 4, 5, null}** (distinct values,
+  live) — *no* retired/replaced/withdrawn segments — and INDOT's own
+  Experience applies no status filter, so `1=1` matches the official map.
+  The former `record_status=5` (Active) filter silently dropped **16,830
+  valid null-status segments** — e.g. Wolf Run Rd (a class-5 Major Collector
+  at 87 ft, test-7.16 site 8) reported "no road found" purely because its
+  segment carried `RECORD_STATUS=null`. Do not reintroduce the filter.
+- **Genuinely unclassified roads still return zero segments.** Some local
+  roads (e.g. test-7.16 site 10, Mohawk Trail) are simply absent from INDOT's
+  functional-class layer even on the authoritative service — they carry no
+  FHWA class. When the class query returns nothing *but* a named road was
+  found nearby (state name layer or Census TIGER), the verdict is
+  **"Review - road not classified"** (reason "Unclassified road") rather than
+  "no road found", so the inspector sees the road exists but INDOT assigns it
+  no class (`modClassify.ComputeVerdict`).
 
 #### Layer `Road_Centerlines_of_Indiana_2021` — road name (separate, un-keyed)
 
@@ -505,20 +508,33 @@ hosted-services back end), confirmed live 2026-07-01.
   more often than Michigan's Road Name column; Census TIGER (already
   wired for every state) backs it up.
 
+Road name is still resolved from the `gisdata.in.gov` centerlines layer
+(field `st_full`, lowercase — unchanged by the RO switch); INDOT's
+functional-class layer carries no name field, so names come back blank more
+often than Michigan's and Census TIGER (wired for every state) backs it up.
+Because the state centerlines return ALL-CAPS names (`MERIDIAN ST`) and TIGER
+returns title-case (`N Meridian St`), the two used to appear as separate
+"roads" in the Road Name column; `FormatRoadList`/`NormalizeRoadKey` now
+collapse them (strip a leading/trailing compass token, canonicalize the
+street-type suffix, prefer the mixed-case display) so one physical road reads
+once (test-7.16 request 3).
+
 #### UA / header quirks
 
-None observed. `gisdata.in.gov` answered plain `f=json` GET requests
-without a browser User-Agent (unlike `mdotgis.state.mi.us`). RoadReviewer
-sends the browser UA on every request regardless (`modHttp.HttpGetText`),
-which is harmless here.
+None observed. Both `gis.indot.in.gov` and `gisdata.in.gov` answer plain
+`f=json` GETs without a browser User-Agent (unlike `mdotgis.state.mi.us`).
+RoadReviewer sends the browser UA on every request regardless
+(`modHttp.HttpGetText`), which is harmless here.
 
-#### Confirmed test coordinates (verified live 2026-07-01)
+#### Confirmed test coordinates (verified live 2026-07-16 against the RO layer)
 
-| # | Expected outcome | lat | lon | `functional_class` | `record_status` |
-|---|---|---|---|---|---|
-| 1 | Higher-class road | `39.7684` | `-86.1581` | `6` (Minor Collector), downtown Indianapolis / Monument Circle area, route_id `549095041900000R1` | `5` (Active) |
-| 2 | Higher-class road | `39.4234` | `-86.7628` | `3` (Principal Arterial - Other), near Martinsville, route_id `20000002310000001` | `5` (Active) |
-| 3 | Local road | `39.9876` | `-86.0128` | `7` (Local), route_id `52901903520000001` — originally logged as "rural Hancock County", but the 2026-07-05 verify-classify run showed the point is at the Marion/Hamilton county line INSIDE the `Indianapolis, IN` ACUB polygon, so the correct verdict is "Non-federal aid - Urban Local" (the class code was the live-verified part) | `5` (Active) |
+| # | Expected outcome | lat | lon | `FUNCTIONAL_CLASS` (closest) |
+|---|---|---|---|---|
+| 1 | Federal aid - Urban Minor Collector | `39.7684` | `-86.1581` | `6` (Minor Collector) @152 ft, downtown Indianapolis / Monument Circle; ACUB `Indianapolis, IN` |
+| 2 | Federal aid - Rural Other Principal Arterial | `39.4234` | `-86.7628` | `3` (Principal Arterial - Other) @102 ft, near Martinsville |
+| 3 | Non-federal aid - Urban Local | `39.9876` | `-86.0128` | `7` (Local) @89 ft, Marion/Hamilton county line inside the `Indianapolis, IN` ACUB |
+| 8 | Federal aid - Rural Major Collector | `38.792119` | `-85.293851` | `5` (Major Collector) @87 ft, Wolf Run Rd — `RECORD_STATUS=null`, so the old `record_status=5` filter reported "no road found" |
+| 10 | Review - road not classified | `39.402683` | `-85.302633` | *(no INDOT segment)* — Mohawk Trail present in TIGER (83 ft) but unclassified by INDOT |
 
 ### 4.2b Wisconsin road classification (V1)
 
@@ -1257,9 +1273,14 @@ DRTEST filenames) and the whole §9.2 suite passes on the rebuilt workbooks.
 4. **Reviewer block reordered** — verdicts lead: Federal Aid Status (16/P),
    Review Reason (17/Q), then FHWA Class, Urban/Rural, ACUB Name, Road
    Name, Street Name (18-22). `COL_REVIEWER_FIRST/LAST` still span 16-22,
-   so tint/CF/hide logic was untouched; only constants + verifier indices
+   so tint/hide logic was untouched; only constants + verifier indices
    moved. **Check Roads reveals the block BEFORE its loop** so the user
-   watches verdicts appear row by row.
+   watches verdicts appear row by row. *(Bug fixed test-7.16: the red/green/
+   yellow **conditional-format range** was still hard-coded `COL_CLASS..
+   COL_REVIEWNOTE` (cols 18→17) after this reorder, so column P — the very
+   verdict column — never tinted. Now spans `COL_REVIEWER_FIRST..LAST`
+   like everything else. If the reviewer block ever moves again, this CF
+   range in `modBuild.ApplySitesFormatting` must move with it.)*
 5. **Map-link columns sit together** (13 "NFC Layer (Map Viewer)", 14
    "State NFC App"), AGOL moved to 15. Labels are descriptive, not "Open":
    col 13 = "Review NFC AGOL Layer", col 14 = "Review State NFC Layer" —

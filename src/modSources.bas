@@ -42,8 +42,9 @@ Public Sub BuildSourcesSheet()
     StateHeader ws, "Indiana (INDOT) - WIRED"
     Cite ws, "Indiana Department of Transportation, INDOT Functional Class Map (Functional Classification & Urban " & _
         "Area Boundary),", APP_IN
-    Cite ws, "Indiana Department of Transportation, LRSE_Functional_Class, ArcGIS REST feature service layer 22 " & _
-        "(road names from the 2021 centerlines layer) - queried by this tool,", REST_IN_NFC
+    Cite ws, "Indiana Department of Transportation, LRSE_Functional_Class (Roads_and_Highways collaboration " & _
+        "service - the authoritative layer behind INDOT's official Functional Class Map; road names from the " & _
+        "2021 centerlines layer) - queried by this tool,", REST_IN_NFC
 
     StateHeader ws, "Wisconsin (WisDOT) - WIRED"
     Cite ws, "Wisconsin Department of Transportation, Functional Classification (official page; static county and " & _
@@ -106,9 +107,11 @@ Public Sub BuildSourcesSheet()
         "street names are filled in from the Census street layer instead."
 
     Sub2 ws, "Indiana"
-    Body ws, "Indiana marks each record's status; the tool uses only Active records. Indiana's class data carries " & _
-        "no road name at all, so names come from a separate centerline layer and the Census - expect the Road " & _
-        "Name column to be blank more often for Indiana."
+    Body ws, "The tool reads the authoritative Roads_and_Highways functional-class layer that backs INDOT's " & _
+        "official Functional Class Map (no record-status filter - matching the official app, which shows every " & _
+        "segment). Indiana's class data carries no road name at all, so names come from a separate centerline " & _
+        "layer and the Census. A nearby road that INDOT hasn't classified is flagged 'road not classified' for " & _
+        "manual review rather than reported as no road."
 
     Sub2 ws, "Wisconsin"
     Body ws, "Wisconsin data comes in two layers. The LOCAL road layer (county/city/town roads and most collectors) " & _

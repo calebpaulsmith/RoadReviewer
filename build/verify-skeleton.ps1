@@ -327,11 +327,16 @@ try {
   if ($latVal.Formula1 -ne '-90' -or $latVal.Formula2 -ne '90') { throw "Latitude validation range wrong" }
   if ($lonVal.Formula1 -ne '-180' -or $lonVal.Formula2 -ne '180') { throw "Longitude validation range wrong" }
 
-  Write-Host "=== Conditional formatting on Federal Aid Status columns ===" -ForegroundColor Cyan
-  $r = $sites.Range($sites.Cells($FirstDataRow, 16), $sites.Cells($FirstDataRow, 22))
-  $fcCount = $r.FormatConditions.Count
-  Write-Host ("  format conditions count on class..eligibility row " + $FirstDataRow + ": " + $fcCount)
-  if ($fcCount -lt 3) { throw ("Expected 3 conditional-format rules (federal aid / non-federal aid / review), got " + $fcCount) }
+  Write-Host "=== Conditional formatting on reviewer columns (16..22) ===" -ForegroundColor Cyan
+  # Check EACH reviewer column carries the 3 tri-state rules — in particular
+  # column P (16, Federal Aid Status), the verdict column itself, which the
+  # PR #37 reorder left out of the CF range until test-7.16 (it read as the
+  # only reviewer column with no red/green highlight).
+  foreach ($col in 16..22) {
+    $fcCount = $sites.Cells($FirstDataRow, $col).FormatConditions.Count
+    Write-Host ("  col " + $col + " format conditions: " + $fcCount)
+    if ($fcCount -lt 3) { throw ("Column " + $col + " missing tri-state conditional formatting (got " + $fcCount + ", expected 3) - the CF range must span COL_REVIEWER_FIRST..LAST") }
+  }
 
   Write-Host "=== Hub-sheet disclaimer + version ===" -ForegroundColor Cyan
   $start = $wb.Worksheets($startName)

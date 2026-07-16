@@ -980,8 +980,12 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
     ' also match "Non-federal aid". Order matters when format rules
     ' overlap: in Excel the FIRST matching rule wins, so non-federal
     ' is checked before federal.
+    ' Tint the WHOLE reviewer block (COL_REVIEWER_FIRST..LAST = Federal Aid
+    ' Status through Street Name), not just the class/reason pair. The PR #37
+    ' reorder moved Federal Aid Status to the FIRST reviewer column (P) but the
+    ' range here still started at COL_CLASS, so column P itself never tinted.
     eligCol = "$" & ColLetter(COL_ELIGIBILITY) & SITES_FIRST_DATA_ROW
-    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_CLASS), ws.Cells(r2, COL_REVIEWNOTE))
+    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_REVIEWER_FIRST), ws.Cells(r2, COL_REVIEWER_LAST))
         .FormatConditions.Delete
         .FormatConditions.Add Type:=xlExpression, _
             Formula1:="=LEFT(" & eligCol & ",15)=""Non-federal aid"""

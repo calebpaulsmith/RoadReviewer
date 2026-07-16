@@ -99,8 +99,20 @@ console.log("distance helpers:");
   check("point-to-polyline distance ~338 ft (equirectangular)", Math.abs(d - 337.7) < 2, "got " + d.toFixed(1));
   check("no geometry -> Infinity", core.minDistanceFt(undefined, 42, -85) === Infinity);
   const merged = core.mergeRoadList([{ name: "Main St", distFt: 50 }, { name: "MAIN ST", distFt: 10 }, { name: "Q Ave", distFt: 30 }]);
-  check("road list dedups by name keeping nearest, sorted",
-    merged.length === 2 && merged[0].name === "MAIN ST" && merged[0].distFt === 10 && merged[1].name === "Q Ave");
+  check("road list dedups by name keeping nearest, prefers mixed-case, sorted",
+    merged.length === 2 && merged[0].name === "Main St" && merged[0].distFt === 10 && merged[1].name === "Q Ave");
+  // test-7.16 request 3: the same physical road written two ways (directional
+  // prefix + street-type abbreviation + case) must collapse to ONE entry.
+  const merged2 = core.mergeRoadList([
+    { name: "MERIDIAN ST", distFt: 167 }, { name: "N Meridian St", distFt: 163 },
+    { name: "HARRISON PKY", distFt: 230 }, { name: "Harrison Pkwy", distFt: 227 },
+    { name: "W Market St", distFt: 197 }, { name: "E Market St", distFt: 226 }, { name: "MARKET ST", distFt: 199 }]);
+  check("road list collapses directional/abbreviation/case duplicates to one road each",
+    merged2.length === 3 &&
+    merged2[0].name === "N Meridian St" && merged2[0].distFt === 163 &&
+    merged2[1].name === "W Market St" && merged2[1].distFt === 197 &&
+    merged2[2].name === "Harrison Pkwy" && merged2[2].distFt === 227,
+    "got " + JSON.stringify(merged2.map(r => [r.name, r.distFt])));
 }
 
 /* ---------- live service checks (§4.2 / §4.2a / §4.2b test coordinates) ---------- */

@@ -229,7 +229,12 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     ws.Cells(r, COL_CLASS).Value = ClassLabelsFromSegs(segs)
 
     Dim verdict As String, reason As String
-    ComputeVerdict segs, exactUrban, boundaryAmbiguous, verdict, reason
+    ' Whether ANY named road was found near the point (state layer or TIGER).
+    ' Lets ComputeVerdict distinguish "a road is here but the state assigns it
+    ' no functional class" (unclassified - flag for review) from "genuinely
+    ' nothing here" (request 4: Mohawk Trail is present in TIGER but absent
+    ' from INDOT's class layer).
+    ComputeVerdict segs, exactUrban, boundaryAmbiguous, (roads.Count > 0), verdict, reason
     ws.Cells(r, COL_ELIGIBILITY).Value = verdict
     ws.Cells(r, COL_REVIEWNOTE).Value = reason
 End Sub
@@ -270,7 +275,13 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
             AddNamedRoads ServiceUrl("MI_ROUTE"), "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
                 "MI_ROUTE", lat, lon, latP, lonP, roads
         Case "IN"
-            AddClassSegs ServiceUrl("IN_NFC"), "functional_class", "record_status=5", False, False, _
+            ' Authoritative INDOT Roads_and_Highways layer (§4.2a, switched
+            ' 2026-07-16): UPPERCASE FUNCTIONAL_CLASS, where=1=1 - no
+            ' record-status filter (the layer holds only statuses {1,4,5,null},
+            ' none retired, and its null-status segments carry real classes,
+            ' e.g. Wolf Run Rd Major Collector). Road name still comes from the
+            ' separate centerlines layer (lowercase st_full, unchanged).
+            AddClassSegs ServiceUrl("IN_NFC"), "FUNCTIONAL_CLASS", "1=1", False, False, _
                 lat, lon, latP, lonP, segs, errMsg
             If Len(errMsg) > 0 Then Exit Sub
             AddNamedRoads ServiceUrl("IN_ROADNAME"), "st_full", "1=1", "SINGLE:st_full", lat, lon, latP, lonP, roads
@@ -446,18 +457,33 @@ Private Function AppendTigerRoads(ByVal lat As String, ByVal lon As String, _
 End Function
 
 ' Merge the collected roads into one "Name (D ft) | Name (D ft)" string:
-' dedup by name (keep the nearest distance), sort nearest-first (request 3).
+' dedup by NORMALIZED name (so "N Meridian St", "MERIDIAN ST" and the same
+' road from two sources collapse to one entry - request 3), keep the nearest
+' distance, prefer a mixed-case display over ALL-CAPS, sort nearest-first.
 Private Function FormatRoadList(ByVal roads As Collection) As String
     Dim dict As Object, rv As Variant, nm As String, d As Double, key As String
+    Dim cur As Variant
     Set dict = CreateObject("Scripting.Dictionary")
     For Each rv In roads
         nm = Trim$(CStr(rv(0))): d = CDbl(rv(1))
         If Len(nm) > 0 Then
-            key = LCase$(nm)
+            key = NormalizeRoadKey(nm)
+            If Len(key) = 0 Then key = LCase$(nm)
             If Not dict.Exists(key) Then
-                dict.Add key, Array(nm, d)
-            ElseIf d < CDbl(dict(key)(1)) Then
-                dict(key) = Array(nm, d)
+                ' item = Array(displayName, minDist, displayIsMixedCase)
+                dict.Add key, Array(nm, d, IsMixedCase(nm))
+            Else
+                cur = dict(key)
+                Dim newName As String, newDist As Double, newMixed As Boolean
+                newName = CStr(cur(0)): newDist = CDbl(cur(1)): newMixed = CBool(cur(2))
+                If d < newDist Then newDist = d
+                ' Prefer a mixed-case name; among same case-class, prefer nearer.
+                If IsMixedCase(nm) And Not newMixed Then
+                    newName = nm: newMixed = True
+                ElseIf (IsMixedCase(nm) = newMixed) And d < CDbl(cur(1)) Then
+                    newName = nm
+                End If
+                dict(key) = Array(newName, newDist, newMixed)
             End If
         End If
     Next rv
@@ -486,6 +512,95 @@ Private Function FormatRoadList(ByVal roads As Collection) As String
     FormatRoadList = out
 End Function
 
+' True if the name carries at least one lowercase letter (i.e. is not
+' ALL-CAPS). Used to prefer TIGER-style "Harrison Pkwy" over the state
+' centerline's "HARRISON PKY" when both name the same road.
+Private Function IsMixedCase(ByVal s As String) As Boolean
+    IsMixedCase = (StrComp(s, UCase$(s), vbBinaryCompare) <> 0)
+End Function
+
+' Canonical dedup key for a road name so the same physical road written two
+' ways collapses to one Road Name entry (request 3, test 7.16). Steps:
+'   1. upper-case, drop punctuation, collapse whitespace;
+'   2. drop a single leading AND trailing compass token (N/S/E/W/NE/.., or the
+'      spelled-out word) - "N Meridian St" and "Meridian St" are one road, and
+'      "E Market St"/"W Market St" collapse to the same key too;
+'   3. canonicalize the street-type suffix (ST/STREET, RD/ROAD, PKWY/PKY, ..)
+'      so abbreviation differences don't split a road.
+Private Function NormalizeRoadKey(ByVal name As String) As String
+    Dim s As String, parts() As String, toks As Collection, i As Long, t As String
+    s = UCase$(Trim$(name))
+    ' Strip punctuation to spaces.
+    Dim ch As String, clean As String
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If (ch >= "A" And ch <= "Z") Or (ch >= "0" And ch <= "9") Then
+            clean = clean & ch
+        Else
+            clean = clean & " "
+        End If
+    Next i
+    ' Tokenize on runs of spaces.
+    Set toks = New Collection
+    parts = Split(clean, " ")
+    For i = LBound(parts) To UBound(parts)
+        If Len(parts(i)) > 0 Then toks.Add parts(i)
+    Next i
+    If toks.Count = 0 Then Exit Function
+    ' Drop a leading compass token (keep at least one non-compass token).
+    If toks.Count > 1 Then
+        If IsCompassToken(CStr(toks(1))) Then toks.Remove 1
+    End If
+    ' Drop a trailing compass token.
+    If toks.Count > 1 Then
+        If IsCompassToken(CStr(toks(toks.Count))) Then toks.Remove toks.Count
+    End If
+    ' Canonicalize the final (street-type) token.
+    If toks.Count > 1 Then
+        t = CanonStreetType(CStr(toks(toks.Count)))
+        toks.Remove toks.Count
+        toks.Add t
+    End If
+    Dim out As String
+    For i = 1 To toks.Count
+        out = out & IIf(Len(out) > 0, " ", "") & toks(i)
+    Next i
+    NormalizeRoadKey = out
+End Function
+
+Private Function IsCompassToken(ByVal t As String) As Boolean
+    Select Case UCase$(t)
+        Case "N", "S", "E", "W", "NE", "NW", "SE", "SW", _
+             "NORTH", "SOUTH", "EAST", "WEST": IsCompassToken = True
+        Case Else: IsCompassToken = False
+    End Select
+End Function
+
+' Map common street-type synonyms/abbreviations to one canonical token so
+' "PKWY"/"PKY"/"PARKWAY" (etc.) don't split a road across the dedup.
+Private Function CanonStreetType(ByVal t As String) As String
+    Select Case UCase$(t)
+        Case "ST", "STREET": CanonStreetType = "ST"
+        Case "RD", "ROAD": CanonStreetType = "RD"
+        Case "AVE", "AV", "AVENUE": CanonStreetType = "AVE"
+        Case "PKWY", "PKY", "PARKWAY", "PKWAY": CanonStreetType = "PKWY"
+        Case "DR", "DRIVE": CanonStreetType = "DR"
+        Case "LN", "LANE": CanonStreetType = "LN"
+        Case "CT", "COURT": CanonStreetType = "CT"
+        Case "BLVD", "BOULEVARD": CanonStreetType = "BLVD"
+        Case "TRL", "TRAIL": CanonStreetType = "TRL"
+        Case "HWY", "HIGHWAY": CanonStreetType = "HWY"
+        Case "CIR", "CIRCLE": CanonStreetType = "CIR"
+        Case "PL", "PLACE": CanonStreetType = "PL"
+        Case "TER", "TERR", "TERRACE": CanonStreetType = "TER"
+        Case "PT", "POINT": CanonStreetType = "PT"
+        Case "SQ", "SQUARE": CanonStreetType = "SQ"
+        Case "CV", "COVE": CanonStreetType = "CV"
+        Case "WAY": CanonStreetType = "WAY"
+        Case Else: CanonStreetType = UCase$(t)
+    End Select
+End Function
+
 ' Distinct FHWA class labels across the detected segments, nearest-first.
 Private Function ClassLabelsFromSegs(ByVal segs As Collection) As String
     If segs.Count = 0 Then
@@ -510,11 +625,21 @@ End Function
 ' Review Reason column and is echoed in the "Review - ..." status so the row
 ' tints yellow.
 Private Sub ComputeVerdict(ByVal segs As Collection, ByVal exactUrban As Boolean, _
-        ByVal boundaryAmbiguous As Boolean, ByRef verdict As String, ByRef reason As String)
+        ByVal boundaryAmbiguous As Boolean, ByVal namedRoadNearby As Boolean, _
+        ByRef verdict As String, ByRef reason As String)
     reason = ""
     If segs.Count = 0 Then
-        verdict = "Review - no road within " & BufferFeet() & " ft"
-        reason = "No road found"
+        ' A named road is present nearby but the state layer assigns it no
+        ' functional class (request 4). Surface it for manual review rather
+        ' than reporting "no road" - the road IS there (see the Road Name
+        ' column), it's just unclassified in the state's data.
+        If namedRoadNearby Then
+            verdict = "Review - road not classified"
+            reason = "Unclassified road"
+        Else
+            verdict = "Review - no road within " & BufferFeet() & " ft"
+            reason = "No road found"
+        End If
         Exit Sub
     End If
 

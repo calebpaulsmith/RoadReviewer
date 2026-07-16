@@ -111,13 +111,13 @@
 
 <section id="in">
   <h2>Indiana — road functional class &amp; road name</h2>
-  <div class="org">Organization: <b>Indiana Department of Transportation (INDOT)</b> via the IndianaMap GIS platform, <code>gisdata.in.gov</code></div>
+  <div class="org">Organization: <b>Indiana Department of Transportation (INDOT)</b> via the Roads_and_Highways collaboration service, <code>gis.indot.in.gov</code></div>
   <div class="quirk"><b>Official reference map.</b> Indiana links INDOT's own public <a href="https://experience.arcgis.com/experience/e388c2aa14aa4788a702705620567589/?org=indot" target="_blank" rel="noopener">"Functional Classification &amp; Urban Area Boundary" viewer</a> (Experience Builder) as the authoritative reference — class and urban-area boundary both on by default. Like Michigan it's linked at its canonical root (no coordinate deep-link — same Experience Builder hash issue), with the exact location carried by the separate "pinned view" ArcGIS Map Viewer link.</div>
 
   <h3>Layer 22 — "LRSE_Functional_Class" (the class code)</h3>
-  <div class="url"><a href="https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22" target="_blank" rel="noopener">https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22</a></div>
-  <p>Fields read: <code>functional_class</code> (smallint, domain <code>dFunctionalClass</code> — same FHWA 1–7 numbering as Michigan, no urban/rural embedded).</p>
-  <div class="quirk"><b>Quirk — record status.</b> Indiana's analog to Michigan's retire-date filter is a status domain (<code>dRecordCode</code>: 0 Work In Progress … 5 Active … 7 Retired). Every query filters <code>record_status=5</code> (Active).</div>
+  <div class="url"><a href="https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22" target="_blank" rel="noopener">https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22</a></div>
+  <p>Fields read: <code>FUNCTIONAL_CLASS</code> (smallint — same FHWA 1–7 numbering as Michigan, no urban/rural embedded). This is the authoritative Roads_and_Highways layer that backs INDOT's official Functional Class Map, not the staler <code>gisdata.in.gov</code> open-data mirror (≈153,700 vs 148,200 segments live 2026-07-16).</p>
+  <div class="quirk"><b>Quirk — record status (no filter).</b> This layer carries only statuses {1 Work In Progress, 4 Accepted, 5 Active, null} — none retired/replaced — and its official app applies no status filter, so this tool queries <code>where=1=1</code>. An earlier <code>record_status=5</code> filter wrongly dropped ~16,800 valid null-status segments (e.g. Wolf Run Rd, a Major Collector).</div>
   <div class="quirk"><b>Quirk — no name field at all.</b> The functional-class layer carries no road name — not even a trunkline-only one — and is not LRS-keyed to any layer that does. Names come from a fully separate point query (below), so the Route column is blank more often for Indiana.</div>
   <div class="quirk"><b>Quirk — legend.</b> INDOT publishes this layer with a single-symbol renderer (every segment the same green, confirmed live 2026-07-05), which can't distinguish classes by color. In map figures and legends this tool therefore substitutes the standard FHWA class palette (byte-identical to the colors MDOT publishes for the same classes) — the substitution is disclosed on the figure itself. The class <i>values</i> are always INDOT's own.</div>
 
@@ -250,7 +250,7 @@
     WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
     MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
     MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
-    IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+    IN_NFC:         "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
     MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
     IL_NFC:         "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",

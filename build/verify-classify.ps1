@@ -32,7 +32,7 @@ if (-not (Test-Path -LiteralPath $XlsmPath)) { throw "Workbook not found: $XlsmP
 #          Elig=16, ReviewReason=17, Class=18, Urban/Rural=19, ACUB=20,
 #          RoadName=21, Street=22.
 $FirstRow = 3
-$LastTestRow = 21
+$LastTestRow = 23
 
 # (row, state, lat, lon, expected Federal Aid Status substring, expected class substring, expected ACUB name)
 $tests = @(
@@ -74,6 +74,14 @@ $tests = @(
   @{ Row=19; State='OH'; Name='N High St Columbus / US 23';      Lat=40.0150;  Lon=-82.9990;   ExpectElig='Federal aid - Urban Other Principal Arterial'; ExpectClass='Other Principal Arterial'; ExpectAcub='Columbus' }
   @{ Row=20; State='OH'; Name='Columbus Urban Local';            Lat=40.0855;  Lon=-83.0170;   ExpectElig='Non-federal aid - Urban Local'; ExpectClass='Local'; ExpectAcub='Columbus' }
   @{ Row=21; State='OH'; Name='Marion County Rural Local';       Lat=40.320352; Lon=-83.302785; ExpectElig='Non-federal aid - Rural Local'; ExpectClass='Local'; ExpectAcub='' }
+  # test-7.16 regressions (INDOT RO layer switch + verdict fix):
+  # Site 8 Wolf Run Rd - class-5 Major Collector segment carries RECORD_STATUS=null,
+  # so the old record_status=5 filter dropped it and the row read "no road found".
+  # On the authoritative RO layer with where=1=1 it's found at ~87 ft => Federal aid.
+  @{ Row=22; State='IN'; Name='Wolf Run Rd (null-status Major Collector)'; Lat=38.792119; Lon=-85.293851; ExpectElig='Federal aid'; ExpectClass='Major Collector'; ExpectAcub=''; ExpectRoad='Wolf Run' }
+  # Site 10 Mohawk Trail - present in TIGER (~83 ft) but INDOT assigns it no class,
+  # so segs is empty yet a road name exists => "Review - road not classified".
+  @{ Row=23; State='IN'; Name='Mohawk Trail (unclassified)'; Lat=39.402683; Lon=-85.302633; ExpectElig='Review - road not classified'; ExpectAcub=''; ExpectRoad='Mohawk' }
 )
 
 # NEVER open the committed workbook read-write: OneDrive AutoSave persists
@@ -163,6 +171,11 @@ try {
       }
       if ($t.ContainsKey('ExpectClass') -and $t.ExpectClass -and ($cls -notlike ("*" + $t.ExpectClass + "*"))) {
         $failures += ($state + " row " + $r + " class: expected to contain '" + $t.ExpectClass + "', got '" + $cls + "'")
+      }
+      # Confirms the road IS surfaced (test-7.16: a road within the buffer must
+      # appear in the Road Name column even when the class query behaves oddly).
+      if ($t.ContainsKey('ExpectRoad') -and $t.ExpectRoad -and ($rn -notlike ("*" + $t.ExpectRoad + "*"))) {
+        $failures += ($state + " row " + $r + " road name: expected to contain '" + $t.ExpectRoad + "', got '" + $rn + "'")
       }
       if ($t.ExpectAcub -ne '') {
         if ($ac -notlike ("*" + $t.ExpectAcub + "*")) {

@@ -264,7 +264,7 @@ const REST = {
   MI_NFC:        "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
   MI_ROUTE:      "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
   ACUB:          "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
-  IN_NFC:        "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+  IN_NFC:        "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
   IN_ROADNAME:   "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
   WI_STATE_TRUNK:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
   // WisDOT moved/locked the old WI_Local_Roads_Flood_Damage_Assessment_Snapshot
@@ -318,7 +318,7 @@ const LINK_TEMPLATES = {
 // other state gets the plain pinned viewer.
 const ARCGIS_MAP_TEMPLATES = {
   MI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?webmap=6a1702b9147243d1a5ee62cd614bc681&center={LON},{LAT}&level=16&marker={LON},{LAT}",
-  IN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgisdata.in.gov%2Fserver%2Frest%2Fservices%2FHosted%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
+  IN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgis.indot.in.gov%2Fro%2Frest%2Fservices%2FRAH_GIO_Collaboration%2FLRSE_Functional_Class%2FFeatureServer%2F22&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   WI: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fservices5.arcgis.com%2F0pgGLzT0Nh7FVjon%2Farcgis%2Frest%2Fservices%2FFFCL_gdb%2FFeatureServer%2F3&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   MN: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fdotapp9.dot.state.mn.us%2Fegis12%2Frest%2Fservices%2FBASEMAP%2Fmndot_commonlayers2%2FMapServer%2F11&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
   IL: "https://fema.maps.arcgis.com/apps/mapviewer/index.html?url=https%3A%2F%2Fgis1.dot.illinois.gov%2Farcgis%2Frest%2Fservices%2FAdministrativeData%2FFunctionalClass%2FMapServer%2F0&find={LON}%2C{LAT}&marker={LON},{LAT},4326&level=16",
@@ -467,10 +467,14 @@ async function queryMichiganNfc(lat, lon, bufferFt) {
 }
 
 async function queryIndianaNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(svc("IN_NFC"), lat, lon, "functional_class", "record_status=5", bufferFt, true);
+  // Authoritative INDOT Roads_and_Highways layer (switched 2026-07-16): UPPERCASE
+  // FUNCTIONAL_CLASS, where=1=1 (no record-status filter — the layer holds only
+  // statuses {1,4,5,null}, none retired, and null-status segments carry real
+  // classes, e.g. Wolf Run Rd Major Collector; the official app applies no filter).
+  const nfc = await queryWithFallback(svc("IN_NFC"), lat, lon, "FUNCTIONAL_CLASS", "1=1", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
-    .filter(e => cleanStr(e.attrs.functional_class) !== "" && Number.isFinite(Number(e.attrs.functional_class)))
-    .map(e => ({ code: Math.trunc(Number(e.attrs.functional_class)), name: "", distFt: e.distFt }));
+    .filter(e => cleanStr(e.attrs.FUNCTIONAL_CLASS) !== "" && Number.isFinite(Number(e.attrs.FUNCTIONAL_CLASS)))
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt }));
   const roads = [];
   try {
     const nm = await queryWithFallback(svc("IN_ROADNAME"), lat, lon, "st_full", "1=1", bufferFt, true);
@@ -563,17 +567,46 @@ function classLabels(segments, bufferFt) {
   return out.join(" | ");
 }
 
+// Canonical dedup key so the same physical road written two ways ("N Meridian
+// St" vs "MERIDIAN ST", "Harrison Pkwy" vs "HARRISON PKY") collapses to one
+// entry (modClassify.NormalizeRoadKey). Drops a leading/trailing compass token
+// and canonicalizes the street-type suffix.
+const COMPASS_TOKENS = new Set(["N","S","E","W","NE","NW","SE","SW","NORTH","SOUTH","EAST","WEST"]);
+const STREET_TYPE_CANON = {
+  ST:"ST", STREET:"ST", RD:"RD", ROAD:"RD", AVE:"AVE", AV:"AVE", AVENUE:"AVE",
+  PKWY:"PKWY", PKY:"PKWY", PARKWAY:"PKWY", PKWAY:"PKWY", DR:"DR", DRIVE:"DR",
+  LN:"LN", LANE:"LN", CT:"CT", COURT:"CT", BLVD:"BLVD", BOULEVARD:"BLVD",
+  TRL:"TRL", TRAIL:"TRL", HWY:"HWY", HIGHWAY:"HWY", CIR:"CIR", CIRCLE:"CIR",
+  PL:"PL", PLACE:"PL", TER:"TER", TERR:"TER", TERRACE:"TER", PT:"PT", POINT:"PT",
+  SQ:"SQ", SQUARE:"SQ", CV:"CV", COVE:"CV", WAY:"WAY"
+};
+function normalizeRoadKey(name) {
+  let toks = String(name).toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return "";
+  if (toks.length > 1 && COMPASS_TOKENS.has(toks[0])) toks = toks.slice(1);
+  if (toks.length > 1 && COMPASS_TOKENS.has(toks[toks.length - 1])) toks = toks.slice(0, -1);
+  if (toks.length > 1) toks[toks.length - 1] = STREET_TYPE_CANON[toks[toks.length - 1]] || toks[toks.length - 1];
+  return toks.join(" ");
+}
+function isMixedCase(s) { return s !== s.toUpperCase(); }
+
 // Merge every detected road (state class/route layers + Census TIGER) into
-// one nearest-first "Name (D ft) | Name (D ft)" list, deduped by name
-// keeping each name's nearest distance — the same string the Excel tool
-// writes to its Road Name column (modClassify.FormatRoadList).
+// one nearest-first "Name (D ft) | Name (D ft)" list, deduped by NORMALIZED
+// name (keeping the nearest distance, preferring a mixed-case display over
+// ALL-CAPS) — the same string the Excel tool writes to its Road Name column
+// (modClassify.FormatRoadList).
 function mergeRoadList(roads) {
   const best = new Map();
   for (const r of roads) {
     const nm = cleanStr(r.name);
     if (!nm) continue;
-    const k = nm.toLowerCase();
-    if (!best.has(k) || (r.distFt ?? Infinity) < best.get(k).distFt) best.set(k, { name: nm, distFt: r.distFt ?? Infinity });
+    const k = normalizeRoadKey(nm) || nm.toLowerCase();
+    const d = r.distFt ?? Infinity;
+    if (!best.has(k)) { best.set(k, { name: nm, distFt: d, mixed: isMixedCase(nm), nameDist: d }); continue; }
+    const cur = best.get(k);
+    if (d < cur.distFt) cur.distFt = d;
+    if (isMixedCase(nm) && !cur.mixed) { cur.name = nm; cur.mixed = true; cur.nameDist = d; }
+    else if (isMixedCase(nm) === cur.mixed && d < cur.nameDist) { cur.name = nm; cur.nameDist = d; }
   }
   return [...best.values()].sort((a, b) => a.distFt - b.distFt);
 }
@@ -595,9 +628,15 @@ function classIsFederal(code, isUrban) {
 // ON), and yellow only ever DOWNGRADES green: a green result becomes
 // "Review - <reason>" when an ambiguity could actually make it federal.
 // Red stays red. Classifies the road, not the project.
-function computeVerdict(segments, exactUrban, boundaryAmbiguous, bufferFt) {
-  if (!segments.length)
+function computeVerdict(segments, exactUrban, boundaryAmbiguous, bufferFt, namedRoadNearby) {
+  if (!segments.length) {
+    // A named road is present but the state layer assigns it no functional
+    // class (e.g. Mohawk Trail in TIGER but absent from INDOT's layer) —
+    // flag it for manual review rather than reporting "no road".
+    if (namedRoadNearby)
+      return { verdict: "Review - road not classified", reason: "Unclassified road" };
     return { verdict: "Review - no road within " + bufferFt + " ft", reason: "No road found" };
+  }
   const sorted = [...segments].sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
   const p = sorted[0];
 
@@ -692,7 +731,7 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
   out.roadList = mergeRoadList(roads);
   out.roadName = formatRoadList(out.roadList);
   out.classLabel = classLabels(out.segments, bufferFt);
-  const v = computeVerdict(out.segments, acub.exactUrban, acub.boundary, bufferFt);
+  const v = computeVerdict(out.segments, acub.exactUrban, acub.boundary, bufferFt, out.roadList.length > 0);
   out.verdict = v.verdict;
   out.reviewReason = v.reason;
   return out;
@@ -779,7 +818,7 @@ function parseCoordinates(text) {
     WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
     MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
     MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
-    IN_NFC:         "https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22",
+    IN_NFC:         "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
     MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
     IL_NFC:         "https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
@@ -934,6 +973,7 @@ const REASON_EXPLAIN = {
   "Nearby FHWA road": "The closest road is non-federal, but another federal-aid road sits inside the search radius. Confirm the site isn't on that one.",
   "Urban boundary edge": "The closest road is a Minor Collector right at the urban-boundary edge; inside the boundary it would be federal-aid. Confirm urban vs rural on the map.",
   "No road found": "No classified road segment inside the search radius — widen the radius or double-check the coordinates.",
+  "Unclassified road": "A road is present near this point (see Road Name) but the state assigns it no functional class — it's likely a local/unclassified road. Confirm on the map.",
   "Non-certified": "The closest segment is a non-certified roadway in the state data — classify it manually.",
 };
 
@@ -1369,7 +1409,7 @@ async function fetchClassLayers(state, bbox, lat, lon) {
   }
   if (state === "IN") {
     const [json, meta] = await Promise.all([
-      queryFrame(svc("IN_NFC"), bbox, "functional_class", "record_status=5", false),
+      queryFrame(svc("IN_NFC"), bbox, "FUNCTIONAL_CLASS", "1=1", false),
       fetchLayerMeta(svc("IN_NFC")),
     ]);
     // INDOT publishes a single-symbol renderer (every class the same color) —
@@ -1377,8 +1417,8 @@ async function fetchClassLayers(state, bbox, lat, lon) {
     const published = meta.drawingInfo && meta.drawingInfo.renderer && meta.drawingInfo.renderer.type === "uniqueValue";
     return [{ url: svc("IN_NFC"), layerName: meta.name || "Indiana LRSE Functional Class",
       legendHeader: "Road functional class (INDOT)", geometryType: "polyline",
-      rendererField: "functional_class",
-      drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo("functional_class"),
+      rendererField: "FUNCTIONAL_CLASS",
+      drawingInfo: published ? meta.drawingInfo : fhwaFallbackDrawingInfo("FUNCTIONAL_CLASS"),
       synthSymbology: !published,
       features: json.features || [], truncated: !!json.exceededTransferLimit,
       liveLink: { label: "Road class — INDOT functional-class layer, pinned", url: liveLayerLink(svc("IN_NFC"), lat, lon), official: false } }];
