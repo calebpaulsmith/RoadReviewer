@@ -66,39 +66,86 @@ Private Function WorkbookFolder() As String
     Dim p As String
     p = ThisWorkbook.Path
     If Len(p) = 0 Then Exit Function                     ' never saved
-    If LCase$(Left$(p, 4)) = "http" Then p = OneDriveLocalFolder(p)
+    If LCase$(Left$(p, 4)) = "http" Then p = OneDriveLocalFolder(p, ThisWorkbook.Name)
     WorkbookFolder = p
 End Function
 
-' Map an https://... OneDrive/SharePoint folder URL to its locally synced
-' path by testing progressively shorter URL tails under each OneDrive
-' env-var root until this workbook's file is found on disk. Returns "" when
-' no mapping resolves (the caller then falls back to the §8.9 probe).
-Private Function OneDriveLocalFolder(ByVal urlFolder As String) As String
-    Dim bases As Variant, parts() As String
-    Dim b As Long, i As Long, j As Long, tail As String, cand As String
-    ' The longest candidate tails still contain "https:" etc. - Dir$ raises
-    ' error 52 on those instead of returning ""; treat any error as no-match.
-    On Error Resume Next
-    bases = Array(Environ$("OneDriveCommercial"), Environ$("OneDriveConsumer"), Environ$("OneDrive"))
+' Map an https://... OneDrive/SharePoint folder URL (the path a workbook opened
+' from a OneDrive-for-Business / SharePoint-synced library reports) to its
+' locally synced folder, by testing progressively shorter URL tails under each
+' OneDrive root until the workbook file (wbName) is found on disk. Returns ""
+' when no mapping resolves (the caller then falls back to the §8.9 probe).
+'
+' Public + wbName-parameterized so build\verify-output-folder.ps1 can drive it
+' with a synthetic URL against a fake sync tree.
+'
+' Two bugs the SharePoint-library user hit (photo, 2026-07-16) are fixed here:
+'   1. The longest tail still carries the "https:" scheme; the old code let
+'      Dir$ RAISE on that malformed path and - because a runtime error inside a
+'      block-If condition under On Error Resume Next resumes at the first
+'      statement INSIDE the Then branch, not after the If - it wrongly returned
+'      "<base>\https:\...sharepoint.com\...". Now: skip any tail containing ":"
+'      up front, and test existence through FileExistsSafe (which contains its
+'      own error handling), so a raise can never fall through into a match.
+'   2. The OneDrive* env vars aren't always set for the session, so the local
+'      "OneDrive - FEMA" root could be missed entirely - OneDriveBases() also
+'      scans USERPROFILE\OneDrive* as a fallback.
+Public Function OneDriveLocalFolder(ByVal urlFolder As String, ByVal wbName As String) As String
+    Dim bases As Collection, parts() As String
+    Dim bv As Variant, i As Long, j As Long, tail As String, cand As String
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set bases = OneDriveBases()
     parts = Split(Replace(urlFolder, "%20", " "), "/")
-    For b = LBound(bases) To UBound(bases)
-        If Len(bases(b)) > 0 Then
-            For i = LBound(parts) To UBound(parts)
-                tail = ""
-                For j = i To UBound(parts)
-                    If Len(parts(j)) > 0 Then tail = tail & "\" & parts(j)
-                Next j
-                If Len(tail) > 0 Then
-                    cand = bases(b) & tail
-                    If Len(Dir$(cand & "\" & ThisWorkbook.Name)) > 0 Then
-                        OneDriveLocalFolder = cand
-                        Exit Function
-                    End If
+    For Each bv In bases
+        For i = LBound(parts) To UBound(parts)
+            tail = ""
+            For j = i To UBound(parts)
+                If Len(parts(j)) > 0 Then tail = tail & "\" & parts(j)
+            Next j
+            ' A tail that still carries a URL-scheme colon (the leading
+            ' "https:" part) can never be a local subpath - skip it so no
+            ' malformed path is ever tested or returned.
+            If Len(tail) > 0 And InStr(tail, ":") = 0 Then
+                cand = TrimSlash(CStr(bv)) & tail
+                If FileExistsSafe(fso, cand & "\" & wbName) Then
+                    OneDriveLocalFolder = cand
+                    Exit Function
                 End If
-            Next i
-        End If
-    Next b
+            End If
+        Next i
+    Next bv
+End Function
+
+' OneDrive sync roots to search, most-specific first: the env vars OneDrive
+' sets, then any USERPROFILE\OneDrive* folder (covers a session where the env
+' vars aren't populated - the FEMA "OneDrive - FEMA" library case).
+Private Function OneDriveBases() As Collection
+    Dim c As Collection, profile As String, nm As String
+    Set c = New Collection
+    AddBaseIfLen c, Environ$("OneDriveCommercial")
+    AddBaseIfLen c, Environ$("OneDriveConsumer")
+    AddBaseIfLen c, Environ$("OneDrive")
+    profile = Environ$("USERPROFILE")
+    If Len(profile) > 0 Then
+        nm = Dir$(profile & "\OneDrive*", vbDirectory)
+        Do While Len(nm) > 0
+            If nm <> "." And nm <> ".." Then AddBaseIfLen c, profile & "\" & nm
+            nm = Dir$()
+        Loop
+    End If
+    Set OneDriveBases = c
+End Function
+
+Private Sub AddBaseIfLen(ByRef c As Collection, ByVal v As String)
+    If Len(v) > 0 Then c.Add TrimSlash(v)
+End Sub
+
+' Existence test with its OWN error handling so a malformed path returns False
+' instead of raising into the caller's block-If (bug 1 above).
+Private Function FileExistsSafe(ByVal fso As Object, ByVal fullPath As String) As Boolean
+    On Error Resume Next
+    FileExistsSafe = fso.FileExists(fullPath)
 End Function
 
 ' {base}\Desktop\Script\RoadReviewer\{Disaster}\{WO-DI}\  (§8.9)

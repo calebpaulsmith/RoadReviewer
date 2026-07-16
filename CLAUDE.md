@@ -953,6 +953,9 @@ build/                                  Local assembly + verification scripts (n
                                           PyMuPDF (page count, attribution text, pixels, pin)
   verify-screenshot-pdf.ps1             §7g — manual screenshot flow + exact PDF block geometry
                                           (760x568 on every page), incl. a sheet-sabotage leg
+  verify-output-folder.ps1              §8 resolved #9 — OneDrive-for-Business / SharePoint URL
+                                          workbook path maps to the local sync folder (regression
+                                          for the mangled "<base>\https:\...sharepoint.com" bug)
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
                                           for reference (not version-controlled)
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
@@ -1398,6 +1401,26 @@ Earth (26) lost its inspector-hidden split.
    only for a never-saved or unmappable workbook. Every export also
    ends with `modUtil.SurfaceFolder`: the output folder is opened in
    Explorer, or its already-open window is un-minimized and raised.
+   **OneDrive-for-Business / SharePoint library fix (2026-07-16).** A
+   workbook synced from a *business* library ("OneDrive - FEMA") reports
+   its path as a `https://<tenant>-my.sharepoint.com/.../Documents/...`
+   URL, and `OneDriveLocalFolder` mangled it into
+   `<base>\https:\...sharepoint.com\...\RR Output\` (a "Could not create
+   the output folder" error). Cause: the first candidate tail still
+   carried the `https:` scheme, `Dir$` **raised** on that malformed path,
+   and under `On Error Resume Next` a raise inside a **block-`If`
+   condition resumes at the first statement INSIDE the `Then`** (a VBA
+   quirk) — so it returned base+full-URL instead of skipping. Fixes:
+   skip any tail still containing `":"`, test existence through
+   `FileExistsSafe` (self-contained error handling, can't fall through),
+   and add `USERPROFILE\OneDrive*` folders to the search bases in case the
+   env vars aren't set. `OneDriveLocalFolder(urlFolder, wbName)` is now
+   Public + `wbName`-parameterized so `build\verify-output-folder.ps1`
+   drives it against a synthetic URL + fake sync tree (asserts the clean
+   local folder maps and no `https`/`sharepoint` fragment survives). The
+   dev machine used a plain `C:\Users\…\OneDrive\…` local path, so this
+   `http` branch was never exercised until a real SharePoint library hit
+   it.
 
 10. **MDOT NFC field names — confirmed 2026-05-22 (verification §5.1).**
     Read live from `mdotgis.state.mi.us` via the procedure in
@@ -1495,6 +1518,7 @@ product has no FIRMette buttons or WO/DI named ranges).
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
 | `verify-screenshot-pdf.ps1` | §7g — the manual screenshot flow end-to-end with 6 synthetic GE-aspect images (Prepare → Insert → Export), PyMuPDF asserts the imagery fills EXACTLY the 760×568 block on every page and the right image is on the right page; then sabotages the sheet geometry (rows 142→152, a picture displaced/stretched) and asserts the re-export is still exact | inspector | no |
 | `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
+| `verify-output-folder.ps1` | §8 resolved #9 — OneDrive-for-Business / SharePoint `https://…/Documents/…` workbook path maps to the local sync folder (not a mangled `<base>\https:\…` path); builds a fake sync tree + dummy workbook, points `OneDriveCommercial` at it, asserts the clean folder maps and unmappable URLs return `""`. Opens the workbook READ-ONLY. | each product | no |
 
 Run the whole suite from a clean state:
 
