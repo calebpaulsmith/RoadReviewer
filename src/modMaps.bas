@@ -739,8 +739,14 @@ Private Function StampPreviewFormula() As String
            q & "Cat " & q & "&Sites!$I$2&" & q & ", " & q & "&Sites!$G$2," & _
            "IF(Sites!$I$2<>" & EMP & "," & q & "Cat " & q & "&Sites!$I$2," & _
            "IF(Sites!$G$2<>" & EMP & ",Sites!$G$2," & EMP & ")))"
-    costL = "IF(Sites!$J$2<>" & EMP & "," & q & "Cost: " & q & "&Sites!$J$2," & EMP & ")"
-    workL = "IF(Sites!$K$2<>" & EMP & "," & q & "Work: " & q & "&Sites!$K$2," & EMP & ")"
+    ' Cost as currency, Work Completion as "<n>% Work Completed" - these MUST
+    ' match FormatCostStamp / FormatWorkStamp so the preview equals the stamp.
+    costL = "IF(Sites!$J$2<>" & EMP & "," & q & "Cost: " & q & "&IF(ISNUMBER(Sites!$J$2)," & _
+            "IF(Sites!$J$2=INT(Sites!$J$2),TEXT(Sites!$J$2," & q & "$#,##0" & q & ")," & _
+            "TEXT(Sites!$J$2," & q & "$#,##0.00" & q & ")),Sites!$J$2)," & EMP & ")"
+    workL = "IF(Sites!$K$2<>" & EMP & ",IF(ISNUMBER(Sites!$K$2)," & _
+            "TEXT(ROUND(Sites!$K$2,0)," & q & "0" & q & ")&" & q & "% Work Completed" & q & _
+            ",Sites!$K$2)," & EMP & ")"
 
     Dim big As String
     big = PreviewNl(ln1) & "&" & PreviewNl(appL) & "&" & PreviewNl(siteL) & "&" & _
@@ -1325,9 +1331,32 @@ Private Function BuildMapTextboxString(ByVal wsSites As Worksheet, ByVal r As Lo
         siteLine & vbLf & _
         lat & ", " & lon
     If Len(catLine) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & catLine
-    ' Two optional money/progress lines, only emitted when populated.
-    If Len(costs) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Cost: " & costs
-    If Len(workComp) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Work: " & workComp
+    ' Two optional money/progress lines, only emitted when populated. Cost shows
+    ' as currency ("$18,500"), Work Completion as a whole-percent phrase
+    ' ("75% Work Completed"); the StampPreviewFormula cells mirror both exactly.
+    If Len(costs) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & "Cost: " & FormatCostStamp(costs)
+    If Len(workComp) > 0 Then BuildMapTextboxString = BuildMapTextboxString & vbLf & FormatWorkStamp(workComp)
+End Function
+
+' Currency-format a cost cell for the stamp: "$18,500" when whole, "$18,500.43"
+' when it has cents. Non-numeric text passes through unchanged.
+Private Function FormatCostStamp(ByVal raw As String) As String
+    If Not IsNumeric(raw) Then FormatCostStamp = raw: Exit Function
+    Dim v As Double: v = CDbl(raw)
+    If v = Int(v) Then
+        FormatCostStamp = Format$(v, "$#,##0")
+    Else
+        FormatCostStamp = Format$(v, "$#,##0.00")
+    End If
+End Function
+
+' Percent-format a work-completion cell: the typed number is the whole-percent
+' value, shown as "<n>% Work Completed" with no decimals. Rounded half-up (Int(v
+' + 0.5)) to match Excel's ROUND in the preview formula. Work Completion is
+' non-negative, so the negative-rounding caveat of Int() never applies.
+Private Function FormatWorkStamp(ByVal raw As String) As String
+    If Not IsNumeric(raw) Then FormatWorkStamp = raw: Exit Function
+    FormatWorkStamp = CStr(Int(CDbl(raw) + 0.5)) & "% Work Completed"
 End Function
 
 ' The ONE-CLICK hero (user request 2026-07-15): Prepare Pages -> Fetch
