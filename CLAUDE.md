@@ -1106,7 +1106,10 @@ never prints) holds:
   Map Pages PDF** = `CreateMapPagesPdf`, which chains `PreparePagesCore` →
   `FetchImageryCore` → `ExportMapPdfCore` with a single summary MsgBox.
   **Download FIRMettes** sits right beside it as the other primary
-  deliverable. Everything else lives behind a collapsed **"Advanced
+  deliverable; it also auto-creates the map page boxes first
+  (`EnsureMapPageBoxes` → `PreparePagesCore`) when the Map Pages sheet has
+  no pages yet — existing pages are never re-prepared, since that would
+  wipe any imagery already placed on them. Everything else lives behind a collapsed **"Advanced
   options ▸"** ghost toggle (`ToggleMapAdvanced`; state in the toggle shape's
   AlternativeText, respected by `SetMapEditControlsVisible` when it restores
   controls after an export): the individual steps (1 Prepare Pages / 2 Fetch

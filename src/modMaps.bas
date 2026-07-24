@@ -208,7 +208,24 @@ End Function
 ' ---- FIRMette download (FEMA Print FIRMette GP service) -------------------
 
 Public Sub DownloadFirmettes()
+    EnsureMapPageBoxes
     FirmetteRunRows False
+End Sub
+
+' The FIRMette button also builds the Map Pages blocks (the per-site "boxes"
+' with the WO/DI stamp) when none exist yet, so one click sets up both
+' deliverables. Existing pages are left alone - re-preparing wipes any
+' imagery already placed on them (ClearMapPages deletes pictures). On the
+' standard product PreparePagesCore's ShowMapPages performs the usual
+' opt-in reveal of the hidden Map Pages sheet (§7d).
+Private Sub EnsureMapPageBoxes()
+    Dim wsMap As Worksheet
+    If SitesLastRow() < SITES_FIRST_DATA_ROW Then Exit Sub   ' FirmetteRunRows reports "no rows"
+    If SheetExists(SH_MAPPAGES) Then
+        Set wsMap = ThisWorkbook.Worksheets(SH_MAPPAGES)
+        If MapPageCount(wsMap) > 0 Then Exit Sub
+    End If
+    PreparePagesCore
 End Sub
 
 Public Sub ReRunFailedFirmettes()
