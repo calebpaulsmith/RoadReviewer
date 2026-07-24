@@ -116,18 +116,113 @@
     padding: 1px 5px; font-size: 11px; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
   .row.selected { outline: 2px solid #2c6ca8; outline-offset: -2px; }
 </style>
+
+<style>
+/* ============================================================
+   County edition restyle (2026-07-24) — a visual + decluttering
+   layer over the base styles above. It redefines the design tokens
+   and re-skins structural elements only; it deliberately keeps every
+   selector and class name the JS generates, so behaviour is
+   untouched. Later source order means these rules win on ties.
+   ============================================================ */
+:root {
+  /* Refined verdict palette — the base rules read these vars, so the
+     row tints, badges, pins and legend all pick these up. */
+  --fed:    #fdeceb; --fed-border:    #d64545;
+  --nonfed: #e6f5ec; --nonfed-border: #12a150;
+  --review: #fdf3d7; --review-border: #d99e00;
+  --failed: #eef1f5; --failed-border: #9aa7b4;
+  --ink: #17232f; --muted: #5b6a79; --faint: #8493a2; --line: #e4e9ef;
+  --navy: #12293e; --accent: #1f6feb; --accent-ink: #0b4fc0;
+  --bg: #eaeef3; --surface: #fff; --radius: 12px;
+  --shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(16,24,40,.06);
+  --shadow-sm: 0 1px 2px rgba(16,24,40,.06);
+}
+body { background: var(--bg); font-size: 15px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+/* ---- header ---- */
+header { background: linear-gradient(115deg, #12293e, #1c4066); padding: 20px 26px; box-shadow: var(--shadow-sm); }
+header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.2px; display: flex; align-items: center; gap: 10px; }
+header h1 span { font-weight: 600; font-size: 11px; background: rgba(255,255,255,.15); color: #d3e3f4;
+  padding: 3px 9px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; }
+header .sub { color: #adc5dc; font-size: 13.5px; margin-top: 7px; max-width: 840px; line-height: 1.5; }
+header .sub a { color: #93c2f0; }
+
+/* ---- trust strip ---- */
+.privacy { background: #eef4ef; border-bottom: 1px solid #d6e4da; color: #33513c; padding: 9px 26px; font-size: 12.5px; }
+.privacy b { color: #1f4a2c; }
+
+main { max-width: 1420px; padding: 22px 26px; }
+.top { gap: 22px; }
+
+/* ---- input + map as cards ---- */
+.input-col textarea { min-height: 330px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); background: #fff; font: 13.5px/1.6 ui-monospace, Consolas, monospace; }
+.input-col textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31,111,235,.16); }
+.hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+#map { height: 445px; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+
+.controls { gap: 14px; margin-bottom: 12px; }
+.controls label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px; background: #fff; box-shadow: var(--shadow-sm); }
+select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31,111,235,.16); }
+
+/* ---- buttons: quiet secondary default + one filled primary ---- */
+button { border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 7px 13px; font-size: 13px;
+  font-weight: 600; color: var(--ink); box-shadow: var(--shadow-sm); transition: background .12s, border-color .12s, transform .05s; }
+button:hover { background: #f2f6fa; border-color: #cdd7e1; }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
+
+.legend { margin-top: 12px; gap: 16px; font-size: 12.5px; color: var(--muted); }
+.legend span::before { width: 11px; height: 11px; }
+details.howcolors { margin-top: 12px; }
+details.howcolors summary { color: var(--accent-ink); font-weight: 600; }
+
+.reviewbar { gap: 8px; margin-bottom: 10px; }
+.reviewbar .rinfo { color: var(--muted); font-weight: 500; }
+
+/* ---- results ---- */
+.results { margin-top: 28px; }
+.results-bar { gap: 8px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.results-bar h2 { font-size: 17px; font-weight: 700; color: var(--navy); }
+.rowlist { border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.row { padding: 12px 14px; gap: 7px 12px; border-left-width: 4px; border-bottom: 1px solid #eef2f6;
+  font-size: 13px; line-height: 1.5; align-items: center; }
+.row:hover { filter: brightness(.985); }   /* filter, not background — keeps the verdict tint */
+.row .site-name { font-size: 14.5px; font-weight: 700; }
+.row .coords { font-size: 11.5px; color: var(--faint); }
+.badge { font-size: 11px; padding: 3px 11px; border-radius: 999px; letter-spacing: .5px; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+.verdict-detail { font-size: 13.5px; font-weight: 600; }
+.chip { border: 1px solid #dbe3ea; border-radius: 999px; padding: 2px 10px 2px 7px; background: #fff; font-size: 12px; }
+.chip .cw { width: 11px; height: 11px; }
+.chip.primary { border: 1.5px solid var(--navy); }
+.row .links a { font-size: 11.5px; color: var(--accent-ink); }
+
+/* ---- advanced / transparency zone (decluttered to the bottom) ---- */
+.adv-head { margin: 34px 0 2px; padding-top: 18px; border-top: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.adv-note { margin: 0 0 8px; font-size: 12px; color: var(--faint); }
+details.svcpanel, details.netlog { margin-top: 8px; }
+details.svcpanel summary, details.netlog summary { color: var(--accent-ink); font-weight: 600; }
+
+footer { max-width: 1420px; padding: 20px 26px 34px; font-size: 12.5px; color: var(--muted);
+  border-top: 1px solid var(--line); margin-top: 14px; }
+</style>
 </head>
 <body>
 
 <header>
-  <h1>FHWA Road Checker <span style="font-weight:400;font-size:14px;">(provisional title)</span></h1>
-  <div class="sub">Federal-aid road classification — FHWA functional class + 2020 Adjusted Census Urban Boundary. Unofficial tool; not affiliated with FHWA or FEMA. <a href="sources.html" style="color:#9fc3e0">Data sources &amp; citations</a></div>
+  <h1>FHWA Road Checker <span>provisional</span></h1>
+  <div class="sub">Is this road on the federal-aid system? Paste your points — each is classified by FHWA functional class and the 2020 Adjusted Census Urban Boundary. Unofficial tool, not affiliated with FHWA or FEMA. <a href="sources.html">Data sources &amp; citations</a></div>
 </header>
 
 <div class="privacy">
-  <b>Nothing you paste is uploaded or saved.</b> This page has no server and no analytics. Your browser queries the
-  public state-DOT and USDOT map services directly (the same services the RoadReviewer Excel tool queries) and shows
-  every request it makes in the network log at the bottom. Refreshing the page erases everything.
+  <b>Private by design.</b> Nothing you paste leaves your computer — no server, no accounts, no analytics. Your browser
+  queries the public state-DOT and USDOT map services directly, and every request is listed in the log at the bottom.
+  Refreshing the page erases everything.
 </div>
 
 <main>
@@ -212,12 +307,15 @@ Site 12, 44.2700, -83.5200"></textarea>
           <option value="2400">Very wide (~3 mi)</option>
         </select>
       </label>
-      <button id="pdfBtn" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
+      <button id="pdfBtn" class="primary" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
       <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">Download FIRMettes (ZIP)</button>
       <button id="clearBtn">Clear</button>
     </div>
     <div id="resultsBody" class="rowlist"></div>
   </div>
+
+  <h3 class="adv-head">Advanced &amp; transparency</h3>
+  <p class="adv-note">Maintenance and audit tools — most users never need these.</p>
 
   <details class="svcpanel" id="services">
     <summary>Data service URLs — swap a layer if a state moves it (advanced)</summary>
