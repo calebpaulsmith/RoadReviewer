@@ -1,0 +1,120 @@
+import pandas as pd
+import json
+
+df = _sqldf
+pdf = df.toPandas()
+
+features = []
+for row in pdf.itertuples(index=False):
+    # Skip rows without coordinates
+    if row.extracted_lat is None or row.extracted_lon is None:
+        continue
+
+    attributes = {
+        "Applicant_project_id": row.Applicant_project_id,
+        "WorkCategory": row.WorkCategory,
+        "Project": row.Project,
+        "DI": row.DI,
+        "County_Name": row.County_Name,
+        "Applicant_Name": row.Applicant_Name,
+        "Extracted_lat": row.extracted_lat,
+        "Extracted_lon": row.extracted_lon,
+        "DI_Description": row.DI_Description,
+        "LocationGroupLineItem": row.LocationGroupLineItem,
+        "location_grouping": row.location_grouping,
+    }
+
+    geometry = {
+        "x": float(row.extracted_lon),
+        "y": float(row.extracted_lat),
+        "spatialReference": {"wkid": 4326}  # WGS 84
+    }
+
+    features.append({
+        "attributes": attributes,
+        "geometry": geometry
+    })
+
+adds_json = json.dumps(features)
+print(f"{len(features)} features built")
+
+##Cell 3##
+
+import requests
+
+def refresh_agol_token(client_id, refresh_token):
+    token_url = "https://www.arcgis.com/sharing/rest/oauth2/token"
+    params = {
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "f": "json"
+    }
+    response = requests.post(token_url, data=params)
+    response.raise_for_status()
+    token_info = response.json()
+    if "access_token" not in token_info:
+        raise Exception(f"Failed to refresh token: {token_info}")
+    return token_info
+
+# Credentials come from a Databricks secret scope - never hard-code them here.
+#   databricks secrets create-scope --scope agol
+#   databricks secrets put --scope agol --key client_id
+#   databricks secrets put --scope agol --key refresh_token
+client_id = dbutils.secrets.get(scope="agol", key="client_id")
+refresh_token = dbutils.secrets.get(scope="agol", key="refresh_token")
+
+token_info = refresh_agol_token(client_id, refresh_token)
+access_token = token_info["access_token"]
+# If AGOL returns a new refresh token, you can capture it:
+refresh_token = token_info.get("refresh_token", refresh_token)
+##Cell 4##
+
+feature_layer_url = "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/PA_Damage_Coordinates_-_4882/FeatureServer/0"
+
+# Step 1: Delete all existing features to start clean
+delete_params = {
+    "f": "json",
+    "token": access_token,
+    "where": "1=1"  # delete all
+}
+del_resp = requests.post(f"{feature_layer_url}/deleteFeatures", data=delete_params)
+del_resp.raise_for_status()
+del_result = del_resp.json()
+print(f"Deleted existing features: {len(del_result.get('deleteResults', []))} removed")
+
+# Step 2: Re-add all features in batches
+BATCH_SIZE = 500
+success_count = 0
+fail_count = 0
+
+for i in range(0, len(features), BATCH_SIZE):
+    batch = features[i : i + BATCH_SIZE]
+    params = {
+        "f": "json",
+        "token": access_token,
+        "features": json.dumps(batch),
+        "rollbackOnFailure": "false"
+    }
+    response = requests.post(f"{feature_layer_url}/addFeatures", data=params)
+    response.raise_for_status()
+    result = response.json()
+
+    if "addResults" in result:
+        batch_ok = sum(1 for r in result["addResults"] if r.get("success", False))
+        batch_fail = sum(1 for r in result["addResults"] if not r.get("success", False))
+        success_count += batch_ok
+        fail_count += batch_fail
+        if batch_fail > 0:
+            errors = [r for r in result["addResults"] if not r.get("success", False)]
+            print(f"Batch {i//BATCH_SIZE + 1}: {batch_ok} OK, {batch_fail} failed")
+            print(f"  Sample error: {errors[0]}")
+        else:
+            print(f"Batch {i//BATCH_SIZE + 1}: all {batch_ok} features added")
+    elif "error" in result:
+        print(f"Batch {i//BATCH_SIZE + 1} error: {result['error']}")
+    else:
+        print(f"Batch {i//BATCH_SIZE + 1} unexpected response: {result}")
+
+print(f"\nDone: {success_count} succeeded, {fail_count} failed out of {len(features)} total")
+Cell 
