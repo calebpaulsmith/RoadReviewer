@@ -1,0 +1,174 @@
+%sql
+
+WITH base AS (
+  SELECT
+      ad.Applicant_project_id,
+      wc.Display_Name AS WorkCategory,
+      CONCAT('https://pagrants.fema.gov/#Project/', ad.Applicant_project_id, '/details') AS Project,
+      ad.Applicant_damage_id AS DI,
+      c.Name AS County_Name,
+      o.Name AS Applicant_Name,
+      ad.Damage_Description AS DI_Description,
+      adg.location_grouping,
+      REGEXP_EXTRACT_ALL(
+        adg.location_grouping,
+        '(\\(?\\s*[+-]?\\d{1,2}\\.\\d+\\s*,\\s*[+-]?\\d{1,3}\\.\\d+\\s*\\)?)'
+      ) AS paren_pairs,
+      dcl.Name AS DamageCategory,
+      dt.Name AS DimensionType,
+      qt.Name as QuantityType,
+      qum.Abbreviation AS QuantityUnit,
+     CONCAT(lum.Abbreviation, ' long') AS LengthUnit,
+CONCAT(wum.Abbreviation, ' wide') AS WidthUnit,
+CONCAT(hum.Abbreviation, ' high') AS HeightUnit,
+CONCAT(dum.Abbreviation, ' deep') AS DepthUnit,
+CONCAT(dm.Abbreviation, ' diameter') AS DiameterUnit,
+CONCAT(tum.Abbreviation, ' thick') AS ThicknessUnit,
+      em.Abbreviation AS Electrical_Mechanical_Unit,
+      adg.*
+  FROM fac_trax.odp.dbo_applicant_damage ad
+  JOIN fac_trax.odp.dbo_applicant_project ap ON ad.Applicant_Project_ID = ap.Applicant_Project_ID
+  JOIN fac_trax.odp.dbo_applicant a ON ap.Applicant_Id = a.Applicant_ID
+  JOIN fac_trax.odp.dbo_event e ON e.Event_ID = a.Event_Id
+  JOIN fac_trax.odp.dbo_sltt_organization o ON a.SLTT_Organization_ID = o.SLTT_Organization_ID
+  JOIN fac_trax.odp.dbo_sltt_organization_county oc ON a.SLTT_Organization_ID = oc.SLTT_Organization_Id
+  JOIN fac_trax.odp.dbo_county c ON oc.County_Id = c.County_Id
+  JOIN fac_trax.odp.dbo_applicant_damage_generaldamage adg ON ad.Applicant_Damage_Id = adg.Applicant_Damage_Id
+  LEFT Join fac_trax.odp.dbo_Dimensiontype dt ON dt.dimensionType_ID = adg.DimensionType_Id
+  LEFT JOIN fac_trax.odp.dbo_quantitytype qt ON adg.QuantityType_Id = qt.QuantityType_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure qum ON adg.Quantity_Unit_Id = qum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure lum ON adg.Length_Unit_Id = lum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure wum ON adg.Width_Unit_Id = wum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure hum ON adg.Height_Unit_Id = hum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure dum ON adg.Depth_Unit_Id = dum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure dm ON adg.Diameter_Unit_Id =  dm.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure tum ON adg.Thickness_Unit_Id = tum.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_unit_of_measure em ON adg.Electrical_Mechanical_Unit_Id = em.Unit_Of_Measure_Id
+  LEFT JOIN fac_trax.odp.dbo_damage_category_lookup dcl ON adg.Damage_Category_Lookup_Id = dcl.Damage_Category_Lookup_Id
+  LEFT JOIN fac_trax.odp.dbo_work_category wc ON wc.Work_Category_Id = ap.Work_Category_Id
+  WHERE e.Job_Number = '4882DR'
+    AND ap.work_category_ID != '111'
+),
+exploded AS (
+  SELECT
+    Applicant_project_id,
+    WorkCategory,
+    Project,
+    DI,
+    County_Name,
+    Applicant_Name,
+    DI_description,
+    location_grouping,
+    Applicant_Damage_GeneralDamage_Id,
+    Applicant_Damage_Id,
+    Applicant_Damage_CatC_Road_Id,
+    Damage_Category_Lookup_Id,
+    DamageCategory,
+    Component_Other,
+    Component_Description,
+    Location_Grouping,
+    Make_Model_Type,
+    Damage_Description,
+    DimensionType_Id,
+    DimensionType,
+    DimensionType_Other,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Quantity AS STRING))) AS Quantity,
+    QuantityType_Id,
+    QuantityType,
+    Quantity_Unit_Id,
+    QuantityUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Length AS STRING))) AS Length,
+    Length_Unit_Id,
+    LengthUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Width AS STRING))) AS Width,
+    Width_Unit_Id,
+    WidthUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Height AS STRING))) AS Height,
+    Height_Unit_Id,
+    HeightUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Depth AS STRING))) AS Depth,
+    Depth_Unit_Id,
+    DepthUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Diameter AS STRING))) AS Diameter,
+    Diameter_Unit_Id,
+    DiameterUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Thickness AS STRING))) AS Thickness,
+    Thickness_Unit_Id,
+    ThicknessUnit,
+    TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(Electrical_Mechanical AS STRING))) AS Electrical_Mechanical,
+    Electrical_Mechanical_Unit_Id,
+    Electrical_Mechanical_Unit,
+    Work_Completed_Lookup_Id,
+    Location_Grouping_Root,
+    Make_Model_Type,
+    SPLIT(
+      TRIM(REGEXP_REPLACE(p, '^\\(|\\)$', '')),
+      ','
+    ) AS parts
+  FROM base
+  LATERAL VIEW OUTER EXPLODE(paren_pairs) ep AS p
+)
+SELECT DISTINCT
+  Applicant_project_id,
+  WorkCategory,
+  Project,
+  DI,
+  County_Name,
+  Applicant_Name,
+  DI_Description,
+  location_grouping,
+  CAST(TRIM(parts[0]) AS DOUBLE) AS extracted_lat,
+  CAST(TRIM(parts[1]) AS DOUBLE) AS extracted_lon,
+    Applicant_Damage_GeneralDamage_Id,
+    Applicant_Damage_Id,
+    Applicant_Damage_CatC_Road_Id,
+    CONCAT(
+  CASE
+    WHEN DamageCategory = 'Other' THEN COALESCE(Component_Other, '')
+    ELSE COALESCE(DamageCategory, '')
+  END,
+  ', ',
+  COALESCE(CAST(Quantity AS STRING), ''),
+  CASE
+    WHEN QuantityType = 'Each' THEN ' each of'
+    WHEN QuantityType = 'N/A' OR QuantityType IS NULL THEN ''
+    ELSE CONCAT(' ', COALESCE(QuantityUnit, ''))
+  END,
+  ' ',COALESCE(Make_Model_Type, ''),
+  COALESCE(Component_Description, ''),
+  CASE
+    WHEN DimensionType = 'L x W x H' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                               COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''), ' x ',
+                                               COALESCE(CAST(Height AS STRING), ''), ' ', COALESCE(HeightUnit, ''))
+    WHEN DimensionType = 'L x W x D' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                               COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''), ' x ',
+                                               COALESCE(CAST(Depth AS STRING), ''), ' ', COALESCE(DepthUnit, ''))
+    WHEN DimensionType = 'L x W' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                            COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''))
+    WHEN DimensionType = 'L x H' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                            COALESCE(CAST(Height AS STRING), ''), ' ', COALESCE(HeightUnit, ''))
+    WHEN DimensionType = 'L x D' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                            COALESCE(CAST(Depth AS STRING), ''), ' ', COALESCE(DepthUnit, ''))
+    WHEN DimensionType = 'L x Diameter' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                                   COALESCE(CAST(Diameter AS STRING), ''), ' ', COALESCE(DiameterUnit, ''))
+    WHEN DimensionType = 'Length Only' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''))
+    WHEN DimensionType = 'Width Only' THEN CONCAT(' ', COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''))
+    WHEN DimensionType = 'Height Only' THEN CONCAT(' ', COALESCE(CAST(Height AS STRING), ''), ' ', COALESCE(HeightUnit, ''))
+    WHEN DimensionType = 'Depth Only' THEN CONCAT(' ', COALESCE(CAST(Depth AS STRING), ''), ' ', COALESCE(DepthUnit, ''))
+    WHEN DimensionType = 'L x W x T' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                               COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''), ' x ',
+                                               COALESCE(CAST(Thickness AS STRING), ''), ' ', COALESCE(ThicknessUnit, ''))
+    WHEN DimensionType = 'L x H x T' THEN CONCAT(' ', COALESCE(CAST(Length AS STRING), ''), ' ', COALESCE(LengthUnit, ''), ' x ',
+                                               COALESCE(CAST(Height AS STRING), ''), ' ', COALESCE(HeightUnit, ''), ' x ',
+                                               COALESCE(CAST(Thickness AS STRING), ''), ' ', COALESCE(ThicknessUnit, ''))
+    WHEN DimensionType = 'W x H' THEN CONCAT(' ', COALESCE(CAST(Width AS STRING), ''), ' ', COALESCE(WidthUnit, ''), ' x ',
+                                            COALESCE(CAST(Height AS STRING), ''), ' ', COALESCE(HeightUnit, ''))
+    WHEN DimensionType = 'N/A' OR DimensionType IS NULL THEN ''
+    WHEN DimensionType = 'Other' THEN ''
+    WHEN DimensionType = 'Electrical / Mechanical' THEN CONCAT(' ', COALESCE(CAST(Electrical_Mechanical AS STRING), ''), ' ', COALESCE(Electrical_Mechanical_Unit, ''))
+    ELSE ''
+  END,' ',Damage_Description
+) AS LocationGroupLineItem
+
+FROM exploded
+WHERE parts IS NULL OR size(parts) = 2;
