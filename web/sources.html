@@ -212,8 +212,8 @@
 <section id="services">
   <h2>Swap a service URL (advanced)</h2>
   <p>Each row below is a live data service the <a href="index.html">classifier</a> reads. Leave a box blank to use the
-     built-in default (shown as the placeholder). If a state moves or locks a layer — the way WisDOT just moved its
-     Wisconsin local-roads layer — paste the full replacement layer URL (e.g. <code>https://…/FeatureServer/1</code>)
+     built-in default (shown as the placeholder). If a state moves or locks a layer,
+     paste the full replacement layer URL (e.g. <code>https://…/FeatureServer/1</code>)
      and it takes effect on your next classification. Overrides live only in this browser (nothing is uploaded) and
      use the same key names as the Excel tool's Sources sheet (<code>Svc_&lt;KEY&gt;</code>) and the AGOL notebook
      (<code>SERVICE_OVERRIDES</code>), so one swap is easy to mirror across every product.</p>
@@ -221,7 +221,7 @@
   <p><button id="svcReset" type="button">Reset all to defaults</button></p>
 </section>
 
-<p style="color:#5b6b7b;font-size:12.5px">All layer names, field names, domains, and quirks on this page were confirmed against each service's live REST metadata (<code>?f=json</code>) — sources last verified 2026-07-01 through 2026-07-03. This tool classifies the road, never the project.</p>
+<p style="color:#5b6b7b;font-size:12.5px">All layer names, field names, domains, and quirks on this page were confirmed against each service's live REST metadata (<code>?f=json</code>) — sources last verified 2026-07-01 through 2026-07-03. This tool pulls functional classification data live from official sources, but is subject to errors — check the State Department of Transportation for official documentation of each site's functional classification.</p>
 
 </main>
 

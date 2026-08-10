@@ -201,6 +201,17 @@ checks.push(["Next wraps to site 1", (await page.locator("#reviewInfo").textCont
 await page.click("#prevSite");
 checks.push(["Prev returns to site 2", (await page.locator("#reviewInfo").textContent()).includes("2 / 2")]);
 
+// --- Plot all sites: every site's frame drawn at once + combined legend ---
+await page.click("#plotAllSites");
+await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("All 2 site"), { timeout: 15000 });
+await page.waitForFunction(() => !document.getElementById("siteLegend").textContent.includes("loading"), { timeout: 15000 });
+checks.push(["plot-all deselects the single-site review", await page.locator("#resultsBody .row.selected").count() === 0]);
+checks.push(["plot-all draws source layers around every site (2 x 88-segment fixture)",
+  await page.evaluate(() => siteOverlay.getLayers().length) > 100]);
+const allLegend = await page.locator("#siteLegend").textContent();
+checks.push(["plot-all legend combines class labels + ACUB", allLegend.includes("all sites")
+  && allLegend.includes("Minor Collector") && allLegend.includes("Adjusted Urban Area")]);
+
 // --- per-row Source links ---
 checks.push(["rows link to sources.html#mi", await page.locator('#resultsBody a[href="sources.html#mi"]').count() >= 2]);
 
