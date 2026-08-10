@@ -92,8 +92,10 @@ await page.route("**/*", async route => {
 });
 
 await page.goto(PAGE, { waitUntil: "domcontentloaded" });
-await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025");
-await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("1 point(s) classified"), { timeout: 15000 });
+// Second site carries >7 decimal places to exercise the PDF's max-7-decimals
+// coordinate rounding (fmtCoord).
+await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025\nLong precision,42.2853612345678,-85.5702512345678");
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 const verdictRowOk = (await page.locator("#resultsBody .row.v-fed").first().textContent())?.includes("Kalamazoo");
 
 const [download] = await Promise.all([
@@ -133,20 +135,25 @@ const checks = [
   ["classification produced the expected federal-aid row", verdictRowOk],
   ["street basemap tiles load for the frame (12 at z16)", basemapTileCount === 12],
   ["basemap tile fetch disclosed in the network log", netLogText.includes("basemap tiles")],
+  ["road-name label fetch (TIGER frame envelope query) disclosed in the network log", /TIGERweb[^\n]*esriGeometryEnvelope/.test(netLogText)],
   ["PDF magic bytes", bytes.slice(0, 5).toString("ascii") === "%PDF-"],
   ["non-trivial size (>50KB, images embedded)", bytes.length > 50_000],
-  ["cover page title", text.includes("Federal-Aid Classification Report")],
+  ["cover page title", text.includes("Federal-Aid Road Checker") && text.includes("Classification Report")],
   ["site name in cover table", text.includes("Kalamazoo culvert")],
   ["verdict in cover table", text.includes("Federal aid - Urban Minor Collector")],
-  ["2 pages (cover + 1 site)", (text.match(/\/Type\s*\/Page[^s]/g) || []).length === 2],
-  ["2 image XObjects embedded (1 combined figure x RGB+alpha)", (text.match(/\/Subtype\s*\/Image/g) || []).length === 2],
-  // MI carries BOTH the official-app primary reference (canonical root URL,
-  // no fragile hash) AND the restored first-tier pinned FEMA-viewer webmap.
-  ["MI official-app reference present (canonical root, no hash)", text.includes("experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce") && !text.includes("widget_167")],
-  ["MI first-tier pinned FEMA webmap link present", text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
-  ["Google Maps link annotation present", text.includes("google.com/maps?q=42.28536")],
-  ["zoom select defaults to Standard (600 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "600"],
-  ["disclaimer present", text.includes("classifies the road, not the project")],
+  ["coordinates rounded to max 7 decimals (fewer kept as-is)",
+    text.includes("42.28536, -85.57025")   /* 5-decimal input passes through unchanged */
+    && text.includes("42.2853612") && !text.includes("42.28536123")
+    && text.includes("-85.5702512") && !text.includes("-85.57025123")],
+  ["3 pages (cover + 2 sites)", (text.match(/\/Type\s*\/Page[^s]/g) || []).length === 3],
+  ["4 image XObjects embedded (2 combined figures x RGB+alpha)", (text.match(/\/Subtype\s*\/Image/g) || []).length === 4],
+  // The per-site "Source data" link list was removed (user request 2026-08-10):
+  // the citation strip drawn on the figure carries the sources instead.
+  ["Source-data link list removed from site pages", !text.includes("Source data")
+    && !text.includes("google.com/maps?q=") && !text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
+  ["zoom select defaults to 500 ft (~0.1 mi; 76 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "76"],
+  ["new disclaimer present", text.includes("subject to errors")],
+  ["old disclaimer gone", !text.includes("classifies the road, not the project")],
   ["button label restored after run", (await page.locator("#pdfBtn").textContent()) === "Download PDF Report"],
 ];
 
