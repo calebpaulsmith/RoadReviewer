@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cat C Road / Low Water Crossing — Site Inspection Filler</title>
+<!-- PWA bits: only meaningful when hosted (https); ignored when this file
+     is opened directly from local storage -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a4f8b">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root { --blue:#1a4f8b; --blue-dk:#123a68; --line:#d5d9e0; --bg:#f4f5f7; --ink:#1c2430; --mut:#5a6474; }
   * { box-sizing:border-box; }
@@ -503,6 +508,11 @@ function fitRect(iw, ih, r){
   const s = Math.min(r.w/iw, r.h/ih);
   const w = iw*s, h = ih*s;
   return { x: r.x + (r.w-w)/2, y: r.y + (r.h-h)/2, width: w, height: h };
+}
+
+/* installable + offline when hosted; a no-op for the emailed single file */
+if ((location.protocol === "https:" || location.hostname === "localhost") && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
 
 $("gen").addEventListener("click", async ()=>{
