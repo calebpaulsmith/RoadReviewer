@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cat C Road / Low Water Crossing — Site Inspection Filler</title>
+<!-- PWA bits: only meaningful when hosted (https); ignored when this file
+     is opened directly from local storage -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a4f8b">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --blue:#1a4f8b; --blue-dk:#123a68; --line:#d5d9e0; --bg:#f4f5f7; --ink:#1c2430; --mut:#5a6474; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  header.app { background:var(--blue); color:#fff; padding:14px 16px; position:sticky; top:0; z-index:5; }
+  header.app h1 { margin:0; font-size:16px; }
+  header.app p { margin:2px 0 0; font-size:11.5px; opacity:.85; }
+  main { max-width:680px; margin:0 auto; padding:14px 14px 40px; }
+  details.sec { border:1px solid var(--line); border-radius:10px; background:#fff; margin:0 0 12px; overflow:hidden; }
+  details.sec > summary { cursor:pointer; list-style:none; padding:13px 14px; font-weight:600; font-size:14px; color:var(--blue); display:flex; justify-content:space-between; align-items:center; }
+  details.sec > summary::-webkit-details-marker { display:none; }
+  details.sec > summary:after { content:"▸"; transition:transform .15s; color:var(--mut); }
+  details.sec[open] > summary:after { transform:rotate(90deg); }
+  .body { padding:2px 14px 14px; border-top:1px solid var(--line); }
+  label.f { display:block; font-size:12px; font-weight:600; margin:11px 0 3px; }
+  label.f .hint { font-weight:400; color:var(--mut); }
+  input[type=text], textarea { width:100%; padding:9px 10px; font-size:15px; border:1px solid var(--line); border-radius:6px; background:#fff; font-family:inherit; }
+  textarea { min-height:64px; resize:vertical; }
+  .row { display:flex; gap:10px; } .row > * { flex:1; min-width:0; }
+  .checks { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:6px; }
+  .checks label { display:flex; align-items:center; gap:7px; font-weight:400; margin:0; font-size:14px; }
+  .checks input { width:19px; height:19px; flex:none; }
+  .q { font-size:12.5px; font-weight:600; margin:14px 0 2px; }
+  .q .hint { font-weight:400; color:var(--mut); }
+  button { font-size:14px; border:0; border-radius:8px; padding:11px 14px; cursor:pointer; font-family:inherit; }
+  .btn2 { background:#e8eef7; color:var(--blue-dk); }
+  #gen { background:var(--blue); color:#fff; width:100%; font-weight:600; font-size:16px; padding:14px; margin-top:4px; }
+  #status { font-size:13px; text-align:center; color:var(--mut); min-height:20px; padding:8px 0; }
+  .siteblock { border:1px dashed var(--line); border-radius:8px; padding:2px 12px 12px; margin-top:12px; }
+  .siteblock h4 { margin:10px 0 0; font-size:13px; color:var(--blue); }
+  canvas.pad { width:100%; height:150px; border:1px solid var(--line); border-radius:8px; background:#fff; touch-action:none; display:block; margin-top:6px; }
+  .padrow { display:flex; gap:8px; margin-top:6px; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .thumb { width:104px; }
+  .thumb img { width:104px; height:78px; object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block; }
+  .thumb input { font-size:11px; padding:4px 6px; margin-top:3px; }
+  .thumb button { width:100%; font-size:11px; padding:3px; margin-top:3px; background:#fbe9e9; color:#8a1f1f; }
+  .note { font-size:11.5px; color:var(--mut); margin-top:6px; }
+  footer { text-align:center; font-size:11px; color:#8a93a3; padding:14px 0 30px; }
+  .toolbar { display:flex; gap:8px; margin:0 0 12px; }
+  .toolbar button { flex:1; font-size:12.5px; }
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Cat C — Road / Low Water Crossing</h1>
+  <p>FEMA Site Inspection Report filler &middot; works offline &middot; nothing leaves this device until you share the PDF</p>
+</header>
+<main>
+  <div class="toolbar">
+    <button class="btn2" id="draftExport" type="button">Export draft</button>
+    <button class="btn2" id="draftImport" type="button">Import draft</button>
+    <button class="btn2" id="s123Import" type="button">Import Survey123 CSV</button>
+    <button class="btn2" id="draftClear" type="button">Clear form</button>
+    <input type="file" id="draftFile" accept=".json,application/json" hidden>
+    <input type="file" id="s123File" accept=".csv,text/csv" hidden>
+  </div>
+  <div id="s123Choose" hidden style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 12px">
+    <div class="q" style="margin-top:0">Multiple records in this export — pick one:</div>
+    <select id="s123Select" style="width:100%;padding:8px;font-size:14px;margin:6px 0"></select>
+    <button class="btn2" id="s123Pick" type="button">Import selected record</button>
+  </div>
+
+  <div id="sections"></div>
+
+  <details class="sec" open><summary>Signatures</summary><div class="body">
+    <div class="q">Applicant Representative signature <span class="hint">(stamped on page 1)</span></div>
+    <canvas class="pad" id="sigPad"></canvas>
+    <div class="padrow"><button class="btn2" id="sigClear" type="button">Clear signature</button></div>
+    <div class="q">Applicant Representative initials <span class="hint">(stamped on pages 2–7)</span></div>
+    <canvas class="pad" id="iniPad" style="height:100px;max-width:260px"></canvas>
+    <div class="padrow"><button class="btn2" id="iniClear" type="button">Clear initials</button></div>
+    <div class="note">The Recipient Authorized Representative lines are left blank for later signature.</div>
+  </div></details>
+
+  <details class="sec" open><summary>Generate</summary><div class="body">
+    <div class="checks" style="margin:10px 0 12px">
+      <label><input type="checkbox" id="repeatHeader"> Repeat Work Order # / Damage # in the page headers <span class="hint">(the "For FEMA Use Only" boxes on pages 2–7)</span></label>
+    </div>
+    <button id="gen" type="button">Generate filled PDF</button>
+    <div id="status"></div>
+  </div></details>
+</main>
+<footer>Self-contained single file &middot; blank FEMA form embedded &middot; generated PDF keeps live Adobe form fields<br>Source: roadreviewer repo, build/inspection-filler</footer>
+
+<script>/*PDFLIB*/</script>
+<script id="pdfdata" type="text/plain">/*PDFB64*/</script>
+<script>
+"use strict";
+/* ============================================================
+ * Field spec. Every entry maps UI -> a named AcroForm field in
+ * the FEMA "Cat C - Road-Low Water Crossing - Fillable" PDF.
+ * Field names (typos included) are verbatim from the PDF.
+ * ============================================================ */
+const SECTIONS = [
+ { title:"1 · Applicant & inspection", items:[
+   {row:[ {t:"text", id:"Applicant3", label:"Applicant"},
+          {t:"text", id:"PA ID3", label:"PA ID #"} ]},
+   {row:[ {t:"text", id:"App Rep3", label:"Applicant Representative"},
+          {t:"text", id:"App Rep Title3", label:"Representative Title"} ]},
+   {row:[ {t:"text", id:"SI Date3", label:"Site Inspection Date", ph:"MM/DD/YYYY"},
+          {t:"text", id:"SI Name3", label:"Site Inspector Name"} ]},
+   {row:[ {t:"text", id:"Work Order3", label:"Work Order #"},
+          {t:"text", id:"Damage3", label:"Damage #"} ]},
+   {t:"choice", label:"Facility", ids:["Check Box147","Check Box148"], opts:["Road","Low Water Crossing"]},
+ ]},
+ { title:"2 · Location & GPS", items:[
+   {row:[ {t:"text", id:"GPS Latitude Start3", label:"GPS Start Latitude"},
+          {t:"text", id:"GPS Longitude Start3", label:"GPS Start Longitude"} ]},
+   {row:[ {t:"text", id:"GPS Latitude End3", label:"GPS End Latitude"},
+          {t:"text", id:"GPS Longitude End3", label:"GPS End Longitude"} ]},
+   {t:"html", html:'<button class="btn2" id="gpsBtn" type="button" style="margin-top:8px">Use current location for start point</button><div class="note">Facilities longer than 200 linear ft need coordinates for both endpoints. If the location button is blocked (opened as a local file), coordinates auto-fill from the first geotagged photo you attach, or type them in.</div>'},
+ ]},
+ { title:"3 · Facility details", items:[
+   {t:"text", id:"Date Damaged3", label:"Date Damaged", ph:"MM/DD/YYYY"},
+   {t:"choice", label:"Age of Facility", ids:["Check Box149","Check Box150"], opts:["Exact","Approximate"]},
+   {row:[ {t:"text", id:"Year Built3", label:"Year Built"},
+          {t:"text", id:"# of Lanes3", label:"Number of Lanes"} ]},
+   {t:"choice", label:"Legal Responsibility", ids:["Check Box151","Check Box152"], opts:["Yes","No"]},
+   {t:"multi", label:"Road Type", ids:["Check Box153","Check Box154","Check Box155","Check Box156","Check Box157","Check Box158"],
+     opts:["Asphalt","Concrete","Composite","Chip & Seal","Dirt","Gravel"]},
+   {row:[ {t:"text", id:"Length3", label:"Length"},
+          {t:"text", id:"Width3", label:"Width"} ]},
+ ]},
+ { title:"4 · Facility description & sketch (page 2)", items:[
+   {t:"area", id:"Notes3", label:"Facility description / notes", hint:"pre-disaster design, function, capacity, dimensions, footprint; embankments / slopes / ditches"},
+   {t:"html", html:'<div class="q">Road cross-section annotations <span class="hint">(the diagram at the top of page 2)</span></div>'},
+   {row:[ {t:"text", id:"Text11", label:"Easement"},
+          {t:"text", id:"Text12", label:"Surface"} ]},
+   {row:[ {t:"text", id:"Text13", label:"Base"},
+          {t:"text", id:"Text14", label:"Subbase"} ]},
+   {t:"html", html:'<div class="q">Sketch <span class="hint">(draw below, or attach an image — a drawing wins if both)</span></div>'+
+     '<canvas class="pad" id="sketchPad" style="height:200px"></canvas>'+
+     '<div class="padrow"><button class="btn2" id="sketchClear" type="button">Clear drawing</button>'+
+     '<button class="btn2" id="sketchUploadBtn" type="button">Attach image</button>'+
+     '<input type="file" id="sketchFile" accept="image/*" hidden></div><div class="note" id="sketchNote"></div>'},
+ ]},
+ { title:"5 · Component damages (page 3)", items:[ {t:"sites"} ]},
+ { title:"6 · Photos (page 4)", items:[
+   {t:"html", html:'<div class="q">Site photos <span class="hint">(first photo fills the page-4 grid; extra photos are appended as additional pages with captions)</span></div>'+
+     '<div class="padrow"><button class="btn2" id="photoBtn" type="button">Add photo</button>'+
+     '<input type="file" id="photoFile" accept="image/*" multiple hidden></div>'+
+     '<div class="thumbs" id="photoThumbs"></div>'+
+     '<div class="note">Photos are kept in memory only — re-attach them if you reload the page. They stay in your camera roll regardless.</div>'},
+   {t:"area", id:"Notes4", label:"Photo page notes"},
+ ]},
+ { title:"7 · Mitigation considerations (page 5)", items:[
+   {t:"area", id:"Mitigation Considerations3", label:"1. Specific cause of damage", hint:"e.g. water eroded the toe/slab/driving surface, debris blocked the culvert"},
+   {t:"multi", label:"2. What can prevent future damage? (check all of interest)",
+     ids:["Check Box171","Check Box172","Check Box173","Check Box174","Check Box175","Check Box176"],
+     opts:["Deeper concrete toes along LWC edges","Anchor LWC toes with rebar into bedrock","Reinforced concrete instead of grouted riprap on slopes","Replace LWC with a bridge (needs H&H study)","Increase steel reinforcing in slab and toes","Other mitigation (specify below)"]},
+   {t:"text", id:"Other Mitigation7", label:"Other mitigation (specify)"},
+   {t:"choice", label:"3. Applicant plans additional protective work?", ids:["Check Box177","Check Box178","Check Box179"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment27", label:"3. Comments"},
+   {t:"choice", label:"4. Applicant will provide a mitigation proposal?", ids:["Check Box180","Check Box181","Check Box182"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment28", label:"4. Comments"},
+   {t:"choice", label:"5. Applicant wants FEMA to prepare a proposal?", ids:["Check Box183","Check Box184","Check Box185"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment29", label:"5. Comments"},
+   {t:"area", id:"Comment30", label:"Additional mitigation notes / potential scope of work", hint:"dimensions, quantities, sketches of HMP measures"},
+ ]},
+ { title:"8 · Insurance (page 6)", items:[
+   {t:"choice", label:"1. Facility has insurance coverage / is an insurable risk?", ids:["Check Box186","Check Box187","Check Box188"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment31", label:"Comments"},
+ ]},
+ { title:"9 · Environmental & Historic Preservation (pages 6–7)", items:[
+   {t:"choice", label:"1. In/impacting a floodplain, wetland, coastal high-hazard area, or within 200 ft of a waterway?", ids:["Check Box189","Check Box190","Check Box191"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment32", label:"1. Comments"},
+   {t:"choice", label:"2. Within/adjacent to a Coastal Barrier Resource System unit or Otherwise Protected Area?", ids:["Check Box192","Check Box193","Check Box194"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment33", label:"2. Comments"},
+   {t:"choice", label:"3. Repairs change pre-disaster conditions (footprint, material, location, capacity, use, staging areas, work outside right-of-way)?", ids:["Check Box195","Check Box196","Check Box197"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment34", label:"3. Comments / justification"},
+   {t:"choice", label:"4. On a historic register, a landmark, or older than 45 years?", ids:["Check Box198","Check Box199","Check Box200"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment35", label:"4. Comments"},
+   {t:"choice", label:"5. Large undeveloped/undisturbed areas on or near the site?", ids:["Check Box201","Check Box202","Check Box203"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment36", label:"5. Comments"},
+   {t:"choice", label:"6. Hazardous materials at or adjacent to the facility?", ids:["Check Box204","Check Box205","Check Box206"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment37", label:"6. Comments"},
+   {t:"choice", label:"7. Other environmental or controversial issues (tribal road, new/expanded borrow area)?", ids:["Check Box207","Check Box208","Check Box209"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment38", label:"7. Comments"},
+   {t:"choice", label:"8. Known endangered species in the work area?", ids:["Check Box210","Check Box211","Check Box212"], opts:["Yes","No","Unsure"]},
+   {t:"area", id:"Comment39", label:"8. Comments"},
+ ]},
+ { title:"10 · Additional notes (page 7)", items:[
+   {t:"area", id:"Additional Notes/Comments3", label:"Additional notes / comments", tall:1},
+ ]},
+];
+
+/* Component-damage site blocks (page 3). Field-name typos are the PDF's. */
+const SITEBLOCKS = [
+ {n:1, site:"Site9",  comp:"Damage Components9",  loc:"Location Address9",  dim:"Damage Dimensions9",  mor:"Method of Repair9",  cause:"Cause of Damage9",  qty:"Quantity9",   units:"Units9",  pct:"%Complete9",    fa:"Check Box159", ctr:"Check Box160", both:"Check Box161"},
+ {n:2, site:"Site10", comp:"Damage Components10", loc:"Location Address10", dim:"Damage Dimensions10", mor:"Method of Repair10", cause:"Cause of Damage10", qty:"Quantity10",  units:"Units10", pct:"% Complete 10", fa:"Check Box162", ctr:"Check Box163", both:"Check Box164"},
+ {n:3, site:"Site11", comp:"Damage Components11", loc:"Location Addres11",  dim:"Damage Dimensions11", mor:"Method of Repair11", cause:"Cause of Damage11", qty:"Quantity 11", units:"Units11", pct:"% Complete11",  fa:"Check Box165", ctr:"Check Box166", both:"Check Box167"},
+ {n:4, site:"Site12", comp:"Damage Components12", loc:"Location Address12", dim:"Damage Dimensions12", mor:"Method of Repair12", cause:"Cause of Damage12", qty:"Quantity12",  units:"Units12", pct:"% Complete12",  fa:"Check Box168", ctr:"Check Box169", both:"Check Box170"},
+];
+
+/* Where images get stamped, in PDF points (page index is 0-based).
+ * Signature/initials rects are the PDF's /Sig widget rectangles;
+ * sketch/photo rects are the PDF's image-button rectangles. */
+const SIG_RECT   = { page:0, x:190, y:58, w:170, h:23 };
+const INI_RECTS  = [ {page:1,x:174,y:38,w:152,h:30},{page:2,x:143,y:58,w:150,h:32},{page:3,x:180,y:52,w:155,h:19},
+                     {page:4,x:174,y:51,w:131,h:32},{page:5,x:149,y:23,w:129,h:16},{page:6,x:179,y:55,w:129,h:32} ];
+const SKETCH_RECT = { page:1, x:15,  y:278, w:566, h:315 };
+const PHOTO_RECT  = { page:3, x:34,  y:180, w:566, h:545 };
+/* "Page __ of __" text fields: Page of1 (total, shared across pages) and
+ * per-page number blanks on pages 2-7. */
+const PAGENUM_FIELDS = { total:"Page of1", perPage:{ "Page of13":"2","Page of14":"3","Page of15":"4","Page of16":"5","Page of17":"6","Page of18":"7" } };
+const HEADER_REPEAT = { workOrder:"Work Order", damage:"Damage" }; // shared fields on pages 2-7
+
+/* ============================================================ */
+const $ = id => document.getElementById(id);
+const fields = new Map();   // pdf field name -> input element
+const choiceGroups = [];    // [{ids:[...]}] single-choice groups
+const state = { photos:[], sketchImg:null };
+
+function mkInput(spec){
+  const wrap = document.createElement("div");
+  if (spec.t === "text" || spec.t === "area") {
+    const lab = document.createElement("label"); lab.className = "f";
+    lab.textContent = spec.label;
+    if (spec.hint){ const s=document.createElement("span"); s.className="hint"; s.textContent=" — "+spec.hint; lab.appendChild(s); }
+    const el = spec.t==="text" ? document.createElement("input") : document.createElement("textarea");
+    if (spec.t==="text"){ el.type="text"; if(spec.ph) el.placeholder=spec.ph; }
+    if (spec.tall) el.style.minHeight = "140px";
+    fields.set(spec.id, el);
+    wrap.append(lab, el);
+  } else if (spec.t === "choice" || spec.t === "multi") {
+    const q = document.createElement("div"); q.className="q"; q.textContent = spec.label;
+    const box = document.createElement("div"); box.className="checks";
+    spec.ids.forEach((id,i)=>{
+      const lab = document.createElement("label");
+      const cb = document.createElement("input"); cb.type="checkbox";
+      fields.set(id, cb);
+      lab.append(cb, document.createTextNode(spec.opts[i]));
+      box.appendChild(lab);
+    });
+    if (spec.t==="choice") choiceGroups.push({ids:spec.ids});
+    wrap.append(q, box);
+  } else if (spec.row) {
+    wrap.className = "row";
+    spec.row.forEach(s => wrap.appendChild(mkInput(s)));
+  } else if (spec.t === "html") {
+    wrap.innerHTML = spec.html;
+  } else if (spec.t === "sites") {
+    SITEBLOCKS.forEach(b => {
+      const d = document.createElement("div"); d.className="siteblock";
+      d.innerHTML = `<h4>Damage site ${b.n}</h4>`;
+      d.appendChild(mkInput({t:"row", row:[{t:"text",id:b.site,label:"Site #"},{t:"text",id:b.comp,label:"Damage component",ph:"material/model/type/capacity"}]}));
+      d.appendChild(mkInput({t:"row", row:[{t:"text",id:b.loc,label:"Location",ph:"address / GPS / begin-end"},{t:"text",id:b.dim,label:"Damage dimensions",ph:"L x W x D/L x Dia"}]}));
+      d.appendChild(mkInput({t:"area", id:b.mor, label:"Method of repair", hint:"change in design, materials, size, capacity"}));
+      d.appendChild(mkInput({t:"text", id:b.cause, label:"Cause of damage", ph:"e.g. 1-Surface water flooding"}));
+      d.appendChild(mkInput({t:"choice", label:"Work performed by", ids:[b.fa,b.ctr,b.both], opts:["FA (force account)","CTR (contract)","Both"]}));
+      d.appendChild(mkInput({t:"row", row:[{t:"text",id:b.qty,label:"Quantity"},{t:"text",id:b.units,label:"Units"},{t:"text",id:b.pct,label:"% Complete"}]}));
+      wrap.appendChild(d);
+    });
+  }
+  return wrap;
+}
+
+const host = $("sections");
+SECTIONS.forEach((sec,i)=>{
+  const d = document.createElement("details"); d.className="sec"; if(i===0) d.open = true;
+  const su = document.createElement("summary"); su.textContent = sec.title;
+  const body = document.createElement("div"); body.className="body";
+  sec.items.forEach(it => body.appendChild(mkInput(it)));
+  d.append(su, body);
+  host.appendChild(d);
+});
+
+/* single-choice behavior for choice groups */
+choiceGroups.forEach(g => g.ids.forEach(id => {
+  fields.get(id).addEventListener("change", e => {
+    if (e.target.checked) g.ids.forEach(o => { if(o!==id) fields.get(o).checked = false; });
+    saveDraft();
+  });
+}));
+
+/* ---------- drafts (text/checkbox state only) ---------- */
+const DKEY = "catc-road-lwc-draft-v1";
+function collect(){
+  const d = {};
+  for (const [name, el] of fields) d[name] = el.type==="checkbox" ? el.checked : el.value;
+  return d;
+}
+function apply(d){
+  for (const [name, el] of fields) {
+    if (!(name in d)) continue;
+    if (el.type==="checkbox") el.checked = !!d[name]; else el.value = d[name] || "";
+  }
+}
+function saveDraft(){ try { localStorage.setItem(DKEY, JSON.stringify(collect())); } catch(e){} }
+try { apply(JSON.parse(localStorage.getItem(DKEY) || "{}")); } catch(e){}
+for (const [,el] of fields) el.addEventListener("input", saveDraft);
+
+$("draftExport").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(collect(),null,1)], {type:"application/json"});
+  shareOrDownload(blob, "catc-draft.json", "Draft exported.");
+});
+$("draftImport").addEventListener("click", ()=> $("draftFile").click());
+$("draftFile").addEventListener("change", async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  try { apply(JSON.parse(await f.text())); saveDraft(); setStatus("Draft imported."); }
+  catch(err){ setStatus("Couldn't read that draft file."); }
+  e.target.value = "";
+});
+$("draftClear").addEventListener("click", ()=>{
+  if (!confirm("Clear every field?")) return;
+  for (const [,el] of fields) { if(el.type==="checkbox") el.checked=false; else el.value=""; }
+  try { localStorage.removeItem(DKEY); } catch(e){}
+  setStatus("Form cleared.");
+});
+
+function setStatus(t){ $("status").textContent = t; }
+
+/* ---------- Survey123 CSV import ----------
+ * Reads a CSV exported from the Survey123 website's Data tab (the hosted
+ * feature layer). Column names come from the companion XLSForm
+ * (build/inspection-filler/survey123/); S123MAP translates them to the
+ * PDF's field names. */
+const S123MAP = /*S123MAP*/null;
+function parseCsv(text){
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r"){
+      if (c === "\r" && text[i+1] === "\n") i++;
+      row.push(cur); if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = []; cur = "";
+    }
+    else cur += c;
+  }
+  if (cur !== "" || row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function s123Date(v){
+  if (!v) return v;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);          // ISO date (avoid UTC shift)
+  if (m) return `${m[2]}/${m[3]}/${m[1]}`;
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`;
+}
+let s123Pending = null;
+function applyS123Row(header, row){
+  const idx = {};
+  header.forEach((h, i) => idx[h.trim().toLowerCase()] = i);
+  const get = name => { const i = idx[name.toLowerCase()]; return i === undefined ? "" : (row[i] || "").trim(); };
+  const setText = (pdf, v) => { const el = fields.get(pdf); if (el && v) el.value = v; };
+  let n = 0;
+  for (const [name, pdf] of Object.entries(S123MAP.text)) { const v = get(name); if (v){ setText(pdf, v); n++; } }
+  for (const [name, pdf] of Object.entries(S123MAP.date)) { const v = get(name); if (v){ setText(pdf, s123Date(v)); n++; } }
+  for (const [name, targets] of Object.entries(S123MAP.choice)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    for (const [opt, cb] of Object.entries(targets)) fields.get(cb).checked = (opt === v);
+    if (v in targets) n++;
+  }
+  for (const [name, targets] of Object.entries(S123MAP.multi)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    const parts = v.split(/[\s,;]+/);
+    for (const [opt, cb] of Object.entries(targets)) if (parts.includes(opt)) { fields.get(cb).checked = true; n++; }
+  }
+  // AGOL exports the geopoint as x/y columns — use them if the calculated
+  // lat/lon columns didn't come through
+  if (!fields.get("GPS Latitude Start3").value && get("y")) {
+    setText("GPS Latitude Start3", get("y")); setText("GPS Longitude Start3", get("x")); n++;
+  }
+  saveDraft();
+  setStatus(`Imported ${n} values from Survey123. Photos and signature don't travel in CSV — re-attach below.`);
+}
+$("s123Import").addEventListener("click", ()=> $("s123File").click());
+$("s123File").addEventListener("change", async e=>{
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const rows = parseCsv(await f.text());
+  if (rows.length < 2) { setStatus("That CSV has no data rows."); return; }
+  const header = rows[0], data = rows.slice(1);
+  if (data.length === 1) { applyS123Row(header, data[0]); return; }
+  const idx = {}; header.forEach((h,i)=> idx[h.trim().toLowerCase()] = i);
+  const label = r => ["damage_num","applicant","si_date","objectid"]
+    .map(k => idx[k] !== undefined ? r[idx[k]] : "").filter(Boolean).join(" · ") || "(record)";
+  const sel = $("s123Select"); sel.innerHTML = "";
+  data.forEach((r,i)=>{ const o = document.createElement("option"); o.value = i; o.textContent = label(r); sel.appendChild(o); });
+  s123Pending = { header, data };
+  $("s123Choose").hidden = false;
+});
+$("s123Pick").addEventListener("click", ()=>{
+  if (!s123Pending) return;
+  applyS123Row(s123Pending.header, s123Pending.data[Number($("s123Select").value)]);
+  $("s123Choose").hidden = true; s123Pending = null;
+});
+
+/* ---------- GPS ---------- */
+$("gpsBtn").addEventListener("click", ()=>{
+  if (!navigator.geolocation) { setStatus("Geolocation unavailable."); return; }
+  setStatus("Getting location…");
+  navigator.geolocation.getCurrentPosition(p=>{
+    fields.get("GPS Latitude Start3").value  = p.coords.latitude.toFixed(6);
+    fields.get("GPS Longitude Start3").value = p.coords.longitude.toFixed(6);
+    saveDraft(); setStatus("Location captured.");
+  }, ()=> setStatus("Location blocked here — attach a geotagged photo instead, or type coordinates."));
+});
+
+/* ---------- drawing pads ---------- */
+function makePad(canvas){
+  const ctx = canvas.getContext("2d");
+  let drawn = false, drawing = false, last = null;
+  function resize(){
+    const r = canvas.getBoundingClientRect();
+    if (!r.width) return;               // hidden (collapsed section) — retry later
+    const save = drawn ? canvas.toDataURL() : null;
+    canvas.width = r.width * 2; canvas.height = r.height * 2;
+    ctx.setTransform(2,0,0,2,0,0);
+    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#101820";
+    if (save){ const im = new Image(); im.onload = ()=> ctx.drawImage(im,0,0,r.width,r.height); im.src = save; }
+  }
+  resize(); window.addEventListener("resize", resize);
+  // canvases inside a collapsed <details> measure 0x0 — size them when revealed
+  document.addEventListener("toggle", ()=> { if (!canvas.width) resize(); }, true);
+  const pos = e => { const r = canvas.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; };
+  canvas.addEventListener("pointerdown", e=>{ if(!canvas.width) resize(); drawing=true; last=pos(e); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointermove", e=>{
+    if(!drawing) return; const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    last = p; drawn = true;
+  });
+  canvas.addEventListener("pointerup", ()=> drawing=false);
+  return {
+    clear(){ ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.restore(); drawn=false; },
+    isDrawn: ()=> drawn,
+    png: ()=> canvas.toDataURL("image/png"),
+  };
+}
+const sigPad = makePad($("sigPad"));
+const iniPad = makePad($("iniPad"));
+const sketchPad = makePad($("sketchPad"));
+$("sigClear").addEventListener("click", ()=> sigPad.clear());
+$("iniClear").addEventListener("click", ()=> iniPad.clear());
+$("sketchClear").addEventListener("click", ()=> sketchPad.clear());
+
+/* sketch image upload */
+$("sketchUploadBtn").addEventListener("click", ()=> $("sketchFile").click());
+$("sketchFile").addEventListener("change", async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  state.sketchImg = await normalizeImage(f);
+  $("sketchNote").textContent = "Sketch image attached: " + f.name;
+  e.target.value = "";
+});
+
+/* ---------- photos ---------- */
+$("photoBtn").addEventListener("click", ()=> $("photoFile").click());
+$("photoFile").addEventListener("change", async e=>{
+  for (const f of e.target.files) {
+    const gps = await gpsFromJpeg(f).catch(()=>null);
+    const img = await normalizeImage(f);
+    state.photos.push({ img, caption:"", name:f.name });
+    if (gps && !fields.get("GPS Latitude Start3").value) {
+      fields.get("GPS Latitude Start3").value  = gps.lat.toFixed(6);
+      fields.get("GPS Longitude Start3").value = gps.lon.toFixed(6);
+      saveDraft(); setStatus("GPS start point filled from photo location.");
+    }
+  }
+  e.target.value = "";
+  renderThumbs();
+});
+function renderThumbs(){
+  const t = $("photoThumbs"); t.innerHTML = "";
+  state.photos.forEach((p,i)=>{
+    const d = document.createElement("div"); d.className="thumb";
+    const im = document.createElement("img"); im.src = p.img.dataUrl;
+    const cap = document.createElement("input"); cap.type="text"; cap.placeholder="Caption"; cap.value = p.caption;
+    cap.addEventListener("input", ()=> p.caption = cap.value);
+    const rm = document.createElement("button"); rm.type="button"; rm.textContent="Remove";
+    rm.addEventListener("click", ()=>{ state.photos.splice(i,1); renderThumbs(); });
+    d.append(im, cap, rm); t.appendChild(d);
+  });
+}
+/* Decode any browser-readable image, downscale, re-encode JPEG. */
+async function normalizeImage(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const MAX = 1600;
+    const sc = Math.min(1, MAX/Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth*sc); c.height = Math.round(img.naturalHeight*sc);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return { dataUrl:c.toDataURL("image/jpeg", 0.85), w:c.width, h:c.height };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* ---------- EXIF GPS (JPEG APP1) ---------- */
+async function gpsFromJpeg(file){
+  const buf = new DataView(await file.slice(0, 256*1024).arrayBuffer());
+  if (buf.getUint16(0) !== 0xFFD8) return null;
+  let off = 2;
+  while (off + 4 < buf.byteLength) {
+    if (buf.getUint8(off) !== 0xFF) break;
+    const marker = buf.getUint8(off+1), len = buf.getUint16(off+2);
+    if (marker === 0xE1) {                       // APP1
+      if (buf.getUint32(off+4) === 0x45786966) { // "Exif"
+        return parseTiffGps(buf, off + 10);
+      }
+    }
+    if (marker === 0xDA) break;                  // start of scan
+    off += 2 + len;
+  }
+  return null;
+}
+function parseTiffGps(v, tiff){
+  const le = v.getUint16(tiff) === 0x4949;
+  const u16 = o => v.getUint16(tiff+o, le), u32 = o => v.getUint32(tiff+o, le);
+  if (u16(2) !== 42) return null;
+  let gpsIfd = 0;
+  const ifd0 = u32(4), n = u16(ifd0);
+  for (let i=0;i<n;i++){
+    const e = ifd0 + 2 + i*12;
+    if (u16(e) === 0x8825) gpsIfd = u32(e+8);
+  }
+  if (!gpsIfd) return null;
+  const gn = u16(gpsIfd);
+  let latRef=null, lonRef=null, lat=null, lon=null;
+  const rat3 = o => { // three rationals at value offset
+    const a=[]; for(let k=0;k<3;k++) a.push(u32(o+k*8)/u32(o+k*8+4)); return a[0]+a[1]/60+a[2]/3600;
+  };
+  for (let i=0;i<gn;i++){
+    const e = gpsIfd + 2 + i*12, tag = u16(e);
+    if (tag===1) latRef = String.fromCharCode(v.getUint8(tiff+e+8));
+    if (tag===3) lonRef = String.fromCharCode(v.getUint8(tiff+e+8));
+    if (tag===2) lat = rat3(u32(e+8));
+    if (tag===4) lon = rat3(u32(e+8));
+  }
+  if (lat==null || lon==null) return null;
+  if (latRef==="S") lat = -lat;
+  if (lonRef==="W") lon = -lon;
+  return {lat, lon};
+}
+
+/* ---------- output: share sheet first, download fallback ---------- */
+async function shareOrDownload(blob, filename, doneMsg){
+  const file = new File([blob], filename, {type: blob.type});
+  if (navigator.canShare && navigator.canShare({files:[file]})) {
+    try { await navigator.share({files:[file], title:filename}); setStatus(doneMsg + " (shared)"); return; }
+    catch(err){ if (err.name === "AbortError") { setStatus("Share cancelled."); return; } }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setStatus(doneMsg + " (check your downloads)");
+}
+
+/* ---------- generate ---------- */
+function b64Bytes(){
+  const b64 = $("pdfdata").textContent.trim();
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+async function embed(doc, dataUrl){
+  const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return dataUrl.startsWith("data:image/png") ? doc.embedPng(bytes) : doc.embedJpg(bytes);
+}
+/* fit image into rect, centered; returns pdf-lib drawImage options */
+function fitRect(iw, ih, r){
+  const s = Math.min(r.w/iw, r.h/ih);
+  const w = iw*s, h = ih*s;
+  return { x: r.x + (r.w-w)/2, y: r.y + (r.h-h)/2, width: w, height: h };
+}
+
+/* installable + offline when hosted; a no-op for the emailed single file */
+if ((location.protocol === "https:" || location.hostname === "localhost") && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+
+$("gen").addEventListener("click", async ()=>{
+  try {
+    setStatus("Building PDF…");
+    const doc = await PDFLib.PDFDocument.load(b64Bytes());
+    const form = doc.getForm();
+    const pages = doc.getPages();
+
+    for (const [name, el] of fields) {
+      if (el.type === "checkbox") { if (el.checked) form.getCheckBox(name).check(); }
+      else if (el.value) form.getTextField(name).setText(el.value);
+      // (10pt font comes from the /DA make_template.py bakes into the template)
+    }
+
+    /* page numbers: 7 form pages + appended photo pages */
+    const extraPhotos = state.photos.slice(1);
+    const perExtraPage = 2;
+    const extraPages = Math.ceil(extraPhotos.length / perExtraPage);
+    const total = String(7 + extraPages);
+    form.getTextField(PAGENUM_FIELDS.total).setText(total);
+    for (const [f, num] of Object.entries(PAGENUM_FIELDS.perPage)) form.getTextField(f).setText(num);
+
+    if ($("repeatHeader").checked) {
+      const wo = fields.get("Work Order3").value, dm = fields.get("Damage3").value;
+      if (wo) form.getTextField(HEADER_REPEAT.workOrder).setText(wo);
+      if (dm) form.getTextField(HEADER_REPEAT.damage).setText(dm);
+    }
+
+    /* sketch: drawing wins over attached image */
+    const sketch = sketchPad.isDrawn() ? {dataUrl: sketchPad.png()} : state.sketchImg;
+    if (sketch) {
+      const im = await embed(doc, sketch.dataUrl);
+      const r = fitRect(im.width, im.height, SKETCH_RECT);
+      pages[SKETCH_RECT.page].drawImage(im, r);
+    }
+
+    /* first photo into the page-4 grid */
+    if (state.photos[0]) {
+      const im = await embed(doc, state.photos[0].img.dataUrl);
+      const r = fitRect(im.width, im.height, PHOTO_RECT);
+      pages[PHOTO_RECT.page].drawImage(im, r);
+      if (state.photos[0].caption) {
+        pages[PHOTO_RECT.page].drawText(state.photos[0].caption, {x:PHOTO_RECT.x, y:PHOTO_RECT.y-14, size:10});
+      }
+    }
+
+    /* signature + initials */
+    if (sigPad.isDrawn()) {
+      const im = await embed(doc, sigPad.png());
+      const r = fitRect(im.width, im.height, SIG_RECT);
+      pages[SIG_RECT.page].drawImage(im, r);
+    }
+    if (iniPad.isDrawn()) {
+      const im = await embed(doc, iniPad.png());
+      for (const rr of INI_RECTS) {
+        const r = fitRect(im.width, im.height, rr);
+        pages[rr.page].drawImage(im, r);
+      }
+    }
+
+    form.updateFieldAppearances();
+
+    /* extra photo pages */
+    const helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    for (let p=0; p<extraPages; p++) {
+      const page = doc.addPage([612, 792]);
+      page.drawText("Site photos (continued)", {x:36, y:756, size:13, font:helv});
+      const slots = [{x:56,y:420,w:500,h:310},{x:56,y:60,w:500,h:310}];
+      for (let s=0; s<perExtraPage; s++) {
+        const ph = extraPhotos[p*perExtraPage+s];
+        if (!ph) break;
+        const im = await embed(doc, ph.img.dataUrl);
+        const r = fitRect(im.width, im.height, slots[s]);
+        page.drawImage(im, r);
+        if (ph.caption) page.drawText(ph.caption, {x:slots[s].x, y:slots[s].y-16, size:10, font:helv, maxWidth:slots[s].w});
+      }
+      page.drawText(`Page ${8+p} of ${total}`, {x:500, y:30, size:10, font:helv});
+    }
+
+    const out = await doc.save();
+    const dm = (fields.get("Damage3").value || "report").replace(/[^A-Za-z0-9_-]+/g,"");
+    await shareOrDownload(new Blob([out], {type:"application/pdf"}), `CatC_Road_LWC_${dm}.pdf`, "PDF generated.");
+  } catch(err) {
+    console.error(err);
+    setStatus("Error: " + err.message);
+  }
+});
+</script>
+</body>
+</html>

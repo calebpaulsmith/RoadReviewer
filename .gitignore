@@ -13,6 +13,8 @@ build/prototype-vba/
 
 # Node deps for the web-test verifiers (build/web-tests, playwright-core)
 node_modules/
+# Output PDF produced by verify-inspection-filler.mjs
+build/web-tests/inspection-filler-output.pdf
 # Python cache from running the notebook script locally
 __pycache__/
 

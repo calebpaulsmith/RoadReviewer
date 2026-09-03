@@ -1,0 +1,3 @@
+objectid,applicant,pa_id,damage_num,si_date,si_name,facility,age,legal_responsibility,road_type,length,width,description,site1_num,site1_component,site1_work_by,mit_cause,mit_options,ehp_q8,ehp_q8_comments,x,y
+1,City of Example,123-45678-00,DMG-77,2026-09-03,C. Smith,road,approximate,yes,"dirt gravel",450 LF,22 FT,"Two-lane gravel road, box culvert.",1,Surface - gravel,ctr,Water eroded the driving surface.,"m1 m6",unsure,None observed on site.,-92.654321,35.123456
+2,Other Town,999-00000-00,DMG-99,2026-09-01,B. Jones,lwc,exact,no,concrete,80 LF,18 FT,Second record for chooser test.,2,Slab,fa,Debris blocked culvert.,m4,no,,-93.1,35.9
