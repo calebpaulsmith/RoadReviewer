@@ -61,8 +61,15 @@
   <div class="toolbar">
     <button class="btn2" id="draftExport" type="button">Export draft</button>
     <button class="btn2" id="draftImport" type="button">Import draft</button>
+    <button class="btn2" id="s123Import" type="button">Import Survey123 CSV</button>
     <button class="btn2" id="draftClear" type="button">Clear form</button>
     <input type="file" id="draftFile" accept=".json,application/json" hidden>
+    <input type="file" id="s123File" accept=".csv,text/csv" hidden>
+  </div>
+  <div id="s123Choose" hidden style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 12px">
+    <div class="q" style="margin-top:0">Multiple records in this export — pick one:</div>
+    <select id="s123Select" style="width:100%;padding:8px;font-size:14px;margin:6px 0"></select>
+    <button class="btn2" id="s123Pick" type="button">Import selected record</button>
   </div>
 
   <div id="sections"></div>
@@ -314,6 +321,88 @@ $("draftClear").addEventListener("click", ()=>{
 });
 
 function setStatus(t){ $("status").textContent = t; }
+
+/* ---------- Survey123 CSV import ----------
+ * Reads a CSV exported from the Survey123 website's Data tab (the hosted
+ * feature layer). Column names come from the companion XLSForm
+ * (build/inspection-filler/survey123/); S123MAP translates them to the
+ * PDF's field names. */
+const S123MAP = /*S123MAP*/null;
+function parseCsv(text){
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r"){
+      if (c === "\r" && text[i+1] === "\n") i++;
+      row.push(cur); if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = []; cur = "";
+    }
+    else cur += c;
+  }
+  if (cur !== "" || row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function s123Date(v){
+  if (!v) return v;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);          // ISO date (avoid UTC shift)
+  if (m) return `${m[2]}/${m[3]}/${m[1]}`;
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`;
+}
+let s123Pending = null;
+function applyS123Row(header, row){
+  const idx = {};
+  header.forEach((h, i) => idx[h.trim().toLowerCase()] = i);
+  const get = name => { const i = idx[name.toLowerCase()]; return i === undefined ? "" : (row[i] || "").trim(); };
+  const setText = (pdf, v) => { const el = fields.get(pdf); if (el && v) el.value = v; };
+  let n = 0;
+  for (const [name, pdf] of Object.entries(S123MAP.text)) { const v = get(name); if (v){ setText(pdf, v); n++; } }
+  for (const [name, pdf] of Object.entries(S123MAP.date)) { const v = get(name); if (v){ setText(pdf, s123Date(v)); n++; } }
+  for (const [name, targets] of Object.entries(S123MAP.choice)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    for (const [opt, cb] of Object.entries(targets)) fields.get(cb).checked = (opt === v);
+    if (v in targets) n++;
+  }
+  for (const [name, targets] of Object.entries(S123MAP.multi)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    const parts = v.split(/[\s,;]+/);
+    for (const [opt, cb] of Object.entries(targets)) if (parts.includes(opt)) { fields.get(cb).checked = true; n++; }
+  }
+  // AGOL exports the geopoint as x/y columns — use them if the calculated
+  // lat/lon columns didn't come through
+  if (!fields.get("GPS Latitude Start3").value && get("y")) {
+    setText("GPS Latitude Start3", get("y")); setText("GPS Longitude Start3", get("x")); n++;
+  }
+  saveDraft();
+  setStatus(`Imported ${n} values from Survey123. Photos and signature don't travel in CSV — re-attach below.`);
+}
+$("s123Import").addEventListener("click", ()=> $("s123File").click());
+$("s123File").addEventListener("change", async e=>{
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const rows = parseCsv(await f.text());
+  if (rows.length < 2) { setStatus("That CSV has no data rows."); return; }
+  const header = rows[0], data = rows.slice(1);
+  if (data.length === 1) { applyS123Row(header, data[0]); return; }
+  const idx = {}; header.forEach((h,i)=> idx[h.trim().toLowerCase()] = i);
+  const label = r => ["damage_num","applicant","si_date","objectid"]
+    .map(k => idx[k] !== undefined ? r[idx[k]] : "").filter(Boolean).join(" · ") || "(record)";
+  const sel = $("s123Select"); sel.innerHTML = "";
+  data.forEach((r,i)=>{ const o = document.createElement("option"); o.value = i; o.textContent = label(r); sel.appendChild(o); });
+  s123Pending = { header, data };
+  $("s123Choose").hidden = false;
+});
+$("s123Pick").addEventListener("click", ()=>{
+  if (!s123Pending) return;
+  applyS123Row(s123Pending.header, s123Pending.data[Number($("s123Select").value)]);
+  $("s123Choose").hidden = true; s123Pending = null;
+});
 
 /* ---------- GPS ---------- */
 $("gpsBtn").addEventListener("click", ()=>{

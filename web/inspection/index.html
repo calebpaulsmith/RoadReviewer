@@ -61,8 +61,15 @@
   <div class="toolbar">
     <button class="btn2" id="draftExport" type="button">Export draft</button>
     <button class="btn2" id="draftImport" type="button">Import draft</button>
+    <button class="btn2" id="s123Import" type="button">Import Survey123 CSV</button>
     <button class="btn2" id="draftClear" type="button">Clear form</button>
     <input type="file" id="draftFile" accept=".json,application/json" hidden>
+    <input type="file" id="s123File" accept=".csv,text/csv" hidden>
+  </div>
+  <div id="s123Choose" hidden style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 12px">
+    <div class="q" style="margin-top:0">Multiple records in this export — pick one:</div>
+    <select id="s123Select" style="width:100%;padding:8px;font-size:14px;margin:6px 0"></select>
+    <button class="btn2" id="s123Pick" type="button">Import selected record</button>
   </div>
 
   <div id="sections"></div>
@@ -330,6 +337,280 @@ $("draftClear").addEventListener("click", ()=>{
 });
 
 function setStatus(t){ $("status").textContent = t; }
+
+/* ---------- Survey123 CSV import ----------
+ * Reads a CSV exported from the Survey123 website's Data tab (the hosted
+ * feature layer). Column names come from the companion XLSForm
+ * (build/inspection-filler/survey123/); S123MAP translates them to the
+ * PDF's field names. */
+const S123MAP = {
+ "text": {
+  "applicant": "Applicant3",
+  "pa_id": "PA ID3",
+  "app_rep": "App Rep3",
+  "app_rep_title": "App Rep Title3",
+  "si_name": "SI Name3",
+  "work_order": "Work Order3",
+  "damage_num": "Damage3",
+  "year_built": "Year Built3",
+  "lanes": "# of Lanes3",
+  "length": "Length3",
+  "width": "Width3",
+  "xsec_easement": "Text11",
+  "xsec_surface": "Text12",
+  "xsec_base": "Text13",
+  "xsec_subbase": "Text14",
+  "gps_end_lat": "GPS Latitude End3",
+  "gps_end_lon": "GPS Longitude End3",
+  "mit_other": "Other Mitigation7",
+  "description": "Notes3",
+  "photo_notes": "Notes4",
+  "mit_cause": "Mitigation Considerations3",
+  "mit_q3_comments": "Comment27",
+  "mit_q4_comments": "Comment28",
+  "mit_q5_comments": "Comment29",
+  "mit_notes": "Comment30",
+  "ins_q1_comments": "Comment31",
+  "ehp_q1_comments": "Comment32",
+  "ehp_q2_comments": "Comment33",
+  "ehp_q3_comments": "Comment34",
+  "ehp_q4_comments": "Comment35",
+  "ehp_q5_comments": "Comment36",
+  "ehp_q6_comments": "Comment37",
+  "ehp_q7_comments": "Comment38",
+  "ehp_q8_comments": "Comment39",
+  "additional_notes": "Additional Notes/Comments3",
+  "gps_start_lat": "GPS Latitude Start3",
+  "gps_start_lon": "GPS Longitude Start3",
+  "site1_num": "Site9",
+  "site1_component": "Damage Components9",
+  "site1_location": "Location Address9",
+  "site1_dimensions": "Damage Dimensions9",
+  "site1_repair": "Method of Repair9",
+  "site1_cause": "Cause of Damage9",
+  "site1_qty": "Quantity9",
+  "site1_units": "Units9",
+  "site1_pct": "%Complete9",
+  "site2_num": "Site10",
+  "site2_component": "Damage Components10",
+  "site2_location": "Location Address10",
+  "site2_dimensions": "Damage Dimensions10",
+  "site2_repair": "Method of Repair10",
+  "site2_cause": "Cause of Damage10",
+  "site2_qty": "Quantity10",
+  "site2_units": "Units10",
+  "site2_pct": "% Complete 10",
+  "site3_num": "Site11",
+  "site3_component": "Damage Components11",
+  "site3_location": "Location Addres11",
+  "site3_dimensions": "Damage Dimensions11",
+  "site3_repair": "Method of Repair11",
+  "site3_cause": "Cause of Damage11",
+  "site3_qty": "Quantity 11",
+  "site3_units": "Units11",
+  "site3_pct": "% Complete11",
+  "site4_num": "Site12",
+  "site4_component": "Damage Components12",
+  "site4_location": "Location Address12",
+  "site4_dimensions": "Damage Dimensions12",
+  "site4_repair": "Method of Repair12",
+  "site4_cause": "Cause of Damage12",
+  "site4_qty": "Quantity12",
+  "site4_units": "Units12",
+  "site4_pct": "% Complete12"
+ },
+ "date": {
+  "si_date": "SI Date3",
+  "date_damaged": "Date Damaged3"
+ },
+ "choice": {
+  "facility": {
+   "road": "Check Box147",
+   "lwc": "Check Box148"
+  },
+  "age": {
+   "exact": "Check Box149",
+   "approximate": "Check Box150"
+  },
+  "legal_responsibility": {
+   "yes": "Check Box151",
+   "no": "Check Box152"
+  },
+  "mit_q3": {
+   "yes": "Check Box177",
+   "no": "Check Box178",
+   "unsure": "Check Box179"
+  },
+  "mit_q4": {
+   "yes": "Check Box180",
+   "no": "Check Box181",
+   "unsure": "Check Box182"
+  },
+  "mit_q5": {
+   "yes": "Check Box183",
+   "no": "Check Box184",
+   "unsure": "Check Box185"
+  },
+  "ins_q1": {
+   "yes": "Check Box186",
+   "no": "Check Box187",
+   "unsure": "Check Box188"
+  },
+  "ehp_q1": {
+   "yes": "Check Box189",
+   "no": "Check Box190",
+   "unsure": "Check Box191"
+  },
+  "ehp_q2": {
+   "yes": "Check Box192",
+   "no": "Check Box193",
+   "unsure": "Check Box194"
+  },
+  "ehp_q3": {
+   "yes": "Check Box195",
+   "no": "Check Box196",
+   "unsure": "Check Box197"
+  },
+  "ehp_q4": {
+   "yes": "Check Box198",
+   "no": "Check Box199",
+   "unsure": "Check Box200"
+  },
+  "ehp_q5": {
+   "yes": "Check Box201",
+   "no": "Check Box202",
+   "unsure": "Check Box203"
+  },
+  "ehp_q6": {
+   "yes": "Check Box204",
+   "no": "Check Box205",
+   "unsure": "Check Box206"
+  },
+  "ehp_q7": {
+   "yes": "Check Box207",
+   "no": "Check Box208",
+   "unsure": "Check Box209"
+  },
+  "ehp_q8": {
+   "yes": "Check Box210",
+   "no": "Check Box211",
+   "unsure": "Check Box212"
+  },
+  "site1_work_by": {
+   "fa": "Check Box159",
+   "ctr": "Check Box160",
+   "both": "Check Box161"
+  },
+  "site2_work_by": {
+   "fa": "Check Box162",
+   "ctr": "Check Box163",
+   "both": "Check Box164"
+  },
+  "site3_work_by": {
+   "fa": "Check Box165",
+   "ctr": "Check Box166",
+   "both": "Check Box167"
+  },
+  "site4_work_by": {
+   "fa": "Check Box168",
+   "ctr": "Check Box169",
+   "both": "Check Box170"
+  }
+ },
+ "multi": {
+  "road_type": {
+   "asphalt": "Check Box153",
+   "concrete": "Check Box154",
+   "composite": "Check Box155",
+   "chip_seal": "Check Box156",
+   "dirt": "Check Box157",
+   "gravel": "Check Box158"
+  },
+  "mit_options": {
+   "m1": "Check Box171",
+   "m2": "Check Box172",
+   "m3": "Check Box173",
+   "m4": "Check Box174",
+   "m5": "Check Box175",
+   "m6": "Check Box176"
+  }
+ }
+};
+function parseCsv(text){
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r"){
+      if (c === "\r" && text[i+1] === "\n") i++;
+      row.push(cur); if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = []; cur = "";
+    }
+    else cur += c;
+  }
+  if (cur !== "" || row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function s123Date(v){
+  if (!v) return v;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);          // ISO date (avoid UTC shift)
+  if (m) return `${m[2]}/${m[3]}/${m[1]}`;
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`;
+}
+let s123Pending = null;
+function applyS123Row(header, row){
+  const idx = {};
+  header.forEach((h, i) => idx[h.trim().toLowerCase()] = i);
+  const get = name => { const i = idx[name.toLowerCase()]; return i === undefined ? "" : (row[i] || "").trim(); };
+  const setText = (pdf, v) => { const el = fields.get(pdf); if (el && v) el.value = v; };
+  let n = 0;
+  for (const [name, pdf] of Object.entries(S123MAP.text)) { const v = get(name); if (v){ setText(pdf, v); n++; } }
+  for (const [name, pdf] of Object.entries(S123MAP.date)) { const v = get(name); if (v){ setText(pdf, s123Date(v)); n++; } }
+  for (const [name, targets] of Object.entries(S123MAP.choice)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    for (const [opt, cb] of Object.entries(targets)) fields.get(cb).checked = (opt === v);
+    if (v in targets) n++;
+  }
+  for (const [name, targets] of Object.entries(S123MAP.multi)) {
+    const v = get(name).toLowerCase();
+    if (!v) continue;
+    const parts = v.split(/[\s,;]+/);
+    for (const [opt, cb] of Object.entries(targets)) if (parts.includes(opt)) { fields.get(cb).checked = true; n++; }
+  }
+  // AGOL exports the geopoint as x/y columns — use them if the calculated
+  // lat/lon columns didn't come through
+  if (!fields.get("GPS Latitude Start3").value && get("y")) {
+    setText("GPS Latitude Start3", get("y")); setText("GPS Longitude Start3", get("x")); n++;
+  }
+  saveDraft();
+  setStatus(`Imported ${n} values from Survey123. Photos and signature don't travel in CSV — re-attach below.`);
+}
+$("s123Import").addEventListener("click", ()=> $("s123File").click());
+$("s123File").addEventListener("change", async e=>{
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const rows = parseCsv(await f.text());
+  if (rows.length < 2) { setStatus("That CSV has no data rows."); return; }
+  const header = rows[0], data = rows.slice(1);
+  if (data.length === 1) { applyS123Row(header, data[0]); return; }
+  const idx = {}; header.forEach((h,i)=> idx[h.trim().toLowerCase()] = i);
+  const label = r => ["damage_num","applicant","si_date","objectid"]
+    .map(k => idx[k] !== undefined ? r[idx[k]] : "").filter(Boolean).join(" · ") || "(record)";
+  const sel = $("s123Select"); sel.innerHTML = "";
+  data.forEach((r,i)=>{ const o = document.createElement("option"); o.value = i; o.textContent = label(r); sel.appendChild(o); });
+  s123Pending = { header, data };
+  $("s123Choose").hidden = false;
+});
+$("s123Pick").addEventListener("click", ()=>{
+  if (!s123Pending) return;
+  applyS123Row(s123Pending.header, s123Pending.data[Number($("s123Select").value)]);
+  $("s123Choose").hidden = true; s123Pending = null;
+});
 
 /* ---------- GPS ---------- */
 $("gpsBtn").addEventListener("click", ()=>{

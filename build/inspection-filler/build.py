@@ -21,12 +21,15 @@ lib = (HERE / "vendor" / "pdf-lib.min.js").read_text()
 pdf_b64 = base64.b64encode(
     (HERE / "template" / "catc-road-lwc-fillable-clean.pdf").read_bytes()
 ).decode()
+s123_map = (HERE / "survey123" / "survey123_map.json").read_text()
 
-for marker in ("/*PDFLIB*/", "/*PDFB64*/"):
+for marker in ("/*PDFLIB*/", "/*PDFB64*/", "/*S123MAP*/null"):
     if src.count(marker) != 1:
         raise SystemExit(f"expected exactly one {marker} in form_src.html")
 
-out = src.replace("/*PDFLIB*/", lib).replace("/*PDFB64*/", pdf_b64)
+out = (src.replace("/*PDFLIB*/", lib)
+          .replace("/*PDFB64*/", pdf_b64)
+          .replace("/*S123MAP*/null", s123_map))
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(out)
 print(f"wrote {OUT} ({len(out):,} bytes)")

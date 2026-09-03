@@ -126,6 +126,42 @@ await download.saveAs(outPdf);
 ok("download: " + download.suggestedFilename());
 if (!/CatC_Road_LWC_DMG-77\.pdf/.test(download.suggestedFilename()))
   fail("unexpected filename " + download.suggestedFilename());
+
+// ---- Survey123 CSV import: fresh page, import the 2-record fixture,
+// pick record 1 from the chooser, assert the mapped draft state ----
+const page2 = await browser.newPage();
+page2.on("pageerror", (e) => fail("csv page error: " + e));
+await page2.goto(page_url);
+await page2.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+await page2.reload();
+await page2.setInputFiles("#s123File", path.join(here, "fixtures", "survey123-export.csv"));
+await page2.waitForSelector("#s123Choose:not([hidden])", { timeout: 5000 });
+await page2.selectOption("#s123Select", "0");
+await page2.click("#s123Pick");
+await page2.waitForTimeout(300);
+const draftState = await page2.evaluate(() =>
+  JSON.parse(localStorage.getItem("catc-road-lwc-draft-v1") || "{}"));
+const expectCsv = {
+  "Applicant3": "City of Example",
+  "SI Date3": "09/03/2026",
+  "Damage3": "DMG-77",
+  "GPS Latitude Start3": "35.123456",
+  "GPS Longitude Start3": "-92.654321",
+  "Site9": "1",
+  "Damage Components9": "Surface - gravel",
+  "Mitigation Considerations3": "Water eroded the driving surface.",
+  "Comment39": "None observed on site.",
+};
+for (const [k, v] of Object.entries(expectCsv))
+  if (draftState[k] !== v) fail(`csv import "${k}": expected "${v}", got "${draftState[k]}"`);
+for (const cb of ["Check Box147", "Check Box150", "Check Box151", "Check Box157",
+                  "Check Box158", "Check Box160", "Check Box171", "Check Box176",
+                  "Check Box212"])
+  if (draftState[cb] !== true) fail(`csv import: ${cb} should be checked`);
+for (const cb of ["Check Box148", "Check Box149", "Check Box152", "Check Box153",
+                  "Check Box159", "Check Box161", "Check Box210", "Check Box211"])
+  if (draftState[cb] === true) fail(`csv import: ${cb} should NOT be checked`);
+ok("Survey123 CSV import mapped text, dates, choices, multi-selects, and x/y GPS");
 await browser.close();
 
 // ---- verify the produced PDF with the vendored pdf-lib ----

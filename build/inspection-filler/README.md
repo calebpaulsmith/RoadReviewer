@@ -87,6 +87,30 @@ fields in the "For FEMA Use Only" page headers are only filled when the
 signature fields are left untouched (the pads stamp images over them);
 true digital signing isn't possible in-browser.
 
+## Survey123 companion
+
+`survey123/gen_xlsform.py` generates two files from one definition (so
+they can't drift): `catc_road_lwc_xlsform.xlsx`, an XLSForm to publish
+via Survey123 Connect so crews can collect in Esri's field app (offline,
+GPS geopoint, photos, signature), and `survey123_map.json`, the
+Survey123-name → PDF-field-name mapping that build.py inlines into the
+web app.
+
+The round trip needs no webhooks, credits, or extra licensing:
+
+1. Publish the XLSForm; inspectors submit from the Survey123 app.
+2. In the Survey123 website's **Data** tab, export responses as **CSV**.
+3. In the web app, **Import Survey123 CSV** — single-record exports
+   import directly; multi-record exports show a picker. Dates are
+   reformatted, select-ones map to the right checkbox, select-multiples
+   fan out, and the geopoint's x/y columns fill the GPS start fields.
+4. Re-attach photos and sign (attachments don't travel in CSV), generate.
+
+Survey123 has no built-in "email me each response" — that requires a
+webhook into an automation platform (e.g. Power Automate's Survey123
+connector). The CSV export path above is the zero-infrastructure
+equivalent.
+
 ## Extending to the other report types
 
 The other Site Inspection Report PDFs (Cat A/D/E/F/G, bridges, culverts,
