@@ -154,7 +154,7 @@ const checks = [
   ["zoom select defaults to 500 ft (~0.1 mi; 76 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "76"],
   ["new disclaimer present", text.includes("subject to errors")],
   ["old disclaimer gone", !text.includes("classifies the road, not the project")],
-  ["button label restored after run", (await page.locator("#pdfBtn").textContent()) === "Download PDF Report"],
+  ["button label restored after run", (await page.locator("#pdfBtn").textContent()) === "PDF Report"],
 ];
 
 let fail = 0;

@@ -1102,6 +1102,56 @@ live services. Full design narrative + verification history:
   declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
   (HTTP range requests); GitHub's 100 MB/file limit is the sizing
   constraint (per-state sizes in build/tiles/README.md).
+- Full-page shell + offline basemap, locked to Region V (2026-09-14,
+  per user direction): the map fills the viewport (no page scroll); a
+  full-height left pane holds title/inputs/find/results/exports/
+  transparency panels (header + privacy banner removed; the
+  coordinates box's placeholder is real example lines, cleared on
+  focus). maxBounds + a resize-recomputed minZoom (floor z6) forbid
+  leaving the six states. The ROAD basemap is served from the repo —
+  web/tiles/basemap.pmtiles, a 50 MB Protomaps/OSM z0-11 extract
+  (layers earth/water/roads/boundaries/places, built by
+  build/tiles/build-basemap.sh; buildings/POIs/landuse were most of
+  the unfiltered 504 MB) rendered with protomaps-leaflet's light
+  theme; satellite stays live Esri; live Esri streets is the fallback
+  when the file is missing or on file://. Result rows are compact
+  (one line: name, coords, state, badge; click = select + expand
+  detail) with a "⧉ Expand table" pop-out showing every site's full
+  detail at once. Traps: `pmtiles extract` doesn't checksum (a
+  proxy-truncated pull shipped ~2,700 corrupt tiles —
+  filter-basemap-layers.py gunzip-verifies every tile); tippecanoe
+  2.49 tile-join can't read some Protomaps tiles (wire-level python
+  layer filter instead); a test server that serves .css as
+  octet-stream makes Chromium reject leaflet.css → Leaflet panes
+  lose position:absolute and the map "breaks" while the page itself
+  is fine.
+- Live street-level detail under the roads (2026-09-14, per user):
+  buildings/parks/landuse/POIs/street names/house numbers from
+  OpenFreeMap (keyless public OSM vector tiles, CORS *; runtime
+  TileJSON resolves the versioned pbf template), in a detailPane
+  (z250) between basemap (200) and HPMS overlay (350), fetch-gated
+  z13+ so region browsing stays offline; best-effort (down/blocked =
+  simply no detail). TRAP fixed on the way: protomapsL.leafletLayer
+  defaults maxDataZoom to 15 and never reads the PMTiles header —
+  past the archive's real maxzoom it fetches empty and renders BLANK
+  instead of overzooming (class lines vanished at z14+, masked by
+  Leaflet's stale lower-zoom canvases). Every layer now passes
+  explicit maxDataZoom (class 13 / basemap 11 / detail 14);
+  verify-hpms-tiles asserts painted class pixels at z15.
+- Two input tabs + Search & Collect (2026-09-14, per user): the left
+  pane's input area is tabs — "Coordinate Input" (paste flow; State
+  dropdown REMOVED, always auto-detect; "Search radius" renamed
+  "Search buffer") and "Search & Collect" (the TIGERweb Find box moved
+  here + an add-a-point form: Site name / GPS coordinates / Note).
+  Collected points join the same currentPoints list (rebuildPoints()
+  concats pasted + collected), classify/pin/step/export identically,
+  persist in localStorage ("rr_collected") until removed, and carry
+  the note into the row detail, pop-out, CSV/TSV/GeoJSON (Note
+  column) and the new KMZ export (zipped KML via makeZip, red/green/
+  yellow pushpins by verdict — the Excel tool's KML conventions). Map
+  detail restyle same pass: POI dots/labels REMOVED (user: clutter);
+  OpenFreeMap transportation now draws Google-style white road
+  ribbons with gray casings under the FHWA class centerlines.
 
 ---
 

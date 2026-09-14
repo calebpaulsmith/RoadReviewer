@@ -261,14 +261,46 @@ checks.push(["unchecking Live layers clears the mirror", await page.evaluate(asy
   return cleared;
 })]);
 
-// --- input panel collapse (map-hero layout) ---
-checks.push(["input panel floats over the map and collapses", await page.evaluate(() => {
-  const p = document.getElementById("inputPanel");
-  const overlaid = getComputedStyle(p).position === "absolute";
-  document.getElementById("panelToggle").click();
-  const hidden = p.classList.contains("hidden") && p.offsetParent === null;
-  document.getElementById("panelToggle").click();
-  return overlaid && hidden && p.offsetParent !== null;
+// --- full-page shell: sidebar pane + no page scrolling ---
+checks.push(["full-page shell: sidebar pane, map fills the rest, no page scroll", await page.evaluate(() => {
+  const sb = document.getElementById("sidebar"), ma = document.getElementById("mapArea");
+  const noScroll = document.body.scrollHeight <= window.innerHeight + 1;
+  return sb && ma && sb.offsetHeight >= window.innerHeight - 1
+    && ma.getBoundingClientRect().right >= window.innerWidth - 1 && noScroll;
+})]);
+
+// --- compact rows: detail hidden until the row is expanded ---
+checks.push(["rows are compact until clicked (detail + links hidden)", await page.evaluate(() => {
+  const row = document.querySelector("#resultsBody .row:not(.open)") || document.querySelector("#resultsBody .row");
+  const sub = row.querySelector(".row-sub"), links = row.querySelector(".row-links");
+  const collapsedHidden = !row.classList.contains("open")
+    ? (sub ? sub.offsetParent === null : true) && links.offsetParent === null : true;
+  row.classList.add("open");
+  const openShows = (sub ? sub.offsetParent !== null : true) && links.offsetParent !== null;
+  row.classList.remove("open");
+  return collapsedHidden && openShows;
+})]);
+
+// --- pop-out: the full-detail table over the map ---
+checks.push(["pop-out table lists every site with full detail", await page.evaluate(() => {
+  document.getElementById("popoutBtn").click();
+  const wrap = document.getElementById("popoutWrap");
+  const rows = document.querySelectorAll("#popoutTable tr");
+  const txt = document.getElementById("popoutTable").textContent;
+  const ok = !wrap.hidden && rows.length === 3   // header + 2 sites
+    && txt.includes("Kalamazoo culvert") && txt.includes("Federal aid")
+    && txt.includes("Urban area") && txt.includes("42.28536");
+  document.getElementById("popoutClose").click();
+  return ok && wrap.hidden;
+})]);
+
+// --- the two input tabs: find + collector live on the second tab ---
+await page.click("#tabBtnCollect");
+checks.push(["tabs: Search & Collect shows find + adder, hides the paste panel", await page.evaluate(() => {
+  const collectShown = document.getElementById("collectPanel").offsetParent !== null
+    && document.getElementById("findText").offsetParent !== null
+    && document.getElementById("addPointBtn").offsetParent !== null;
+  return collectShown && document.getElementById("inputPanel").offsetParent === null;
 })]);
 
 // --- find on map: state -> county/township matches -> road search in view ---
@@ -305,6 +337,38 @@ await page.waitForFunction(() => {
 checks.push(["find: road suggestion carries FHWA class + color swatch", true]);
 await page.locator("#findResults .finditem", { hasText: "S Pitcher St" }).first().click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing road: S Pitcher St"), { timeout: 15000 });
+
+// --- Search & Collect: add a named+noted GPS point, it classifies like any row ---
+await page.fill("#addName", "Washout site");
+await page.fill("#addCoords", "42.28536, -85.57025");
+await page.fill("#addNote", "north shoulder undercut");
+await page.click("#addPointBtn");
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("3 point(s) classified"), { timeout: 15000 });
+checks.push(["collector: added point classifies into the shared table", await page.evaluate(() => {
+  const rows = [...document.querySelectorAll("#resultsBody .row")];
+  const row = rows.find(r => r.textContent.includes("Washout site"));
+  return rows.length === 3 && !!row && row.textContent.includes("north shoulder undercut")
+    && !!row.querySelector("a.rmpt");
+})]);
+checks.push(["collector: note flows into CSV rows + pop-out table", await page.evaluate(() => {
+  const csvRow = exportRows().find(r => r[0] === "Washout site");
+  document.getElementById("popoutBtn").click();
+  const po = document.getElementById("popoutTable").textContent;
+  document.getElementById("popoutClose").click();
+  return EXPORT_HEADERS[EXPORT_HEADERS.length - 1] === "Note"
+    && csvRow && csvRow[csvRow.length - 1] === "north shoulder undercut"
+    && po.includes("north shoulder undercut");
+})]);
+checks.push(["collector: KMZ machinery present (button + store-zip builder)", await page.evaluate(async () => {
+  const zip = makeZip([{ name: "doc.kml", data: new TextEncoder().encode("<kml/>") }]);
+  const head = new Uint8Array(await zip.slice(0, 2).arrayBuffer());
+  return !!document.getElementById("dlKmz") && head[0] === 0x50 && head[1] === 0x4b;   // "PK"
+})]);
+await page.evaluate(() => { document.querySelector("#resultsBody a.rmpt").click(); });
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
+checks.push(["collector: remove takes the point back out", await page.evaluate(() =>
+  document.querySelectorAll("#resultsBody .row").length === 2)]);
+await page.click("#tabBtnCoords");
 checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
 
 // --- results-row text filter ---
@@ -357,7 +421,7 @@ checks.push(["zip contains 2 PDFs with site names", zr.names.length === 2
   && zr.names.includes("Kalamazoo culvert FIRMette.pdf") && zr.names.includes("Site B FIRMette.pdf")]);
 checks.push(["zip CRCs valid (testzip clean)", zr.bad === null]);
 checks.push(["zip entries are PDFs", zr.allPdf === true]);
-checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "Download FIRMettes (ZIP)"]);
+checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "FIRMettes (ZIP)"]);
 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });

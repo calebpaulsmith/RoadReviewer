@@ -226,45 +226,113 @@ footer { max-width: 1680px; padding: 20px 26px 34px; font-size: 12.5px; color: v
 
 <style>
 /* ============================================================
-   Map-hero restyle (2026-09-14) — the map IS the page. The input
-   column becomes a collapsible card floating over the map's top-left
-   corner; the site legend floats bottom-right; the map fills the
-   viewport width and most of its height. Same additive-layer pattern
-   as the county restyle above: every ID and class the JS generates
-   is kept, so behaviour (and the Playwright verifiers) are untouched.
+   Full-page app shell (2026-09-14, per user direction) — the map
+   fills the ENTIRE viewport with no page scrolling; everything else
+   lives in a full-height left pane (input on top, compact results
+   below, exports and transparency panels at the bottom). Replaces
+   the earlier "map-hero" floating-card layer. Every ID and class
+   the JS generates is kept.
    ============================================================ */
-header { padding: 12px 26px; }
-header h1 { font-size: 19px; }
-header .sub { margin-top: 4px; font-size: 12.5px; }
-.privacy { padding: 7px 26px; font-size: 12px; }
-main { max-width: none; padding: 12px 16px 22px; }
+html, body { height: 100%; }
+body { margin: 0; overflow: hidden; display: flex; flex-direction: row; }
 
-.top { display: block; }
-.map-col { width: 100%; }
-.reviewbar { margin-bottom: 8px; }
-.map-wrap { display: block; position: relative; }
-#map, .map-wrap #map { width: 100%; height: calc(100vh - 215px); min-height: 520px; }
+/* ---- left pane ---- */
+#sidebar { flex: 0 0 440px; min-width: 320px; max-width: 46vw; height: 100%;
+  display: flex; flex-direction: column; background: var(--bg);
+  border-right: 1px solid var(--line); box-shadow: 2px 0 10px rgba(16,24,40,.08); z-index: 1100; }
+.sb-head { background: linear-gradient(115deg, #12293e, #1c4066); color: #fff;
+  padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex: none; }
+.sb-head h1 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: -.2px;
+  display: flex; align-items: center; gap: 8px; }
+.sb-head h1 span { font-weight: 600; font-size: 10px; background: rgba(255,255,255,.15); color: #d3e3f4;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; }
+.sb-head a { color: #93c2f0; font-size: 12px; margin-left: auto; white-space: nowrap; }
+.sb-scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 12px 14px 16px; }
 
-/* Input panel: floating card over the map. It's a SIBLING of #map (not a
-   child), so its mouse/scroll events never reach Leaflet's handlers. */
-.input-col, .map-wrap .input-col {
-  position: absolute; top: 12px; left: 12px; z-index: 1000;
-  width: 400px; max-width: calc(100% - 24px); min-width: 0;
-  max-height: calc(100% - 24px); overflow-y: auto;
-  background: rgba(255,255,255,.97); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px;
-}
-.input-col.hidden { display: none; }
-.input-col textarea { min-height: 140px; }
+/* ---- the two input tabs: Coordinate Input | Search & Collect ---- */
+.sb-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid var(--line); }
+.tabbtn { flex: 1 1 0; border: none; background: none; box-shadow: none; border-radius: 8px 8px 0 0;
+  padding: 8px 6px; font-size: 13px; font-weight: 600; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.tabbtn:hover { background: #eef3f8; }
+.tabbtn.active { color: var(--accent-ink); border-bottom-color: var(--accent);
+  background: #fff; box-shadow: var(--shadow-sm); }
+
+/* Search & Collect: the add-a-point form */
+.addbox { margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.addrow { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.addrow input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 13px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.addrow a { font-size: 12px; }
+.row .rnote { color: var(--muted); font-style: italic; }
+.row a.rmpt { font-size: 11.5px; }
+
+/* Input block sits in normal pane flow (the floating-card layer is gone). */
+.input-col { display: block; min-width: 0; }
+.input-col textarea { min-height: 130px; width: 100%; }
 .controls { margin-bottom: 8px; gap: 10px; }
-.legend { margin-top: 8px; gap: 10px 14px; }
+.legend { margin-top: 8px; gap: 8px 14px; }
 details.howcolors { margin-top: 8px; }
 
+/* ---- results inside the pane: compact rows, expandable detail ---- */
+.results { margin-top: 14px; }
+.results-bar { margin-bottom: 8px; padding-bottom: 8px; gap: 6px; }
+.rowlist { box-shadow: var(--shadow-sm); }
+.row { padding: 6px 10px; gap: 3px; font-size: 12.5px; }
+.row .site-name { font-size: 13px; }
+.row .caret { margin-left: 4px; color: var(--faint); font-size: 10px; flex: none;
+  transition: transform .12s; }
+.row.open .caret { transform: rotate(90deg); }
+.row-main .links { display: none; }             /* links move into the detail */
+.row .row-sub, .row .row-links { display: none; }
+.row.open .row-sub { display: flex; }
+.row.open .row-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
+.sb-exports { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.sb-foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted); }
+
+/* ---- map area: the rest of the viewport ---- */
+#mapArea { flex: 1 1 auto; position: relative; height: 100%; min-width: 0; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%;
+  border: none; border-radius: 0; box-shadow: none; min-height: 0; }
+.mapbar { position: absolute; top: 10px; left: 12px; z-index: 1000; display: flex; align-items: center;
+  gap: 8px; flex-wrap: wrap; max-width: calc(100% - 70px);
+  background: rgba(255,255,255,.95); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px 10px; box-shadow: var(--shadow-sm); font-size: 12.5px; }
+.mapbar label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.mapbar .rinfo { color: var(--muted); font-weight: 500; max-width: 340px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mapbar .rinfo:empty { display: none; }
+
 /* Site legend: floating card bottom-right (above the attribution line). */
-#siteLegend, .map-wrap #siteLegend {
+#siteLegend {
   position: absolute; right: 12px; bottom: 26px; z-index: 1000;
-  max-height: 60%; max-width: min(280px, calc(100% - 24px));
+  max-height: 60%; max-width: min(280px, 40%);
 }
+
+/* ---- pop-out: the full-detail table over the map ---- */
+#popoutWrap { position: fixed; inset: 0; z-index: 3000; background: rgba(15,25,35,.45);
+  display: flex; align-items: center; justify-content: center; padding: 24px; }
+#popoutWrap[hidden] { display: none; }
+#popoutCard { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+  width: min(1500px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.po-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  border-bottom: 1px solid var(--line); flex: none; }
+.po-head b { font-size: 15px; }
+.po-head .count { margin-right: auto; }
+.po-body { overflow: auto; }
+#popoutTable { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+#popoutTable th, #popoutTable td { text-align: left; padding: 6px 9px;
+  border-bottom: 1px solid var(--line); vertical-align: top; }
+#popoutTable th { position: sticky; top: 0; background: #f4f7fa; z-index: 1;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); white-space: nowrap; }
+#popoutTable td:first-child { border-left: 4px solid #b9c4cd; font-weight: 600; }
+#popoutTable tr.v-fed td:first-child { border-left-color: var(--fed-border); background: var(--fed); }
+#popoutTable tr.v-nonfed td:first-child { border-left-color: var(--nonfed-border); background: var(--nonfed); }
+#popoutTable tr.v-review td:first-child { border-left-color: var(--review-border); background: var(--review); }
+#popoutTable tr.v-failed td:first-child { border-left-color: var(--failed-border); background: var(--failed); }
+#popoutTable td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; white-space: nowrap; }
 
 /* Live-layer legend (a Leaflet bottom-left control) — same visual language
    as #siteLegend, whose .hdr/.sw/.swp/.note/.src styles it reuses. */
@@ -300,57 +368,27 @@ details.howcolors { margin-top: 8px; }
 #rowFilter { font: inherit; font-size: 12.5px; padding: 5px 9px; width: 170px;
   border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 
-/* Phone / short-viewport fallback: the panel drops out of the overlay into
-   normal flow above the map, and the map takes a fixed viewport share. */
-@media (max-width: 820px), (max-height: 600px) {
-  .input-col, .map-wrap .input-col { position: static; width: auto; max-height: none; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
-  #map, .map-wrap #map { height: 62vh; min-height: 380px; }
-  #siteLegend, .map-wrap #siteLegend { position: static; max-height: 240px; margin-top: 8px; }
+/* Narrow screens: the pane can't hold a 440px column — let it shrink. */
+@media (max-width: 760px) {
+  #sidebar { flex-basis: 78vw; max-width: 85vw; }
 }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>Federal-Aid Road Checker <span>unofficial</span></h1>
-  <div class="sub">Is this road on the federal-aid system? Paste your points — each is classified by FHWA functional class and the 2020 Adjusted Census Urban Boundary. Unofficial tool, not affiliated with FHWA or FEMA. <a href="sources.html">Data sources &amp; citations</a></div>
-</header>
-
-<div class="privacy">
-  <b>Private by design.</b> Nothing you paste leaves your computer — no server, no accounts, no analytics. Your browser
-  queries the public state-DOT and USDOT map services directly, and every request is listed in the log at the bottom.
-  Refreshing the page erases everything.
-</div>
-
-<main>
-  <div class="top">
-    <div class="map-col">
-      <div class="reviewbar">
-        <button id="panelToggle" title="Show or hide the coordinates input panel">☰ Input panel</button>
-        <button id="prevSite" title="Previous site">◀ Prev</button>
-        <button id="nextSite" title="Next site">Next ▶</button>
-        <button id="plotAllSites" title="Zoom out to show every site at once and, when Site layers is on, draw the authoritative road-class and urban-boundary geometry around all of them">Plot all sites</button>
-        <span class="rinfo" id="reviewInfo">Click a row or pin — or hit Next — to step through sites</span>
-        <span style="flex:1"></span>
-        <label title="Continuously mirror every wired state's official functional-class layer and the 2020 ACUB urban boundaries across the visible map, in each source's own published colors. Progressive by zoom so it stays fast: arterials appear from zoom 10, collectors from zoom 12, the full network from zoom 13 (the services cap how much one query returns)"><input type="checkbox" id="liveLayers" checked> Live class + urban layers</label>
-        <label title="Draw the authoritative road-class and urban-boundary geometry around the selected site, in each source's own published colors"><input type="checkbox" id="showLayers" checked> Site layers</label>
-        <a href="sources.html" target="_blank" rel="noopener">Sources</a>
-      </div>
-      <div class="map-wrap">
-        <div class="input-col" id="inputPanel">
+<div id="sidebar">
+  <div class="sb-head">
+    <h1>Federal-Aid Road Checker <span>unofficial</span></h1>
+    <a href="sources.html" target="_blank" rel="noopener">Data sources</a>
+  </div>
+  <div class="sb-scroll">
+    <div class="sb-tabs">
+      <button id="tabBtnCoords" class="tabbtn active" title="Paste a batch of coordinates and classify them all at once">Coordinate Input</button>
+      <button id="tabBtnCollect" class="tabbtn" title="Search for a state, county, town or city, zoom there, and add GPS points one at a time with a name and note">Search &amp; Collect</button>
+    </div>
+    <div class="input-col" id="inputPanel">
       <div class="controls">
-        <label>State:
-          <select id="stateSel">
-            <option value="AUTO" selected>Auto-detect (all 6 states)</option>
-            <option value="MI">Michigan</option>
-            <option value="IN">Indiana</option>
-            <option value="WI">Wisconsin</option>
-            <option value="MN">Minnesota</option>
-            <option value="IL">Illinois</option>
-            <option value="OH">Ohio</option>
-          </select>
-        </label>
-        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft.">Search radius:
+        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft. The state is always auto-detected from each point's location.">Search buffer:
           <select id="bufferSel">
             <option value="50">50 ft (strict)</option>
             <option value="100">100 ft</option>
@@ -362,33 +400,10 @@ details.howcolors { margin-top: 8px; }
         </label>
         <span class="count" id="parseCount"></span>
       </div>
-      <div class="findbox">
-        <div class="findrow">
-          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
-            <option value="">Find: any state</option>
-            <option value="55">Wisconsin</option>
-            <option value="18">Indiana</option>
-            <option value="26">Michigan</option>
-            <option value="27">Minnesota</option>
-            <option value="17">Illinois</option>
-            <option value="39">Ohio</option>
-          </select>
-          <input id="findText" type="search" spellcheck="false" placeholder="County, township or road… (suggests as you type)"
-            title="Start typing part of a county, township (county-subdivision) or road name — suggestions appear below as you type. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the county or township first, then the road. Road suggestions are tagged with the state's FHWA functional class in the standard class colors.">
-          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
-        </div>
-        <div id="findResults"></div>
-      </div>
-      <textarea id="coordsIn" spellcheck="false" placeholder="Paste coordinates — one point per line. Results appear automatically.
-
-Examples:
-42.28536, -85.57025
+      <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
 Culvert on Q Ave	42.6911	-84.5360
-Site 12, 44.2700, -83.5200"></textarea>
-      <div class="hint">
-        Accepts <code>lat, lon</code> with an optional name before or after — commas, tabs or spaces.
-        Classification runs as you paste; no submit button.
-      </div>
+Site 12, 44.2700, -83.5200
+39.9876	-86.0128	CR 550 N"></textarea>
       <div class="legend">
         <span class="l-fed">Federal aid — closest road</span>
         <span class="l-nonfed">Non-federal aid — closest road</span>
@@ -403,44 +418,73 @@ Site 12, 44.2700, -83.5200"></textarea>
         </ol>
         <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
       </details>
+    </div>
+
+    <div id="collectPanel" hidden>
+      <div class="findbox">
+        <div class="findrow">
+          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
+            <option value="">Find: any state</option>
+            <option value="55">Wisconsin</option>
+            <option value="18">Indiana</option>
+            <option value="26">Michigan</option>
+            <option value="27">Minnesota</option>
+            <option value="17">Illinois</option>
+            <option value="39">Ohio</option>
+          </select>
+          <input id="findText" type="search" spellcheck="false" placeholder="State, county, town or city… (suggests as you type)"
+            title="Start typing part of a county, township (county-subdivision), city or road name — suggestions appear below as you type and clicking one zooms the map there. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the place first, then the road.">
+          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
         </div>
-        <div id="map"></div>
-        <div id="siteLegend"></div>
+        <div id="findResults"></div>
+      </div>
+      <div class="addbox">
+        <div class="addrow"><input id="addName" type="text" spellcheck="false" placeholder="Site name (e.g. Culvert on Q Ave)"></div>
+        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025"></div>
+        <div class="addrow"><input id="addNote" type="text" spellcheck="false" placeholder="Note (optional — goes into the export)"></div>
+        <div class="addrow">
+          <button id="addPointBtn" class="primary" title="Adds the point to the results table below, classifies it, and zooms the map to it. Points are kept in this browser until removed.">＋ Add point</button>
+          <span class="count" id="collectCount"></span>
+          <span style="flex:1"></span>
+          <a href="#" id="clearCollected" title="Remove every collected point">clear collected</a>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="results">
-    <div class="results-bar">
-      <h2>Results</h2>
-      <span class="count" id="statusCount"></span>
-      <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
-        title="Show only result rows whose text matches — site name, road or street names, verdict, class, urban area">
-      <label class="count" title="Show only sites currently inside the visible map area — Find a state, county or township first, then tick this"><input type="checkbox" id="rowFilterView"> in map view</label>
-      <span class="count" id="filterCount"></span>
-      <span style="flex:1"></span>
-      <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
-      <button id="dlCsv">Download CSV</button>
-      <button id="dlGeojson" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">Download GeoJSON</button>
-      <label class="count" title="How wide an area the report map for each site covers">PDF map width:
-        <select id="pdfZoom">
-          <option value="76" selected>500 ft (~0.1 mi)</option>
-          <option value="152">1,000 ft (~0.2 mi)</option>
-          <option value="300">2,000 ft (~0.4 mi)</option>
-          <option value="600">4,000 ft (~0.75 mi)</option>
-          <option value="1200">8,000 ft (~1.5 mi)</option>
-          <option value="2400">16,000 ft (~3 mi)</option>
-        </select>
-      </label>
-      <button id="pdfBtn" class="primary" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">Download PDF Report</button>
-      <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">Download FIRMettes (ZIP)</button>
-      <button id="clearBtn">Clear</button>
+    <div class="results">
+      <div class="results-bar">
+        <h2>Results</h2>
+        <span class="count" id="statusCount"></span>
+        <span style="flex:1"></span>
+        <button id="popoutBtn" title="Open every site's full detail — verdict, class, urban area, roads — as one big table">⧉ Expand table</button>
+      </div>
+      <div class="results-bar">
+        <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
+          title="Show only result rows whose text matches — site name, road or street names, verdict, class, urban area">
+        <label class="count" title="Show only sites currently inside the visible map area — Find a state, county or township first, then tick this"><input type="checkbox" id="rowFilterView"> in map view</label>
+        <span class="count" id="filterCount"></span>
+      </div>
+      <div id="resultsBody" class="rowlist"></div>
+      <div class="sb-exports">
+        <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
+        <button id="dlCsv">CSV</button>
+        <button id="dlKmz" title="KMZ for Google Earth / ArcGIS — red, green and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">KMZ</button>
+        <button id="dlGeojson" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">GeoJSON</button>
+        <label class="count" title="How wide an area the report map for each site covers">PDF map width:
+          <select id="pdfZoom">
+            <option value="76" selected>500 ft (~0.1 mi)</option>
+            <option value="152">1,000 ft (~0.2 mi)</option>
+            <option value="300">2,000 ft (~0.4 mi)</option>
+            <option value="600">4,000 ft (~0.75 mi)</option>
+            <option value="1200">8,000 ft (~1.5 mi)</option>
+            <option value="2400">16,000 ft (~3 mi)</option>
+          </select>
+        </label>
+        <button id="pdfBtn" class="primary" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">PDF Report</button>
+        <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">FIRMettes (ZIP)</button>
+        <button id="clearBtn">Clear</button>
+      </div>
     </div>
-    <div id="resultsBody" class="rowlist"></div>
-  </div>
-
-  <h3 class="adv-head">Advanced &amp; transparency</h3>
-  <p class="adv-note">Maintenance and audit tools — most users never need these.</p>
 
   <details class="svcpanel" id="services">
     <summary title="Each row is a live data service this page reads. If a state moves or locks a layer, paste the full replacement layer URL and it takes effect on your next classification. Overrides are stored only in this browser.">Data service URLs</summary>
@@ -457,16 +501,44 @@ Site 12, 44.2700, -83.5200"></textarea>
     <summary title="Every request this page makes is listed here for transparency — your points only ever go to the public map services shown in this log.">Network log</summary>
     <pre id="netLog">(no requests yet)</pre>
   </details>
-</main>
 
-<footer>
-  This tool pulls functional classification data live from official sources, but is subject to errors. Check the
-  State Department of Transportation for official documentation of each site's functional classification.
-  Road-class lookup is wired for all six Region V states (MI, IN, WI, MN, IL, OH); other states get the
-  urban-boundary check only.
-  Map tiles &copy; Esri (World Street Map / World Imagery) — viewing the map, or generating a PDF report, fetches tiles
-  for the relevant area from Esri.
-</footer>
+  <div class="sb-foot">
+    Nothing you paste leaves your computer — no server, no accounts, no analytics; every request is in the
+    Network log above. This tool pulls functional classification data live from official sources, but is
+    subject to errors — check the State DOT for official documentation of each site's functional
+    classification. Road-class lookup is wired for all six Region V states (MI, IN, WI, MN, IL, OH).
+    Road basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a>
+    &copy; OpenStreetMap contributors, served from this site. Fetched live when needed: satellite imagery
+    &copy; Esri, and street-level detail at close zoom (buildings, parks, POIs, street names)
+    &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>
+    &copy; OpenStreetMap contributors.
+  </div>
+  </div>
+</div>
+
+<div id="mapArea">
+  <div class="mapbar">
+    <button id="prevSite" title="Previous site">◀ Prev</button>
+    <button id="nextSite" title="Next site">Next ▶</button>
+    <button id="plotAllSites" title="Zoom out to show every site at once and, when Site layers is on, draw the authoritative road-class and urban-boundary geometry around all of them">Plot all sites</button>
+    <span class="rinfo" id="reviewInfo"></span>
+    <label title="Continuously mirror every wired state's official functional-class layer and the 2020 ACUB urban boundaries across the visible map, in each source's own published colors."><input type="checkbox" id="liveLayers" checked> Class + urban layers</label>
+    <label title="Draw the authoritative road-class and urban-boundary geometry around the selected site, in each source's own published colors"><input type="checkbox" id="showLayers" checked> Site layers</label>
+  </div>
+  <div id="map"></div>
+  <div id="siteLegend"></div>
+</div>
+
+<div id="popoutWrap" hidden>
+  <div id="popoutCard">
+    <div class="po-head">
+      <b>All results</b>
+      <span class="count" id="popoutCount"></span>
+      <button id="popoutClose">✕ Close</button>
+    </div>
+    <div class="po-body"><table id="popoutTable"></table></div>
+  </div>
+</div>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/jspdf/jspdf.umd.min.js"></script>
@@ -1116,14 +1188,30 @@ async function httpGetJson(url) {
   return r.json();
 }
 
-/* ---- map: streets basemap (road names) by default, imagery as an option ---- */
+/* ---- map: locked to Region V; offline road basemap, live satellite ---- */
 // zoomAnimation off: Leaflet silently swallows setView() while a zoom
 // animation is in flight (_tryAnimatedZoom returns true without moving), so
 // clicking Next/a row during the ~250ms animation would randomly not zoom.
 // Instant zooms make the site-by-site review stepping deterministic.
-const map = L.map("map", { zoomAnimation: false }).setView([44.5, -86.5], 5);
+//
+// The view is CONFINED to the six Region V states: maxBounds blocks panning
+// away, and minZoom — recomputed on resize, since the region-fit zoom depends
+// on the viewport — blocks zooming out any further than the region.
+const R5_BOUNDS = L.latLngBounds([36.8, -97.5], [49.6, -80.3]);
+const map = L.map("map", { zoomAnimation: false, maxZoom: 19,
+  maxBounds: R5_BOUNDS, maxBoundsViscosity: 1.0 });
+map.fitBounds(R5_BOUNDS);
+function lockRegionZoom() {
+  // Floor of 6: below z6 neither the HPMS class tiles (-Z6) nor the basemap's
+  // road detail have content, and the region already fills a normal viewport.
+  const z = Math.max(6, map.getBoundsZoom(R5_BOUNDS));
+  map.setMinZoom(z);
+  if (map.getZoom() < z) map.setZoom(z);
+}
+lockRegionZoom();
+map.on("resize", lockRegionZoom);
+
 const STREETS_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
-const streetsBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
 const imageryBase = L.layerGroup([
   L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
     maxZoom: 19, attribution: "Imagery &copy; Esri",
@@ -1132,10 +1220,96 @@ const imageryBase = L.layerGroup([
     maxZoom: 19, opacity: 0.9,
   }),
 ]);
-streetsBase.addTo(map);
-L.control.layers({ "Streets (road names)": streetsBase, "Satellite imagery": imageryBase }, null).addTo(map);
-// The input panel now floats over the map's top-left corner, so the zoom
-// control moves to the top-right (stacked above the basemap switcher).
+// The ROAD basemap is served from THIS site — a vendored Protomaps/OSM
+// vector extract of the six states (web/tiles/basemap.pmtiles) — so browsing
+// the map downloads nothing from a tile CDN. Satellite imagery stays a live
+// Esri layer, fetched only when the user switches to it. The Esri street
+// layer survives solely as the automatic fallback when the local basemap is
+// missing (or on a file:// open, where range requests don't work).
+(async () => {
+  let roadBase, roadLabel = "Road map (offline, this site)";
+  try {
+    if (typeof protomapsL === "undefined" || typeof pmtiles === "undefined"
+        || location.protocol === "file:") throw new Error("no pmtiles runtime");
+    const head = await fetch("tiles/basemap.pmtiles", { method: "HEAD" });
+    if (!head.ok) throw new Error("no basemap tileset");
+    // maxDataZoom = the extract's maxzoom (11): the library defaults to 15
+    // and never reads the archive header, so deeper zooms would fetch
+    // nonexistent tiles and render blank instead of overzooming.
+    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", theme: "light", maxDataZoom: 11,
+      attribution: 'Basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; OpenStreetMap' });
+  } catch {
+    roadBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
+    roadLabel = "Streets (live, Esri)";
+  }
+  roadBase.addTo(map);
+  const bases = {};
+  bases[roadLabel] = roadBase;
+  bases["Satellite (live, Esri)"] = imageryBase;
+  L.control.layers(bases, null).addTo(map);
+})();
+
+// LIVE street-level detail — buildings, parks/land use, POIs, street
+// names — from OpenFreeMap (keyless, no-limit public OSM vector tiles,
+// CORS *). Per user direction: the road basemap stays HOSTED; the other
+// stuff pops in live underneath the road/class linework. It draws in its
+// own pane between the offline basemap (tilePane, z200) and the HPMS
+// class overlay (browsePane, z350), and tile fetches are gated to z13+
+// so region-level browsing stays fully offline. Everything here is
+// best-effort: offline, blocked, or down, the map simply shows no
+// detail layer and nothing else is affected.
+(async () => {
+  try {
+    if (typeof protomapsL === "undefined" || location.protocol === "file:") return;
+    const tj = await (await fetch("https://tiles.openfreemap.org/planet")).json();
+    const tpl = tj.tiles && tj.tiles[0];   // versioned {z}/{x}/{y}.pbf template
+    if (!tpl) return;
+    map.createPane("detailPane").style.zIndex = 250;
+    const P = protomapsL;
+    const LANDCOVER = { grass: "#d9e8c8", wood: "#c6d8b2", sand: "#f0e7b2",
+                        wetland: "#d0e0d8", ice: "#eef6f6", farmland: "#eae4d2" };
+    // Google-style ground: land tints + buildings + WHITE road ribbons
+    // with gray casings, so the FHWA class lines (browsePane, above this
+    // pane) read as colored centerlines ON the streets. No POI markers —
+    // they cluttered the review view (user direction).
+    const RIBBON = { motorway: 5, trunk: 4.5, primary: 4, secondary: 3.4, tertiary: 3,
+                     minor: 2.6, service: 1.6, raceway: 1.6, busway: 2 };
+    const ribbonW = (z, f) => {
+      const base = RIBBON[f.props.class];
+      if (base == null) return 0;                          // path/track/rail etc: skip
+      const m = z >= 17 ? 2.4 : z >= 16 ? 1.9 : z >= 15 ? 1.5 : z >= 14 ? 1.2 : 1;
+      return base * m;
+    };
+    const isRibbon = (z, f) => RIBBON[f.props.class] != null;
+    const paintRules = [
+      { dataLayer: "landcover",
+        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) => LANDCOVER[f.props.class] || "#e2e6da", opacity: 0.45 }) },
+      { dataLayer: "landuse",
+        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) =>
+          f.props.class === "hospital" ? "#f5e3e3"
+          : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#f0e9f5"
+          : "#e9e5dd", opacity: 0.35 }) },
+      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
+      { dataLayer: "building", minzoom: 13,
+        symbolizer: new P.PolygonSymbolizer({ fill: "#d5ccc3", opacity: 0.55 }) },
+      { dataLayer: "transportation", filter: isRibbon,     // casing first, then fill
+        symbolizer: new P.LineSymbolizer({ color: "#c9ced4", width: (z, f) => ribbonW(z, f) + 2 }) },
+      { dataLayer: "transportation", filter: isRibbon,
+        symbolizer: new P.LineSymbolizer({ color: "#ffffff", width: ribbonW }) },
+    ];
+    const labelRules = [
+      { dataLayer: "transportation_name", minzoom: 14,
+        symbolizer: new P.LineLabelSymbolizer({ label_props: ["name"],
+          fill: "#3f4a55", stroke: "#ffffff", width: 2, font: "500 10.5px system-ui" }) },
+      { dataLayer: "housenumber", minzoom: 17,
+        symbolizer: new P.CenteredTextSymbolizer({ label_props: ["housenumber"],
+          fill: "#9a938c", font: "400 9px system-ui" }) },
+    ];
+    P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane",
+      minZoom: 13, maxDataZoom: 14,
+      attribution: 'Detail &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; OpenStreetMap' }).addTo(map);
+  } catch { /* the detail layer is a bonus — never let it break the map */ }
+})();
 map.zoomControl.setPosition("topright");
 const markerLayer = L.layerGroup().addTo(map);
 
@@ -1284,17 +1458,23 @@ function render() {
       return;
     }
     total++;
-    const stateSel = $("stateSel").value;
-    const state = stateSel === "AUTO" ? (detectState(p.lat, p.lon) || "??") : stateSel;
+    const state = detectState(p.lat, p.lon) || "??";   // always auto-detected (the State dropdown is gone)
     const buffer = bufferFeet();
     const key = p.lat + "," + p.lon + "," + state + "," + buffer;
+    p._state = state;   // shown again in the pop-out table
     const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
       `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
+    const linksHtml = `<div class="row-links">` +
+      (p.note ? `<span class="rnote" title="Collected note — included in the CSV and KMZ exports">Note: ${esc(p.note)}</span>` : "") +
+      (p.collected ? `<a href="#" class="rmpt" data-cidx="${p.cIdx}" title="Remove this collected point">remove</a>` : "") +
+      `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span></div>`;
     tr.className = "row v-pending";
     tr.innerHTML = `<div class="row-main">${headHtml}<span class="rstatus">querying…</span>` +
-      `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span></div>`;
+      `<span class="caret">▶</span></div>` + linksHtml;
     body.appendChild(tr);
-    tr.addEventListener("click", e => { if (e.target.closest("a")) return; selectSiteByPoint(p); });
+    // A click both selects the site on the map and toggles the row's detail
+    // (chips, roads, links) open — only the top line shows until then.
+    tr.addEventListener("click", e => { if (e.target.closest("a")) return; tr.classList.toggle("open"); selectSiteByPoint(p); });
 
     // Bolder ring + radius so the verdict color (set below once the row
     // classifies: red/green/yellow, same as the row tint) reads clearly
@@ -1323,8 +1503,8 @@ function render() {
       const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
       const subHtml = [roadChipsHtml(res), urbanChipHtml(res), extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
-        `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span></div>` +
-        (subHtml ? `<div class="row-sub">${subHtml}</div>` : "");
+        `<span class="caret">▶</span></div>` +
+        (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
       marker.setStyle({ fillColor: BUCKET_COLOR[bucket] });
       marker.setPopupContent(
         `<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br>` +
@@ -1349,33 +1529,93 @@ function render() {
 }
 
 /* ---- input handling: parse + classify automatically, debounced ---- */
+/* ---- Search & Collect: collected points live alongside pasted ones ----
+   Both feed ONE currentPoints list, so the results table, map pins,
+   review stepping and every export treat them identically; collected
+   points additionally carry a note and persist in this browser
+   (localStorage) until removed. */
+let collectedPoints = [];
+try { collectedPoints = JSON.parse(localStorage.getItem("rr_collected") || "[]") || []; } catch { collectedPoints = []; }
+function saveCollected() { try { localStorage.setItem("rr_collected", JSON.stringify(collectedPoints)); } catch { /* private mode etc. */ } }
+function updateCollectCount() {
+  $("collectCount").textContent = collectedPoints.length
+    ? `${collectedPoints.length} point(s) — saved in this browser` : "";
+}
+function rebuildPoints() {
+  currentPoints = parseCoordinates($("coordsIn").value).concat(
+    collectedPoints.map((c, i) => ({ name: c.name, lat: c.lat, lon: c.lon,
+      note: c.note || "", collected: true, cIdx: i })));
+  updateCollectCount();
+}
+
 let debounceTimer = null;
 function onInput() {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    currentPoints = parseCoordinates($("coordsIn").value);
-    const ok = currentPoints.filter(p => !p.invalid).length;
-    const bad = currentPoints.length - ok;
-    $("parseCount").textContent = currentPoints.length
+    const pasted = parseCoordinates($("coordsIn").value);
+    const ok = pasted.filter(p => !p.invalid).length;
+    const bad = pasted.length - ok;
+    $("parseCount").textContent = pasted.length
       ? `${ok} point(s) parsed${bad ? ", " + bad + " line(s) unreadable" : ""}` : "";
+    rebuildPoints();
     render();
   }, 500);
 }
 $("coordsIn").addEventListener("input", onInput);
 $("resultsBody").addEventListener("click", e => {
   if (e.target.classList.contains("retry")) { e.preventDefault(); render(); }
+  if (e.target.classList.contains("rmpt")) {
+    e.preventDefault();
+    collectedPoints.splice(+e.target.dataset.cidx, 1);
+    saveCollected(); rebuildPoints(); render();
+  }
 });
-$("stateSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
-$("bufferSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
+$("bufferSel").addEventListener("change", () => { rebuildPoints(); render(); });
 $("clearBtn").addEventListener("click", () => { $("coordsIn").value = ""; onInput(); });
+
+/* ---- the two input tabs ---- */
+function setTab(which) {
+  const collect = which === "collect";
+  $("collectPanel").hidden = false;                      // the attr only hides it pre-JS
+  $("inputPanel").style.display = collect ? "none" : "";
+  $("collectPanel").style.display = collect ? "" : "none";
+  $("tabBtnCoords").classList.toggle("active", !collect);
+  $("tabBtnCollect").classList.toggle("active", collect);
+}
+$("tabBtnCoords").addEventListener("click", () => setTab("coords"));
+$("tabBtnCollect").addEventListener("click", () => setTab("collect"));
+setTab("coords");
+
+/* ---- the point adder ---- */
+function addCollectedPoint() {
+  const coordsTxt = $("addCoords").value.trim();
+  const parsed = coordsTxt ? parseCoordinates(coordsTxt)[0] : null;
+  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025"); return; }
+  const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
+  collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
+  saveCollected(); rebuildPoints(); render();
+  map.setView([parsed.lat, parsed.lon], Math.max(map.getZoom(), 16));
+  $("addName").value = ""; $("addCoords").value = ""; $("addNote").value = "";
+}
+$("addPointBtn").addEventListener("click", addCollectedPoint);
+for (const id of ["addName", "addCoords", "addNote"])
+  $(id).addEventListener("keydown", e => { if (e.key === "Enter") addCollectedPoint(); });
+$("clearCollected").addEventListener("click", e => {
+  e.preventDefault();
+  if (!collectedPoints.length) return;
+  collectedPoints = []; saveCollected(); rebuildPoints(); render();
+});
+// Points saved in an earlier visit come back classified on load.
+if (collectedPoints.length) { rebuildPoints(); render(); } else updateCollectCount();
 
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
-                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason"];
+                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason", "Note"];
 function exportRows() {
   return currentPoints.filter(p => !p.invalid && p.result).map(p => [
     p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
     p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
+    p.note || "",
   ]);
 }
 $("dlCsv").addEventListener("click", () => {
@@ -1415,6 +1655,7 @@ $("dlGeojson").addEventListener("click", () => {
     add("RoadName", r.roadName);
     add("StreetName", r.streets);
     add("ReviewNote", r.reviewReason);
+    add("Note", p.note);
     props.Latitude = p.lat; props.Longitude = p.lon;
     return { type: "Feature", properties: props,
       geometry: { type: "Point", coordinates: [p.lon, p.lat] } };
@@ -1423,6 +1664,38 @@ $("dlGeojson").addEventListener("click", () => {
   a.href = URL.createObjectURL(new Blob([JSON.stringify({ type: "FeatureCollection", features }, null, 1)],
     { type: "application/geo+json" }));
   a.download = "road-checker-sites.geojson";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// KMZ export — a zipped KML for Google Earth / ArcGIS. Same red / green /
+// yellow pushpin convention as the Excel tool's KML export; the site name,
+// verdict, class, urban area, roads and the collected note all go into the
+// placemark. Reuses makeZip (the FIRMette bundler, defined in a later block).
+$("dlKmz").addEventListener("click", () => {
+  const pts = currentPoints.filter(p => !p.invalid && p.result);
+  if (!pts.length) { alert("Add or paste at least one classified point first."); return; }
+  const ICO = { fed: "red", nonfed: "grn", review: "ylw", failed: "wht" };
+  const ex = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const styles = Object.entries(ICO).map(([b, c]) =>
+    `<Style id="rr-${b}"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/${c}-pushpin.png</href></Icon></IconStyle></Style>`).join("");
+  const marks = pts.map(p => {
+    const r = p.result, b = verdictBucket(r.verdict);
+    const rows = [["Federal Aid Status", r.verdict], ["Review Reason", r.reviewReason],
+      ["FHWA Class", r.classLabel], ["Urban/Rural", r.urbanRural], ["Urban Area (ACUB)", r.acubName],
+      ["Road Name(s)", r.roadName], ["Street(s)", r.streets], ["Note", p.note],
+      ["Coordinates", p.lat + ", " + p.lon]]
+      .filter(([, v]) => v != null && String(v).trim() !== "")
+      .map(([k, v]) => `<b>${ex(k)}:</b> ${ex(v)}`).join("<br/>");
+    return `<Placemark><name>${ex(p.name)}</name><styleUrl>#rr-${b}</styleUrl>` +
+      `<description><![CDATA[${rows}]]></description>` +
+      `<Point><coordinates>${p.lon},${p.lat},0</coordinates></Point></Placemark>`;
+  }).join("");
+  const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2">` +
+    `<Document><name>Federal-Aid Road Checker sites</name>${styles}${marks}</Document></kml>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(makeZip([{ name: "doc.kml", data: new TextEncoder().encode(kml) }]));
+  a.download = "road-checker-sites.kmz";
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -2057,8 +2330,7 @@ function renderCombinedCanvas({ title, layers, point, verdictColor, frame, basem
 }
 
 async function buildPointReport(pt, radiusMeters) {
-  const stateSel = $("stateSel").value;
-  const state = stateSel === "AUTO" ? (detectState(pt.lat, pt.lon) || null) : stateSel;
+  const state = detectState(pt.lat, pt.lon) || null;
   const verdict = pt.result ? pt.result.verdict : "";
   const verdictColor = BUCKET_COLOR[verdictBucket(verdict)];
   const nowStamp = new Date().toLocaleString();
@@ -2235,7 +2507,7 @@ function resetReview() {
   layerReqSeq++;              // invalidate any in-flight layer draw
   siteOverlay.clearLayers();
   setLegendHtml("");
-  $("reviewInfo").textContent = "Click a row or pin — or hit Next — to step through sites";
+  $("reviewInfo").textContent = "";
 }
 
 function selectSiteByPoint(p) {
@@ -2249,11 +2521,12 @@ async function selectSite(i) {
   reviewIdx = ((i % pts.length) + pts.length) % pts.length;   // wrap both directions
   const p = pts[reviewIdx];
   document.querySelectorAll("#resultsBody .row.selected").forEach(tr => tr.classList.remove("selected"));
-  // Highlight the row but don't scroll the page to it — Prev/Next/pin-click
-  // are map-focused actions, and jumping the viewport down to the results
-  // table on every step fights that (the row is still visible via the
-  // "N / total — name" indicator above the map and the highlight itself).
-  if (p._tr) p._tr.classList.add("selected");
+  // Highlight + expand the row and keep it visible inside the results pane
+  // (the pane scrolls internally, so this never moves the map).
+  if (p._tr) {
+    p._tr.classList.add("selected", "open");
+    p._tr.scrollIntoView({ block: "nearest" });
+  }
   map.setView([p.lat, p.lon], 17);
   if (p._marker) p._marker.openPopup();
   $("reviewInfo").textContent = `${reviewIdx + 1} / ${pts.length} — ${p.name}`;
@@ -2268,8 +2541,7 @@ async function showSiteLayers(p) {
   const seq = ++layerReqSeq;
   siteOverlay.clearLayers();
   setLegendHtml("<b>Source layers at this site</b><div class='note'>loading…</div>");
-  const stateSel = $("stateSel").value;
-  const state = stateSel === "AUTO" ? detectState(p.lat, p.lon) : stateSel;
+  const state = detectState(p.lat, p.lon);
   const key = p.lat + "," + p.lon + "," + (state || "??");
   if (!siteLayerDataCache.has(key)) {
     siteLayerDataCache.set(key, (async () => {
@@ -2359,9 +2631,8 @@ async function plotAllSites() {
 
   const batch = pts.slice(0, PLOT_ALL_MAX_LAYER_SITES);
   setLegendHtml(`<b>Source layers — all sites</b><div class="note">loading ${batch.length} site frame(s)…</div>`);
-  const stateSel = $("stateSel").value;
   const results = await Promise.all(batch.map(p => {
-    const state = stateSel === "AUTO" ? detectState(p.lat, p.lon) : stateSel;
+    const state = detectState(p.lat, p.lon);
     const key = p.lat + "," + p.lon + "," + (state || "??");
     if (!siteLayerDataCache.has(key)) {
       siteLayerDataCache.set(key, (async () => {
@@ -2514,6 +2785,11 @@ async function ensureHpmsTiles(st) {
     entry.layer = protomapsL.leafletLayer({
       url: HPMS_TILE_URL(st), pane: "browsePane",
       paintRules: hpmsPaintRules(), labelRules: [],
+      // maxDataZoom MUST match the tileset's -z (13): protomaps-leaflet
+      // defaults to 15 and never reads the archive header, so without
+      // this the class lines silently disappear past z13 (empty fetches;
+      // Leaflet leaves stale lower-zoom canvases behind, masking it).
+      maxDataZoom: 13,
       attribution: "Class tiles: FHWA HPMS",
     });
     entry.status = "ok";
@@ -2670,12 +2946,43 @@ map.on("moveend", scheduleBrowseRefresh);
 $("liveLayers").addEventListener("change", refreshBrowseLayers);
 refreshBrowseLayers();
 
-/* ---------------- input-panel collapse ---------------- */
-$("panelToggle").addEventListener("click", () => {
-  const p = $("inputPanel");
-  p.classList.toggle("hidden");
-  $("panelToggle").textContent = (p.classList.contains("hidden") ? "☰ Show input panel" : "☰ Input panel");
-});
+/* ---------------- coordinates box: example placeholder ----------------
+   The grey text in the box IS the format documentation — real example
+   lines. It disappears the moment the box is clicked (not just on typing,
+   per user direction) and comes back if the box is left empty. */
+{
+  const box = $("coordsIn");
+  const examples = box.getAttribute("placeholder");
+  box.addEventListener("focus", () => box.setAttribute("placeholder", ""));
+  box.addEventListener("blur", () => { if (!box.value) box.setAttribute("placeholder", examples); });
+}
+
+/* ---------------- pop-out: every site's full detail as one table ---------------- */
+function buildPopoutTable() {
+  const pts = validPoints();
+  const head = "<tr><th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>Verdict</th>" +
+    "<th>Review reason</th><th>Closest class</th><th>Urban / rural</th><th>Urban area</th>" +
+    "<th>Roads found</th><th>Note</th><th>Links</th></tr>";
+  const rows = pts.map(p => {
+    const r = p.result || {};
+    const bucket = verdictBucket(r.verdict);
+    const reason = r.reviewReason
+      ? esc(r.reviewReason) + (REASON_EXPLAIN[r.reviewReason] ? ` <span class="count" title="${esc(REASON_EXPLAIN[r.reviewReason])}">ⓘ</span>` : "")
+      : "";
+    return `<tr class="v-${bucket}"><td>${esc(p.name)}</td>` +
+      `<td class="mono">${p.lat}</td><td class="mono">${p.lon}</td><td>${esc(p._state || "")}</td>` +
+      `<td>${r.verdict ? esc(r.verdict) : "<i>querying…</i>"}</td><td>${reason}</td>` +
+      `<td>${esc(r.classLabel || "")}</td><td>${esc(r.urbanRural || "")}</td><td>${esc(r.acubName || "")}</td>` +
+      `<td>${esc(r.roadName || "")}</td><td>${esc(p.note || "")}</td>` +
+      `<td>${pointLinks(p.lat, p.lon, p._state || "")}</td></tr>`;
+  });
+  $("popoutTable").innerHTML = head + rows.join("");
+  $("popoutCount").textContent = pts.length ? `${pts.length} site(s)` : "no sites yet — paste coordinates first";
+}
+$("popoutBtn").addEventListener("click", () => { buildPopoutTable(); $("popoutWrap").hidden = false; });
+$("popoutClose").addEventListener("click", () => { $("popoutWrap").hidden = true; });
+$("popoutWrap").addEventListener("click", e => { if (e.target === $("popoutWrap")) $("popoutWrap").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("popoutWrap").hidden = true; });
 
 /* ---------------- find on map: state / county / township / road ----------------
    Search-and-zoom over Census TIGERweb (free, no auth, already this tool's

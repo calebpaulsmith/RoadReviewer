@@ -26,7 +26,8 @@ const tilesDir = join(webRoot, "tiles");
 const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH
   || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
 
-const avail = existsSync(tilesDir) ? readdirSync(tilesDir).filter(f => f.endsWith(".pmtiles")) : [];
+const avail = existsSync(tilesDir)
+  ? readdirSync(tilesDir).filter(f => f.endsWith(".pmtiles") && f !== "basemap.pmtiles") : [];
 if (!avail.length) {
   console.log("SKIP: no web/tiles/*.pmtiles present — build one with build/tiles/build-state-tiles.sh");
   process.exit(0);
@@ -66,8 +67,9 @@ const acubMeta = fixture("acub-meta.json"), acubGeom = fixture("acub-geom.json")
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-const errors = [];
+const errors = [], reqUrls = [];
 page.on("pageerror", e => errors.push("pageerror: " + e.message));
+page.on("request", r => reqUrls.push(r.url()));
 
 await page.route("**/*", async route => {
   const url = route.request().url();
@@ -110,6 +112,45 @@ checks.push(["protomaps-leaflet painted real tile pixels in the browse pane", tr
 
 checks.push(["no live road-class query fired for the tile-served state", await page.evaluate(() =>
   !netLines.some(l => /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer/.test(l) && l.includes("esriGeometryEnvelope")))]);
+
+// --- class lines OVERZOOM past the tileset's z13 (maxDataZoom regression) ---
+await page.evaluate(([la, lo]) => {
+  for (const c of document.querySelectorAll(".leaflet-browse-pane canvas"))
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);   // don't let stale z13 canvases mask a blank z15
+  map.setView([la, lo], 15);
+}, [lat, lon]);
+await page.waitForFunction(() => {
+  for (const c of document.querySelectorAll(".leaflet-browse-pane canvas")) {
+    try {
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 40) if (d[i] > 0) n++;
+      if (n > 50) return true;
+    } catch { /* keep looking */ }
+  }
+  return false;
+}, { timeout: 30000 });
+checks.push(["class tiles overzoom past z13 (painted at z15)", true]);
+await page.evaluate(([la, lo]) => map.setView([la, lo], 13), [lat, lon]);
+
+// --- offline road basemap (web/tiles/basemap.pmtiles, Protomaps extract) ---
+if (existsSync(join(tilesDir, "basemap.pmtiles"))) {
+  await page.waitForFunction(() => {
+    for (const c of document.querySelectorAll(".leaflet-tile-pane canvas")) {
+      try {
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 3; i < d.length; i += 40) if (d[i] > 0) n++;
+        if (n > 50) return true;
+      } catch { /* keep looking */ }
+    }
+    return false;
+  }, { timeout: 30000 });
+  checks.push(["offline Protomaps road basemap painted (no Esri street-tile requests)",
+    !reqUrls.some(u => u.includes("World_Street_Map"))]);
+} else {
+  console.log("  (skip) web/tiles/basemap.pmtiles not present — offline basemap check skipped");
+}
 
 let failed = 0;
 for (const [name, ok] of checks) { console.log((ok ? "  ok   " : "  FAIL ") + name); if (!ok) failed++; }

@@ -104,6 +104,69 @@ Two constraints shape it, both disclosed in the legend:
   display comes from static tiles instead and none of these live layer
   queries fire.
 
+## Full-page app shell + offline basemap, locked to Region V (2026-09-14)
+
+Per user direction, the map now IS the page: no page scrolling, and a
+full-height left pane carries everything else — title, inputs (the
+coordinates box's grey placeholder is real example lines and clears on
+click), Find box, the results list, exports, and the transparency
+panels. The old header and "Private by design" banner are gone (the
+privacy note lives at the pane's foot). Prev/Next/Plot-all and the layer
+toggles float in a bar over the map's top-left.
+
+- **Locked to Region V.** `maxBounds` covers the six states and
+  `minZoom` is pinned to the region-fit zoom (recomputed on resize,
+  floor z6) — you cannot zoom or pan away from MI/IN/WI/MN/IL/OH.
+- **The road basemap is served from this site** —
+  `web/tiles/basemap.pmtiles`, a 50 MB Protomaps/OSM extract of the six
+  states (z0-11, layers earth/water/roads/boundaries/places), rendered
+  by the vendored protomaps-leaflet `light` theme. Browsing the road map
+  fetches nothing from a tile CDN. **Satellite stays live Esri**,
+  fetched only when switched to; the live Esri street layer remains as
+  the automatic fallback when the basemap file is missing (or on
+  `file://`). Build pipeline + gotchas: `build/tiles/README.md`.
+- **Compact result rows.** Each row shows one line — site name, coords,
+  state, verdict badge — and clicking it both selects the site on the
+  map and expands the detail (chips, roads, urban area, links).
+  **⧉ Expand table** pops the full-detail table for every site at once
+  over the map (verdict-tinted, with links), closable via ✕ / Esc /
+  backdrop.
+- **Live street-level detail under the roads** (per user direction:
+  hosted road map, "the other stuff popped in live underneath"):
+  buildings, parks/land use, street names, house numbers and — the
+  Google-style ground — **white road ribbons with gray casings**, so
+  the FHWA class lines read as colored centerlines ON the streets. All
+  from **OpenFreeMap** (keyless, no-limit public OSM vector tiles,
+  CORS `*` — TileJSON at `https://tiles.openfreemap.org/planet`
+  resolves the versioned `{z}/{x}/{y}.pbf` template at runtime). It
+  draws in its own pane between the offline basemap (z200) and the
+  HPMS class overlay (z350), fetch-gated to z13+ so region browsing
+  stays fully offline; labels appear z14+ (street names), z17+ (house
+  numbers). **No POI markers** — the first cut drew POI dots + names
+  and the user rejected the clutter. Best-effort: blocked or down, the
+  map just shows no detail layer.
+
+## Two input tabs: Coordinate Input + Search & Collect (2026-09-14)
+
+Per user direction the left pane's input area is two tabs:
+
+- **Coordinate Input** — the paste-a-batch flow: the Search **buffer**
+  select (renamed from "Search radius") and the coordinates box. The
+  State dropdown is GONE — the state is always auto-detected per point.
+- **Search & Collect** — the field-collection flow: the Find box
+  (state / county / township / city / road via Census TIGERweb — click
+  a suggestion and the map zooms there), then an **add-a-point form**:
+  Site name, GPS coordinates, and a **Note**. Each added point drops
+  into the same shared results table, classifies exactly like a pasted
+  point, pins on the map, and **persists in localStorage** until
+  removed (per-row "remove" link, or "clear collected"). The note
+  shows in the row detail and the pop-out table.
+- **Exports**: CSV/Copy-for-Excel/GeoJSON gained a **Note** column, and
+  a new **KMZ** export (zipped KML via the FIRMette bundle's store-zip
+  builder) writes red/green/yellow pushpins by verdict with name,
+  status, class, urban area, roads and note in each placemark — the
+  same conventions as the Excel tool's KML.
+
 ## Baked HPMS class tiles (2026-09-14) — the primary class display
 
 Per user direction ("I don't love all this live querying — download the
