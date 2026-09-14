@@ -60,3 +60,31 @@ Verdicts are unaffected — they never read these tiles.
 GitHub's hard limit is 100 MB per file. Per-state tiles measured at
 build time are recorded here; if a state ever crosses ~95 MB, split it
 (e.g. classes 1-5 / 6-7 as two PMTiles) or lower `-z`.
+
+Measured (2026-09-14, HPMS_National_Current):
+
+| state | features harvested | pmtiles |
+|---|---|---|
+| MI | 349,233 | 19 MB |
+
+Extrapolating by segment count, WI (~2.6× MI) lands near 50 MB — all six
+fit comfortably; total ≈ 90-120 MB across files.
+
+## Build gotchas (cost a debugging round each)
+
+- **Never use per-feature `"tippecanoe":{"minzoom":…}` for the class
+  bands.** tippecanoe (2.49) silently RATE-DROPS line features carrying
+  that key even at maxzoom — Michigan collapsed from 349k features to
+  exactly one line per tile (`dropped_by_rate` in the tile `strategies`
+  metadata; `-r1` does not prevent it; repro: 5 clean parallel lines →
+  1 survivor). The `-j` `$zoom` feature-filter in `build-state-tiles.sh`
+  implements the same banding correctly.
+- **Whole-state envelopes and any attribute-filtered offset page 400
+  after ~55 s** on the ~30M-row national table (server give-up, blank
+  message). The harvester treats that error as a split signal and seeds
+  a 0.5° grid — ~1° dense-metro cells burn the give-up before splitting;
+  ~0.2-0.5° cells answer in seconds.
+- `tippecanoe-decode`'s per-tile `lines` count is MVT features, and
+  features split at tile borders — z13 counts exceed the input count;
+  judge completeness by decoding a known urban tile (Kalamazoo
+  13/2148/3032 held 762 features), not by totals alone.

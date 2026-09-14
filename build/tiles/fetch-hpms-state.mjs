@@ -19,13 +19,12 @@
 // stream to the output. Segments crossing cell borders arrive twice and
 // are deduped by OBJECTID.
 //
-// Each output feature carries:
-//   properties.F  — FHWA functional class 1-7 (0/null dropped)
-//   tippecanoe.minzoom — display band by class, so the finished tileset
-//     itself implements progressive display: interstates z6, other
-//     principal arterials z8, minor arterials z9, major collectors z10,
-//     minor collectors z11, locals z12. tippecanoe honors the per-feature
-//     "tippecanoe" key and drops it from the output tiles.
+// Each output feature carries properties.F — FHWA functional class 1-7
+// (0/null dropped). The progressive class-by-zoom banding is applied by
+// build-state-tiles.sh via a tippecanoe -j $zoom filter, NOT via the
+// per-feature "tippecanoe":{"minzoom"} key: that key silently RATE-DROPS
+// line features even at maxzoom (repro'd v2.49: 5 clean parallel lines ->
+// 1 survivor, "dropped_by_rate" in tile strategies, -r1 doesn't help).
 
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -35,7 +34,6 @@ const BASE = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/
 const PAGE_CAP = 2000;        // the layer's maxRecordCount
 const CONCURRENCY = 4;
 const MIN_CELL_DEG = 0.005;   // never split below ~500 m — data-error guard
-const MINZOOM_BY_CLASS = { 1: 6, 2: 6, 3: 8, 4: 9, 5: 10, 6: 11, 7: 12 };
 
 // Generous per-state boxes (same rough bounds the web tool's detectState
 // uses, padded) — the STATE_ID where-clause clips exactly.
@@ -139,12 +137,7 @@ async function worker() {
           const cls = Math.trunc(Number(f.properties && f.properties.F_SYSTEM));
           if (oid == null || seen.has(oid) || !(cls >= 1 && cls <= 7) || !f.geometry) continue;
           seen.add(oid);
-          lines += JSON.stringify({
-            type: "Feature",
-            tippecanoe: { minzoom: MINZOOM_BY_CLASS[cls] },
-            properties: { F: cls },
-            geometry: f.geometry,
-          }) + "\n";
+          lines += JSON.stringify({ type: "Feature", properties: { F: cls }, geometry: f.geometry }) + "\n";
           written++;
         }
         if (lines) await new Promise((res, rej) => out.write(lines, e => e ? rej(e) : res()));
