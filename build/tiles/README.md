@@ -76,6 +76,34 @@ All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
 across files. (IN is an outlier at 6.4 MB despite its feature count —
 INDOT submits shorter, simpler segment geometry.)
 
+## Cached-tile CLASSIFICATION (2026-09-14, per user direction)
+
+Verdicts now run against the hosted tilesets by default — "couldn't we
+just check every single point with the data we have cached?" — through
+the SAME computeVerdict logic as the live path:
+
+- **Road segments + FHWA class** from the per-state HPMS tilesets
+  (z13 tiles read in-browser via `protomapsL.PmtilesSource`, geometry
+  converted back to lon/lat, true point-to-segment distances).
+- **Urban/rural + urban-area name** from **`web/tiles/acub.pmtiles`**
+  (3 MB, 549 Region V polygons from the NTAD 2020 Adjusted Urban Areas
+  service, built by `build-acub.sh` → z12): point-in-polygon, plus a
+  ring-distance check for the "Urban boundary edge" yellow rule.
+  Tile-clip edges can't fake a boundary hit — tippecanoe's tile buffer
+  keeps them farther from any in-tile point than the 76 m rule floor.
+- Census TIGER **street names** stay a live, non-fatal backfill
+  (verdict-irrelevant); offline they're simply blank.
+- Rows carry a "cached data" chip; **"Live verdicts"** under Data
+  service URLs switches back to per-point state-DOT + NTAD queries
+  (slower, but reflects reclassifications newer than the tilesets).
+- Falls back to the live path automatically on file://, a missing
+  tileset, a read error, or an out-of-region point.
+
+NTAD harvest gotchas (fetch-acub.mjs): resultOffset pagination hits the
+same ~55 s server give-up as the HPMS table, and full-precision
+polygons 504 — hence ids-then-objectId-batches with
+`maxAllowableOffset≈3 m`.
+
 ## Offline road basemap (web/tiles/basemap.pmtiles)
 
 The map's ROAD BASEMAP is also served from this repo — a Protomaps/OSM

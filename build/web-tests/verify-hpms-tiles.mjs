@@ -27,7 +27,7 @@ const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH
   || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
 
 const avail = existsSync(tilesDir)
-  ? readdirSync(tilesDir).filter(f => f.endsWith(".pmtiles") && f !== "basemap.pmtiles") : [];
+  ? readdirSync(tilesDir).filter(f => f.endsWith(".pmtiles") && f !== "basemap.pmtiles" && f !== "acub.pmtiles") : [];
 if (!avail.length) {
   console.log("SKIP: no web/tiles/*.pmtiles present — build one with build/tiles/build-state-tiles.sh");
   process.exit(0);
@@ -132,6 +132,27 @@ await page.waitForFunction(() => {
 }, { timeout: 30000 });
 checks.push(["class tiles overzoom past z13 (painted at z15)", true]);
 await page.evaluate(([la, lo]) => map.setView([la, lo], 13), [lat, lon]);
+
+// --- cached-tile CLASSIFICATION: verdict from hosted tiles, no live class/ACUB query ---
+if (existsSync(join(tilesDir, "acub.pmtiles"))) {
+  // The state's live-verified "Federal aid" test point (§4.2/§4.2a-e #1)
+  const TESTPT = { mi: [42.28536, -85.57025], in: [39.7684, -86.1581], wi: [43.0389, -87.9065],
+                   mn: [44.9531, -93.1668], il: [41.9020, -87.6870], oh: [40.0150, -82.9990] };
+  const [tLat, tLon] = TESTPT[st] || TESTPT.mi;
+  const before = reqUrls.length;
+  await page.fill("#coordsIn", `Cached check,${tLat},${tLon}`);
+  await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("1 point(s) classified"), { timeout: 30000 });
+  const rowText = await page.evaluate(() => document.querySelector("#resultsBody .row").textContent);
+  const cachedOk = /federal aid/i.test(rowText) && rowText.includes("cached data") && !rowText.includes("Failed");
+  if (!cachedOk) console.log("  row text was:", rowText.slice(0, 300));
+  checks.push(["cached classification returns the known Federal-aid verdict from the tiles", cachedOk]);
+  checks.push(["no live class/ACUB point query fired for the cached verdict",
+    !reqUrls.slice(before).some(u =>
+      /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer|NTAD_Adjusted_Urban_Areas/.test(u)
+      && u.includes("esriGeometryPoint"))]);
+} else {
+  console.log("  (skip) web/tiles/acub.pmtiles not present — cached-classification check skipped");
+}
 
 // --- offline road basemap (web/tiles/basemap.pmtiles, Protomaps extract) ---
 if (existsSync(join(tilesDir, "basemap.pmtiles"))) {

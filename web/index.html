@@ -423,16 +423,7 @@ Site 12, 44.2700, -83.5200
     <div id="collectPanel" hidden>
       <div class="findbox">
         <div class="findrow">
-          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
-            <option value="">Find: any state</option>
-            <option value="55">Wisconsin</option>
-            <option value="18">Indiana</option>
-            <option value="26">Michigan</option>
-            <option value="27">Minnesota</option>
-            <option value="17">Illinois</option>
-            <option value="39">Ohio</option>
-          </select>
-          <input id="findText" type="search" spellcheck="false" placeholder="State, county, town or city… (suggests as you type)"
+          <input id="findText" type="search" spellcheck="false" placeholder="State, county, town, city or road… (suggests as you type)"
             title="Start typing part of a county, township (county-subdivision), city or road name — suggestions appear below as you type and clicking one zooms the map there. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the place first, then the road.">
           <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
         </div>
@@ -494,6 +485,7 @@ Site 12, 44.2700, -83.5200
       Overrides are stored only in this browser (nothing is uploaded) and use the same key names as the
       Excel tool's Sources sheet and the AGOL notebook. <a href="sources.html#services" target="_blank" rel="noopener">More on sources</a>.</div>
     <table id="svcTable"><tbody></tbody></table>
+    <div class="note"><label title="By default every point is classified from the tilesets hosted with this site (FHWA HPMS classes + 2020 urban boundaries) — instant, and no per-point queries to the state services. Tick this to query the live state DOT + NTAD layers per point instead (the pre-tiles behavior; slower, but reflects any reclassification newer than the tilesets)."><input type="checkbox" id="liveVerdicts"> Live verdicts — query the state DOT layers per point instead of the cached tiles</label></div>
     <div class="act"><button id="svcReset" type="button">Reset all to defaults</button></div>
   </details>
 
@@ -1490,9 +1482,10 @@ function render() {
     bounds.push([p.lat, p.lon]);
 
     if (!cache.has(key)) {
-      cache.set(key, state === "??"
-        ? classifyPoint(p.lat, p.lon, "XX", buffer)   // outside the six wired states: ACUB-only path
-        : classifyPoint(p.lat, p.lon, state, buffer));
+      // Cached-tile classification when the hosted tilesets are usable
+      // (the default); live services otherwise. Same verdict logic.
+      const cls = window.classifyPointSmart || classifyPoint;
+      cache.set(key, cls(p.lat, p.lon, state === "??" ? "XX" : state, buffer));
     }
     cache.get(key).then(res => {
       if (res.failed) cache.delete(key);   // transient service errors (F12): don't cache, allow retry
@@ -1501,7 +1494,10 @@ function render() {
       const bucket = verdictBucket(res.verdict);
       tr.className = "row v-" + bucket;
       const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
-      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), extrasHtml(res)].filter(Boolean).join(" ");
+      const srcChip = res.srcNote
+        ? `<span class="chip" title="Classified from the tilesets hosted with this site — FHWA HPMS ${HPMS_TILE_YEAR} classes + the 2020 Adjusted Urban Boundaries — with no live state-DOT queries. Tick 'Live verdicts' under Data service URLs to query the live layers instead."><i class="cw" style="background:#9fb6cc"></i>cached data</span>`
+        : "";
+      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), srcChip, extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
         `<span class="caret">▶</span></div>` +
         (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
@@ -1607,6 +1603,13 @@ $("clearCollected").addEventListener("click", e => {
 });
 // Points saved in an earlier visit come back classified on load.
 if (collectedPoints.length) { rebuildPoints(); render(); } else updateCollectCount();
+
+/* ---- live-verdicts toggle: persisted; flipping it reclassifies ---- */
+try { $("liveVerdicts").checked = localStorage.getItem("rr_live_verdicts") === "1"; } catch { /* private mode */ }
+$("liveVerdicts").addEventListener("change", () => {
+  try { localStorage.setItem("rr_live_verdicts", $("liveVerdicts").checked ? "1" : "0"); } catch { /* private mode */ }
+  cache.clear(); rebuildPoints(); render();
+});
 
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
@@ -2806,6 +2809,153 @@ function setHpmsTilesVisible(on) {
   }
 }
 
+/* ============================================================
+   Cached-tile CLASSIFICATION (per user: "couldn't we just check every
+   single point with the data we have cached?"). Verdicts run against
+   the tilesets hosted with this site — the HPMS class tiles (road
+   segments + FHWA class) and acub.pmtiles (2020 Adjusted Urban Area
+   polygons) — through the SAME computeVerdict / classLabels logic as
+   the live path, so the rules are identical; only the data source
+   changes. Zero state-DOT / NTAD queries per point; only the
+   non-fatal Census TIGER street-name lookup stays live. Falls back to
+   the live-service path when tiles are unusable (file://, a missing
+   tileset, a read error) or when "live verdicts" is ticked under
+   Data service URLs.
+   ============================================================ */
+const ACUB_TILE_URL = "tiles/acub.pmtiles";
+const CLASS_TILE_Z = 13, ACUB_TILE_Z = 12, TILE_UNITS = 4096;
+const tileSrcCache = new Map();   // url -> PmtilesSource
+function tileSource(url) {
+  if (!tileSrcCache.has(url)) tileSrcCache.set(url, new protomapsL.PmtilesSource(url, false));
+  return tileSrcCache.get(url);
+}
+let acubTilesOk = null;
+async function acubTilesUsable() {
+  if (acubTilesOk === null) {
+    try { acubTilesOk = (await fetch(ACUB_TILE_URL, { method: "HEAD" })).ok; }
+    catch { acubTilesOk = false; }
+  }
+  return acubTilesOk;
+}
+function liveVerdictsForced() {
+  const el = $("liveVerdicts");
+  return el ? el.checked : false;
+}
+
+// Features of one tile layer near (lat,lon), geometry converted from tile
+// units to [lon,lat] pairs. Fetches every zoom-z tile the radius bbox
+// touches (usually one — tippecanoe's tile buffer covers small radii).
+async function tileFeaturesNear(url, layerName, z, lat, lon, radiusFt) {
+  const n = 1 << z;
+  const radDeg = (radiusFt * 0.3048) / 111320;                       // lat degrees
+  const lonPad = radDeg / Math.max(0.2, Math.cos(lat * Math.PI / 180));
+  const tx = l => ((l + 180) / 360) * n;
+  const ty = la => (1 - Math.asinh(Math.tan(la * Math.PI / 180)) / Math.PI) / 2 * n;
+  const x0 = Math.floor(tx(lon - lonPad)), x1 = Math.floor(tx(lon + lonPad));
+  const y0 = Math.floor(ty(lat + radDeg)), y1 = Math.floor(ty(lat - radDeg));
+  const feats = [];
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+    const layers = await tileSource(url).get({ z, x, y }, TILE_UNITS);
+    for (const f of layers.get(layerName) || []) {
+      const parts = f.geom.map(part => part.map(pt =>
+        [((x + pt.x / TILE_UNITS) / n) * 360 - 180,
+         Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + pt.y / TILE_UNITS) / n))) * 180 / Math.PI]));
+      feats.push({ props: f.props, geomType: f.geomType, parts });
+    }
+  }
+  return feats;
+}
+
+// Even-odd point-in-polygon over every ring of one feature ([lon,lat]
+// rings — holes come out naturally with even-odd).
+function pointInRings(parts, lat, lon) {
+  let inside = false;
+  for (const ring of parts) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)
+        inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// determineAcub, from acub.pmtiles instead of the NTAD service.
+async function determineAcubTiles(lat, lon, bufferFt) {
+  const floorFt = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
+  const feats = await tileFeaturesNear(ACUB_TILE_URL, "acub", ACUB_TILE_Z, lat, lon, floorFt);
+  for (const f of feats) {
+    if (f.geomType === 3 && pointInRings(f.parts, lat, lon))
+      return { exactUrban: true, boundary: false, name: cleanStr(f.props.NAME) };
+  }
+  // Outside every polygon: near a real boundary? (Tile-clip edges sit at
+  // least a full tile-buffer away from any point inside the tile, so they
+  // can never fake a near-boundary hit at these radii.)
+  for (const f of feats) {
+    if (f.geomType === 3 && minDistanceFt({ rings: f.parts }, lat, lon) <= floorFt)
+      return { exactUrban: false, boundary: true, name: cleanStr(f.props.NAME) };
+  }
+  return { exactUrban: false, boundary: false, name: "" };
+}
+
+// The cached-path equivalent of classifyPoint — identical output shape
+// and identical verdict logic, fed from the tiles.
+async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
+  const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", acubBoundary: false,
+                classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
+                verdict: "", reviewReason: "", failed: false, segments: [], bufferFt,
+                srcNote: "cached tiles" };
+  const acub = await determineAcubTiles(lat, lon, bufferFt);
+  out.urbanRural = acub.exactUrban ? "Urban" : "Rural";
+  out.acubName = acub.name;
+  out.acubBoundary = acub.boundary;
+
+  const roadFeats = await tileFeaturesNear(HPMS_TILE_URL(stateCode), "roads", CLASS_TILE_Z, lat, lon, bufferFt);
+  for (const f of roadFeats) {
+    if (f.geomType !== 2) continue;
+    const d = minDistanceFt({ paths: f.parts }, lat, lon);
+    if (d <= bufferFt)
+      out.segments.push({ code: Math.trunc(Number(f.props.F)), name: "", distFt: Math.round(d) });
+  }
+  out.segments.sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
+
+  // Street names still come from Census TIGER when reachable — non-fatal
+  // and verdict-irrelevant, exactly like the live path's name backfill.
+  const roads = [];
+  try {
+    const tiger = await runQuery(svc("TIGER_ROADS"), lat, lon, "NAME", "1=1", bufferFt, true);
+    const seen = new Set();
+    for (const e of featureEntries(tiger, lat, lon)) {
+      const nm = cleanStr(e.attrs.NAME);
+      if (!nm) continue;
+      roads.push({ name: nm, distFt: e.distFt });
+      const k = nm.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.streetList.push(nm); }
+    }
+    out.streets = out.streetList.join(" | ");
+  } catch { /* offline: names blank, verdict unaffected */ }
+
+  out.roadList = mergeRoadList(roads);
+  out.roadName = formatRoadList(out.roadList);
+  out.classLabel = classLabels(out.segments, bufferFt);
+  const v = computeVerdict(out.segments, acub.exactUrban, acub.boundary, bufferFt, out.roadList.length > 0);
+  out.verdict = v.verdict;
+  out.reviewReason = v.reason;
+  return out;
+}
+
+// The router render() calls: cached tiles when possible, live otherwise.
+async function classifyPointSmart(lat, lon, stateCode, bufferFt) {
+  try {
+    if (liveVerdictsForced() || stateCode === "XX" || !hpmsTilesUsable()) throw new Error("live");
+    if (!(await ensureHpmsTiles(stateCode)) || !(await acubTilesUsable())) throw new Error("live");
+    return await classifyPointTiles(lat, lon, stateCode, bufferFt);
+  } catch {
+    return classifyPoint(lat, lon, stateCode, bufferFt);
+  }
+}
+window.classifyPointSmart = classifyPointSmart;
+
 const liveLegendCtl = L.control({ position: "bottomleft" });
 liveLegendCtl.onAdd = () => {
   const div = L.DomUtil.create("div", "livelegend");
@@ -3095,7 +3245,7 @@ function roadGroupMidpoint(g) {
 function roadGroupClassCode(g, stFips) {
   const mid = roadGroupMidpoint(g);
   if (!mid) return Promise.resolve(null);
-  const state = (stFips && FIPS_ABBR[stFips]) || detectState(mid.lat, mid.lon);
+  const state = detectState(mid.lat, mid.lon);
   if (!state || !NFC_WIRED[state]) return Promise.resolve(null);
   const key = state + "|" + mid.lat.toFixed(5) + "," + mid.lon.toFixed(5);
   if (!roadClassCache.has(key)) {
@@ -3117,26 +3267,29 @@ function findShowRoad(g) {
     bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
   }
   if (bounds) map.fitBounds(bounds, { padding: [40, 40] });
-  $("reviewInfo").textContent = `Showing road: ${g.name} (Census TIGER segments in the searched area)`;
+  // How many of the user's points sit on this road (within the search
+  // buffer of any highlighted segment) — pasted and collected alike.
+  const buf = bufferFeet();
+  const near = validPoints().filter(p =>
+    minDistanceFt({ paths: g.paths }, p.lat, p.lon) <= buf).length;
+  $("reviewInfo").textContent = `Showing road: ${g.name} — ${near} of your point(s) within ${buf} ft` +
+    ` (Census TIGER segments in the searched area)`;
 }
 
+// Searches cover the six Region V states — there is no state picker;
+// typing a state's name matches it directly.
+const R5_STATE_NAMES = { 26: "Michigan", 55: "Wisconsin", 18: "Indiana",
+                         27: "Minnesota", 17: "Illinois", 39: "Ohio" };
+const R5_FIPS_CLAUSE = "STATE IN ('17','18','26','27','39','55')";
 async function runFind() {
   const seq = ++findSeq;
   const term = $("findText").value.trim();
-  const stFips = $("findState").value;
   const out = $("findResults");
-  if (!term && !stFips) { out.innerHTML = ""; findOverlay.clearLayers(); return; }
+  if (!term) { out.innerHTML = ""; findOverlay.clearLayers(); return; }
   out.innerHTML = `<div class="note">searching…</div>`;
   const fail = e => { if (seq === findSeq) out.innerHTML = `<div class="note">Search failed: ${esc(e.message)} — try again</div>`; };
   try {
-    if (!term) {   // state picked, box empty -> zoom straight to the state
-      const stateName = $("findState").selectedOptions[0].textContent;
-      await findShowPolygon(TIGER_FIND.states, `STATE='${stFips}'`, 0.01, stateName);
-      if (seq === findSeq)
-        out.innerHTML = `<div class="note">Showing ${esc(stateName)} — now type a name to find a county, township or road</div>`;
-      return;
-    }
-    const stClause = stFips ? `STATE='${stFips}' AND ` : "";
+    const stClause = R5_FIPS_CLAUSE + " AND ";
     const like = "UPPER(BASENAME) LIKE '%" + sqlSafe(term.toUpperCase()) + "%'";
     const z = map.getZoom();
     const b = map.getBounds();
@@ -3159,6 +3312,11 @@ async function runFind() {
     };
     const addNote = txt => { const d = document.createElement("div"); d.className = "note"; d.textContent = txt; frag.appendChild(d); };
     let hits = 0;
+    for (const [fips, name] of Object.entries(R5_STATE_NAMES)) {
+      if (!name.toUpperCase().includes(term.toUpperCase())) continue;
+      hits++;
+      addItem(name, "state", () => findShowPolygon(TIGER_FIND.states, `STATE='${fips}'`, 0.01, name));
+    }
     for (const c of (counties || []).slice(0, FIND_MAX_PER_KIND)) {
       const a = c.attributes; hits++;
       addItem(a.NAME, "county · " + (FIPS_ABBR[a.STATE] || a.STATE),
@@ -3178,7 +3336,7 @@ async function runFind() {
         const el = addItem(g.name, `road · ${segsTxt}`, async () => findShowRoad(g));
         // Annotate with the state's FHWA functional class, async so the
         // suggestion list never waits on the class layers.
-        roadGroupClassCode(g, stFips).then(code => {
+        roadGroupClassCode(g).then(code => {
           if (seq !== findSeq || code == null || !el.isConnected) return;
           const sub = el.querySelector("span");
           if (sub) sub.innerHTML = `<i class="cw" style="background:${FHWA_CHIP_COLOR[code] || FHWA_CHIP_COLOR[0]}"></i>` +
@@ -3186,7 +3344,7 @@ async function runFind() {
         });
       }
     }
-    if (!hits && roadGroups !== "zoomed-out") addNote("No matching county, township or road found" + (stFips ? "" : " — picking a state can help") + ".");
+    if (!hits && roadGroups !== "zoomed-out") addNote("No matching state, county, township or road found.");
     if (counties === null || cousubs === null || roadGroups === null) addNote("Some searches failed (service unreachable) — try Find again.");
     out.innerHTML = "";
     out.appendChild(frag);
@@ -3194,7 +3352,6 @@ async function runFind() {
 }
 $("findBtn").addEventListener("click", runFind);
 $("findText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); runFind(); } });
-$("findState").addEventListener("change", runFind);
 // Type-ahead: suggestions appear as you type (debounced; 2+ characters).
 // Clearing the box just clears the suggestion list — it never zooms the map
 // the way an explicit state-only Find does. Fetches are URL-cached above, so

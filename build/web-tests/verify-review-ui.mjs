@@ -303,20 +303,33 @@ checks.push(["tabs: Search & Collect shows find + adder, hides the paste panel",
   return collectShown && document.getElementById("inputPanel").offsetParent === null;
 })]);
 
-// --- find on map: state -> county/township matches -> road search in view ---
-await page.selectOption("#findState", "26");   // empty search box: zoom straight to the state
+// --- find on map: type a state name -> county/township matches -> road search ---
+await page.fill("#findText", "michigan");
+await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("Michigan")), { timeout: 15000 });
+await page.locator("#findResults .finditem", { hasText: "Michigan" }).first().click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Michigan"), { timeout: 15000 });
-checks.push(["find: picking a state zooms to its boundary outline", await page.evaluate(() => findOverlay.getLayers().length > 0)]);
+checks.push(["find: typing a state name zooms to its boundary (no dropdown)", await page.evaluate(() =>
+  !document.getElementById("findState") && findOverlay.getLayers().length > 0)]);
 // type-ahead: filling the box (one input event) must surface suggestions
 // after the debounce, with NO Find click
 await page.fill("#findText", "kalamazoo");
-await page.waitForFunction(() => document.querySelectorAll("#findResults .finditem").length >= 2, { timeout: 15000 });
+// Wait for the REFRESHED results (the zoomed-out road note only the new
+// term produces), not the previous term's still-displayed list.
+await page.waitForFunction(() => {
+  const t = document.getElementById("findResults").textContent;
+  return t.includes("Kalamazoo County") && t.includes("Road-name search covers the visible map area");
+}, { timeout: 15000 });
 checks.push(["find: suggestions appear as you type (no Find click)", true]);
 checks.push(["find: county + township matches listed with their kinds", await page.evaluate(() => {
   const t = [...document.querySelectorAll("#findResults .finditem")].map(d => d.textContent).join("|");
   return t.includes("Kalamazoo County") && t.includes("county") && t.includes("Oshtemo charter township") && t.includes("township");
 })]);
-checks.push(["find: statewide view explains road search needs zoom", (await page.locator("#findResults").textContent()).includes("Road-name search covers the visible map area")]);
+{
+  const frTxt = await page.locator("#findResults").textContent();
+  const okZ = frTxt.includes("Road-name search covers the visible map area");
+  if (!okZ) console.log("  findResults was:", frTxt.slice(0, 300), "| zoom:", await page.evaluate(() => map.getZoom()));
+  checks.push(["find: statewide view explains road search needs zoom", okZ]);
+}
 await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
