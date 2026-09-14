@@ -89,11 +89,13 @@ function cellUrl([x0, y0, x1, y1]) {
 await mkdir(dirname(outPath), { recursive: true });
 const out = createWriteStream(outPath);
 const seen = new Set();
-// Seed with a grid rather than the whole state box — cells much bigger
-// than ~1 degree just cost a slow server-side give-up before splitting.
+// Seed with a grid rather than the whole state box. Cell size matters a
+// lot: dense-metro cells at ~1 degree don't answer at all (55 s server
+// give-up each before we learn to split), while ~0.2-0.5 degree cells
+// answer in seconds — capped + exceededTransferLimit — and split cheaply.
 const queue = [];
 {
-  const [x0, y0, x1, y1] = box, STEP = 1.0;
+  const [x0, y0, x1, y1] = box, STEP = 0.5;
   for (let x = x0; x < x1; x += STEP)
     for (let y = y0; y < y1; y += STEP)
       queue.push([x, y, Math.min(x + STEP, x1), Math.min(y + STEP, y1)]);
@@ -120,7 +122,10 @@ async function worker() {
       let j;
       try { j = await getJson(cellUrl(cell)); }
       catch (e) {
-        if (e instanceof TooBigError && (x1 - x0) > MIN_CELL_DEG) { split(); continue; }
+        if (e instanceof TooBigError && (x1 - x0) > MIN_CELL_DEG) {
+          console.log(`  give-up cell ${(x1 - x0).toFixed(2)}deg @ ${x0.toFixed(2)},${y0.toFixed(2)} -> split`);
+          split(); continue;
+        }
         throw e;
       }
       const feats = j.features || [];
@@ -144,7 +149,7 @@ async function worker() {
         }
         if (lines) await new Promise((res, rej) => out.write(lines, e => e ? rej(e) : res()));
         cellsDone++;
-        if (cellsDone % 25 === 0) console.log(`  ${cellsDone} cells done, ${splits} splits, ${written} features, queue ${queue.length}`);
+        if (cellsDone % 10 === 0) console.log(`  ${cellsDone} cells done, ${splits} splits, ${written} features, queue ${queue.length}`);
       }
     } finally { inFlight--; }
   }
