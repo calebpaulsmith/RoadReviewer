@@ -78,6 +78,31 @@ await page.route("**/*", async route => {
   if (url.includes("FeatureServer/543/query")) return route.fulfill({ ...json, body: JSON.stringify({ features: [] }) });
   if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && url.includes("esriGeometryPoint"))
     return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Kalamazoo, MI", UACE: "43723", state_1: "MI" } }] }) });
+  // find-on-map searches (TIGERweb boundaries + road-name search) — must
+  // match BEFORE the generic TIGERweb street-name stub below
+  if (url.includes("State_County/MapServer/0/query"))
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Michigan" },
+      geometry: { rings: [[[-90.4, 41.7], [-82.1, 41.7], [-82.1, 48.3], [-90.4, 48.3], [-90.4, 41.7]]] } }] }) });
+  if (url.includes("State_County/MapServer/1/query")) {
+    if (url.includes("returnGeometry=false"))
+      return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Kalamazoo County", GEOID: "26077", STATE: "26" } }] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Kalamazoo County" },
+      geometry: { rings: [[[-85.77, 42.16], [-85.42, 42.16], [-85.42, 42.42], [-85.77, 42.42], [-85.77, 42.16]]] } }] }) });
+  }
+  if (url.includes("Places_CouSub_ConCity_SubMCD/MapServer/1/query")) {
+    if (url.includes("returnGeometry=false"))
+      return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Oshtemo charter township", GEOID: "2607761100", STATE: "26" } }] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Oshtemo charter township" },
+      geometry: { rings: [[[-85.70, 42.24], [-85.62, 42.24], [-85.62, 42.32], [-85.70, 42.32], [-85.70, 42.24]]] } }] }) });
+  }
+  if (url.includes("Transportation/MapServer/") && url.includes("UPPER(NAME)")) {
+    if (url.includes("MapServer/8"))
+      return route.fulfill({ ...json, body: JSON.stringify({ features: [
+        { attributes: { NAME: "S Pitcher St" }, geometry: { paths: [[[-85.583, 42.284], [-85.583, 42.291]]] } },
+        { attributes: { NAME: "N Pitcher St" }, geometry: { paths: [[[-85.583, 42.291], [-85.583, 42.298]]] } },
+      ] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [] }) });
+  }
   if (url.includes("TIGERweb")) return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "S Pitcher St" } }] }) });
 
   // review-overlay pass (frame envelope queries with geometry + layer metadata)
@@ -226,6 +251,42 @@ checks.push(["input panel floats over the map and collapses", await page.evaluat
   document.getElementById("panelToggle").click();
   return overlaid && hidden && p.offsetParent !== null;
 })]);
+
+// --- find on map: state -> county/township matches -> road search in view ---
+await page.selectOption("#findState", "26");   // empty search box: zoom straight to the state
+await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Michigan"), { timeout: 15000 });
+checks.push(["find: picking a state zooms to its boundary outline", await page.evaluate(() => findOverlay.getLayers().length > 0)]);
+await page.fill("#findText", "kalamazoo");
+await page.click("#findBtn");
+await page.waitForFunction(() => document.querySelectorAll("#findResults .finditem").length >= 2, { timeout: 15000 });
+checks.push(["find: county + township matches listed with their kinds", await page.evaluate(() => {
+  const t = [...document.querySelectorAll("#findResults .finditem")].map(d => d.textContent).join("|");
+  return t.includes("Kalamazoo County") && t.includes("county") && t.includes("Oshtemo charter township") && t.includes("township");
+})]);
+checks.push(["find: statewide view explains road search needs zoom", (await page.locator("#findResults").textContent()).includes("Road-name search covers the visible map area")]);
+await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).click();
+await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
+checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
+  const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
+await page.check("#rowFilterView");
+checks.push(["'in map view' filter keeps only sites inside the county view", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
+await page.uncheck("#rowFilterView");
+await page.fill("#findText", "pitcher");
+await page.click("#findBtn");
+await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("S Pitcher St")), { timeout: 15000 });
+await page.locator("#findResults .finditem", { hasText: "S Pitcher St" }).first().click();
+await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing road: S Pitcher St"), { timeout: 15000 });
+checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
+
+// --- results-row text filter ---
+await page.fill("#rowFilter", "Site B");
+checks.push(["row filter hides non-matching rows + counts", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1
+  && document.getElementById("filterCount").textContent.includes("showing 1 of 2"))]);
+await page.fill("#rowFilter", "");
+checks.push(["clearing the filter restores all rows", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none"))]);
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");

@@ -95,6 +95,35 @@ Two constraints shape it, both disclosed in the legend:
   response never paints over a newer view; failed fetches are not cached
   and retry on the next pan.
 
+## Find on map + row filter (2026-09-14)
+
+The **"Find on map"** box in the input panel searches by state, county,
+township, or road name, via Census TIGERweb (free, no auth — already this
+tool's street-name source; layers documented on the sources page):
+
+- **State** — pick one from the dropdown and Find with the box empty to
+  zoom straight to it (the dropdown also scopes every other search).
+- **County / township** — type part of the name; counties (TIGERweb
+  `State_County` layer 1) and county subdivisions (`Places_CouSub…`
+  layer 1) are searched statewide, matches listed with their kind.
+  Clicking one zooms to the boundary and draws it as a dashed outline
+  (fetched generalized to the zoom — navigation cartography, not
+  authoritative jurisdiction lines).
+- **Road name** — searched across TIGER's full-detail Primary /
+  Secondary / Local road layers, but only **within the visible map
+  area** (a statewide un-indexed `LIKE` would be slow for everyone), so
+  the flow is find-the-county-then-the-road; below zoom 11 the results
+  say so. Matches group segments by full name; clicking one highlights
+  the segments and zooms to them.
+
+The results list gets a matching **row filter**: a text box that hides
+result cards whose text doesn't match (site name, road/street names,
+verdict, class, urban area), and an **"in map view"** checkbox that
+keeps only sites inside the current map bounds — Find a county or
+township first and the list filters to it, live as you pan. Both are
+purely visual: exports, Prev/Next stepping, and classification always
+cover every site.
+
 ## Data sources page
 
 `sources.html` (linked from the header, the review legend, and every

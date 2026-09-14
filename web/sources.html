@@ -163,6 +163,15 @@
   <h3>Layer 8 — "Local Roads" (Transportation MapServer)</h3>
   <div class="url"><a href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8" target="_blank" rel="noopener">https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8</a></div>
   <p>Field read: <code>NAME</code>, pipe-joined when several streets fall in the search buffer (intersections). Backfills the street name wherever the state layer only knows designated routes (Michigan, and often Indiana). Failures here are non-fatal — classification still lands without a street name.</p>
+  <h3>Find-on-map search layers (same TIGERweb server)</h3>
+  <p>The "Find on map" box in the input panel searches four more TIGERweb layers by name, confirmed live 2026-09-14:
+    <b>States</b> (<code>State_County/MapServer/0</code>) and <b>Counties</b> (<code>State_County/MapServer/1</code>),
+    <b>County Subdivisions</b> — townships — (<code>Places_CouSub_ConCity_SubMCD/MapServer/1</code>), matched on
+    <code>BASENAME</code> with the boundary fetched generalized (<code>maxAllowableOffset</code>) for the zoom-to
+    outline; and road names across the Transportation MapServer's full-detail
+    <b>Primary (2) / Secondary (6) / Local (8)</b> road layers, matched on <code>NAME</code> and limited to the
+    visible map area (a statewide un-indexed <code>LIKE</code> would be slow for everyone). Boundaries drawn from
+    these layers are generalized Census cartography for navigation, not authoritative jurisdiction lines.</p>
 </section>
 
 <section id="firmette">

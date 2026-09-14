@@ -279,6 +279,25 @@ details.howcolors { margin-top: 8px; }
 .livelegend .sw { display: inline-block; width: 16px; height: 5px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .livelegend .swp { display: inline-block; width: 12px; height: 12px; border: 1px solid #7c8b98; margin-right: 6px; vertical-align: middle; }
 
+/* Find-on-map search (state / county / township / road via Census TIGERweb) */
+.findbox { margin-bottom: 8px; }
+.findrow { display: flex; gap: 6px; align-items: center; }
+.findrow select { flex: 0 1 auto; min-width: 0; }
+.findrow input { flex: 1 1 90px; min-width: 0; font: inherit; font-size: 13px; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.findrow button { flex: none; }
+#findResults { margin-top: 5px; font-size: 12.5px; }
+#findResults:empty { display: none; }
+#findResults .finditem { padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px;
+  margin: 3px 0; cursor: pointer; background: #fff; display: flex; gap: 8px; align-items: baseline; }
+#findResults .finditem:hover { background: #eef3f9; border-color: #b9cde4; }
+#findResults .finditem span { color: var(--muted); font-size: 11.5px; margin-left: auto; white-space: nowrap; }
+#findResults .note { color: var(--muted); font-style: italic; font-size: 12px; margin: 3px 0; }
+
+/* Results-row filter */
+#rowFilter { font: inherit; font-size: 12.5px; padding: 5px 9px; width: 170px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+
 /* Phone / short-viewport fallback: the panel drops out of the overlay into
    normal flow above the map, and the map takes a fixed viewport share. */
 @media (max-width: 820px), (max-height: 600px) {
@@ -341,6 +360,23 @@ details.howcolors { margin-top: 8px; }
         </label>
         <span class="count" id="parseCount"></span>
       </div>
+      <div class="findbox">
+        <div class="findrow">
+          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
+            <option value="">Find: any state</option>
+            <option value="55">Wisconsin</option>
+            <option value="18">Indiana</option>
+            <option value="26">Michigan</option>
+            <option value="27">Minnesota</option>
+            <option value="17">Illinois</option>
+            <option value="39">Ohio</option>
+          </select>
+          <input id="findText" type="search" spellcheck="false" placeholder="County, township or road…"
+            title="Type part of a county, township (county-subdivision) or road name and press Enter. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the county or township first, then the road.">
+          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
+        </div>
+        <div id="findResults"></div>
+      </div>
       <textarea id="coordsIn" spellcheck="false" placeholder="Paste coordinates — one point per line. Results appear automatically.
 
 Examples:
@@ -376,6 +412,10 @@ Site 12, 44.2700, -83.5200"></textarea>
     <div class="results-bar">
       <h2>Results</h2>
       <span class="count" id="statusCount"></span>
+      <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
+        title="Show only result rows whose text matches — site name, road or street names, verdict, class, urban area">
+      <label class="count" title="Show only sites currently inside the visible map area — Find a state, county or township first, then tick this"><input type="checkbox" id="rowFilterView"> in map view</label>
+      <span class="count" id="filterCount"></span>
       <span style="flex:1"></span>
       <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
       <button id="dlCsv">Download CSV</button>
@@ -1288,12 +1328,17 @@ function render() {
         `<br>${pointLinks(p.lat, p.lon, state)}`);
       done++;
       $("statusCount").textContent = done < total ? `classifying ${done} of ${total}…` : `${total} point(s) classified`;
+      // Row text just changed (verdict, roads, urban area) — re-apply any
+      // active row filter so text matches stay current. Defined in a later
+      // script block, so guard the call during initial load.
+      if (window.applyRowFilter) window.applyRowFilter();
     }).catch(() => { /* classifyPoint never rejects; belt and braces */ });
   });
 
   $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
   if (bounds.length === 1) map.setView(bounds[0], 15);
   else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
+  if (window.applyRowFilter) window.applyRowFilter();
 }
 
 /* ---- input handling: parse + classify automatically, debounced ---- */
@@ -2508,6 +2553,187 @@ $("panelToggle").addEventListener("click", () => {
   p.classList.toggle("hidden");
   $("panelToggle").textContent = (p.classList.contains("hidden") ? "☰ Show input panel" : "☰ Input panel");
 });
+
+/* ---------------- find on map: state / county / township / road ----------------
+   Search-and-zoom over Census TIGERweb (free, no auth, already this tool's
+   street-name source). Counties and townships (county subdivisions) are
+   searched statewide by name; matches zoom the map to the boundary and draw
+   it as a dashed outline. Road names are searched within the VISIBLE map
+   area across TIGER's primary + secondary + local road layers (a statewide
+   un-indexed LIKE would be huge/slow), so the flow is: find the county or
+   township, then the road. Matched road segments highlight and zoom. */
+const TIGER_FIND = {
+  states:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0",
+  counties: "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1",
+  cousubs:  "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/1",
+  // Full-detail scale variants (confirmed live 2026-09-14): 2 = Primary
+  // (interstates), 6 = Secondary (state/US highways), 8 = Local Roads (the
+  // layer classification already reads street names from).
+  roads: [
+    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/2",
+    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/6",
+    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
+  ],
+};
+const FIPS_ABBR = { "55": "WI", "18": "IN", "26": "MI", "27": "MN", "17": "IL", "39": "OH" };
+const FIND_ROAD_MIN_ZOOM = 11;
+const FIND_MAX_PER_KIND = 8;
+const findOverlay = L.layerGroup().addTo(map);
+let findSeq = 0;
+
+function sqlSafe(s) { return String(s).replace(/'/g, "''"); }
+
+async function tigerNameQuery(url, where, outFields) {
+  const u = url + "/query?where=" + encodeURIComponent(where) +
+    "&outFields=" + encodeURIComponent(outFields) + "&returnGeometry=false&f=json";
+  const json = await httpGetJson(u);
+  if (json.error) throw new Error(json.error.message || "service error");
+  return json.features || [];
+}
+
+// Fetch one boundary polygon (generalized to the target zoom), draw it as a
+// dashed outline, and zoom to it. Offset per level: state ~1 km, county
+// ~200 m, township ~100 m — outlines, not authoritative geometry.
+async function findShowPolygon(url, where, offset, label) {
+  const u = url + "/query?where=" + encodeURIComponent(where) +
+    "&outFields=NAME&returnGeometry=true&outSR=4326&maxAllowableOffset=" + offset + "&f=json";
+  const json = await httpGetJson(u);
+  if (json.error || !(json.features || []).length) throw new Error("boundary fetch failed");
+  findOverlay.clearLayers();
+  let bounds = null;
+  for (const f of json.features) {
+    for (const ring of ((f.geometry && f.geometry.rings) || [])) {
+      const pl = L.polyline(ring.map(([x, y]) => [y, x]),
+        { color: "#1f6feb", weight: 2.5, dashArray: "6 4", opacity: 0.9, interactive: false }).addTo(findOverlay);
+      bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
+    }
+  }
+  if (bounds) map.fitBounds(bounds, { padding: [20, 20] });
+  $("reviewInfo").textContent = "Showing " + label;
+}
+
+// Road-name search in the current view: all three TIGER road layers in
+// parallel, segments grouped by full name.
+async function findRoads(term, bbox) {
+  const where = "NAME IS NOT NULL AND UPPER(NAME) LIKE '%" + sqlSafe(term.toUpperCase()) + "%'";
+  const settled = await Promise.allSettled(
+    TIGER_FIND.roads.map(u => queryFrame(u, bbox, "NAME", where, false)));
+  if (settled.every(s => s.status === "rejected")) throw settled[0].reason;
+  const groups = new Map();
+  for (const s of settled) {
+    if (s.status !== "fulfilled") continue;
+    for (const f of (s.value.features || [])) {
+      const nm = (f.attributes && f.attributes.NAME) || "";
+      if (!nm) continue;
+      const g = groups.get(nm) || { name: nm, paths: [] };
+      for (const p of ((f.geometry && f.geometry.paths) || [])) g.paths.push(p);
+      groups.set(nm, g);
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.paths.length - a.paths.length);
+}
+
+function findShowRoad(g) {
+  findOverlay.clearLayers();
+  let bounds = null;
+  for (const path of g.paths) {
+    const pl = L.polyline(path.map(([x, y]) => [y, x]),
+      { color: "#c026d3", weight: 7, opacity: 0.5, interactive: false }).addTo(findOverlay);
+    bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
+  }
+  if (bounds) map.fitBounds(bounds, { padding: [40, 40] });
+  $("reviewInfo").textContent = `Showing road: ${g.name} (Census TIGER segments in the searched area)`;
+}
+
+async function runFind() {
+  const seq = ++findSeq;
+  const term = $("findText").value.trim();
+  const stFips = $("findState").value;
+  const out = $("findResults");
+  if (!term && !stFips) { out.innerHTML = ""; findOverlay.clearLayers(); return; }
+  out.innerHTML = `<div class="note">searching…</div>`;
+  const fail = e => { if (seq === findSeq) out.innerHTML = `<div class="note">Search failed: ${esc(e.message)} — try again</div>`; };
+  try {
+    if (!term) {   // state picked, box empty -> zoom straight to the state
+      const stateName = $("findState").selectedOptions[0].textContent;
+      await findShowPolygon(TIGER_FIND.states, `STATE='${stFips}'`, 0.01, stateName);
+      if (seq === findSeq)
+        out.innerHTML = `<div class="note">Showing ${esc(stateName)} — now type a name to find a county, township or road</div>`;
+      return;
+    }
+    const stClause = stFips ? `STATE='${stFips}' AND ` : "";
+    const like = "UPPER(BASENAME) LIKE '%" + sqlSafe(term.toUpperCase()) + "%'";
+    const z = map.getZoom();
+    const b = map.getBounds();
+    const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
+    const [counties, cousubs, roadGroups] = await Promise.all([
+      tigerNameQuery(TIGER_FIND.counties, stClause + like, "NAME,GEOID,STATE").catch(() => null),
+      tigerNameQuery(TIGER_FIND.cousubs, stClause + like, "NAME,GEOID,STATE").catch(() => null),
+      z >= FIND_ROAD_MIN_ZOOM ? findRoads(term, bbox).catch(() => null) : Promise.resolve("zoomed-out"),
+    ]);
+    if (seq !== findSeq) return;
+
+    const frag = document.createDocumentFragment();
+    const addItem = (label, sub, fn) => {
+      const d = document.createElement("div");
+      d.className = "finditem";
+      d.innerHTML = `<b>${esc(label)}</b><span>${esc(sub)}</span>`;
+      d.addEventListener("click", () => fn().catch(fail));
+      frag.appendChild(d);
+    };
+    const addNote = txt => { const d = document.createElement("div"); d.className = "note"; d.textContent = txt; frag.appendChild(d); };
+    let hits = 0;
+    for (const c of (counties || []).slice(0, FIND_MAX_PER_KIND)) {
+      const a = c.attributes; hits++;
+      addItem(a.NAME, "county · " + (FIPS_ABBR[a.STATE] || a.STATE),
+        () => findShowPolygon(TIGER_FIND.counties, `GEOID='${a.GEOID}'`, 0.002, a.NAME + (FIPS_ABBR[a.STATE] ? ", " + FIPS_ABBR[a.STATE] : "")));
+    }
+    for (const t of (cousubs || []).slice(0, FIND_MAX_PER_KIND)) {
+      const a = t.attributes; hits++;
+      addItem(a.NAME, "township / county subdivision · " + (FIPS_ABBR[a.STATE] || a.STATE),
+        () => findShowPolygon(TIGER_FIND.cousubs, `GEOID='${a.GEOID}'`, 0.001, a.NAME + (FIPS_ABBR[a.STATE] ? ", " + FIPS_ABBR[a.STATE] : "")));
+    }
+    if (roadGroups === "zoomed-out") {
+      addNote("Road-name search covers the visible map area — zoom in (or click a county/township match first), then Find again.");
+    } else if (roadGroups) {
+      for (const g of roadGroups.slice(0, FIND_MAX_PER_KIND)) {
+        hits++;
+        addItem(g.name, `road · ${g.paths.length} segment(s) in view`, async () => findShowRoad(g));
+      }
+    }
+    if (!hits && roadGroups !== "zoomed-out") addNote("No matching county, township or road found" + (stFips ? "" : " — picking a state can help") + ".");
+    if (counties === null || cousubs === null || roadGroups === null) addNote("Some searches failed (service unreachable) — try Find again.");
+    out.innerHTML = "";
+    out.appendChild(frag);
+  } catch (e) { fail(e); }
+}
+$("findBtn").addEventListener("click", runFind);
+$("findText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); runFind(); } });
+$("findState").addEventListener("change", runFind);
+
+/* ---------------- results-row filter ---------------- */
+// Text filter matches anything visible on the card (site name, road/street
+// names, verdict, class, urban area); "in map view" keeps only sites inside
+// the current map bounds — Find a county/township first and the list
+// filters to it. Purely visual: exports and Prev/Next still cover all sites.
+function applyRowFilter() {
+  const term = $("rowFilter").value.trim().toLowerCase();
+  const inView = $("rowFilterView").checked;
+  const b = inView ? map.getBounds() : null;
+  let shown = 0, total = 0;
+  for (const p of currentPoints) {
+    if (!p._tr) continue;
+    total++;
+    let ok = !term || p._tr.textContent.toLowerCase().includes(term);
+    if (ok && b) ok = b.contains([p.lat, p.lon]);
+    p._tr.style.display = ok ? "" : "none";
+    if (ok) shown++;
+  }
+  $("filterCount").textContent = (term || inView) && total ? `showing ${shown} of ${total}` : "";
+}
+$("rowFilter").addEventListener("input", applyRowFilter);
+$("rowFilterView").addEventListener("change", applyRowFilter);
+map.on("moveend", () => { if ($("rowFilterView").checked) applyRowFilter(); });
 
 /* ---------------- FIRMette batch -> ZIP ---------------- */
 const FIRMETTE_BASE = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette";
