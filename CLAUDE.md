@@ -1040,6 +1040,28 @@ live services. Full design narrative + verification history:
   swallow the next setView).
 - GitHub Pages: "Re-run all jobs" fails with duplicate github-pages
   artifacts — recover with a FRESH run, or re-run only the deploy job.
+- Full-page-map restyle + live layer mirror (2026-09-14): the map is the
+  page hero (the input controls float over it in a collapsible card); a
+  "Live class + urban layers" toggle mirrors all six states' NFC layers +
+  the NTAD ACUB boundaries across the visible viewport in each source's
+  published symbology, drawn on a dedicated Leaflet canvas pane (z-index
+  350, under the site overlay/pins). Zoom-gated — roads from z13, ACUB
+  from z7 with a pixel-grid `maxAllowableOffset` — because the
+  FeatureServers are Query-only (no `/export`) and cap ~1000-2000
+  features/query; record-cap truncation is disclosed in the bottom-left
+  legend. Leaflet trap: `createPane("browsePane")` yields CSS class
+  `leaflet-browse-pane` — the "Pane" suffix is stripped.
+- Find on map + row filter (2026-09-14): search by state / county /
+  township / road via Census TIGERweb (`State_County` layers 0/1,
+  `Places_CouSub_ConCity_SubMCD` layer 1 = county subdivisions,
+  Transportation layers 2/6/8 = full-detail primary/secondary/local
+  roads; all confirmed live). Boundary matches zoom + draw a dashed
+  outline (generalized via `maxAllowableOffset`); road-name search is
+  limited to the visible map area (z≥11) — statewide un-indexed `LIKE`
+  is too slow. Results bar gained a text row filter + "in map view"
+  spatial filter (visual only — exports/stepping still cover all
+  sites). Also fixed: vendored Leaflet was missing its `images/` dir,
+  so the basemap-switcher icon rendered as a blank square.
 
 ---
 
