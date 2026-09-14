@@ -76,6 +76,36 @@ All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
 across files. (IN is an outlier at 6.4 MB despite its feature count —
 INDOT submits shorter, simpler segment geometry.)
 
+## Offline road basemap (web/tiles/basemap.pmtiles)
+
+The map's ROAD BASEMAP is also served from this repo — a Protomaps/OSM
+vector extract of the six states (z0-11, 50 MB), built by
+`build-basemap.sh` + `filter-basemap-layers.py`: `pmtiles extract` with a
+six-rectangle region polygon, then a wire-level layer filter keeping only
+earth / water / roads / boundaries / places (buildings, POIs and landuse
+are most of a full basemap's bulk — the unfiltered z12 extract measured
+504 MB). Rendered by the already-vendored protomaps-leaflet `light`
+theme; tiles beyond z11 overzoom (the HPMS class tiles carry every road
+from z12, so the basemap's job above that is context and names).
+Satellite imagery deliberately stays a LIVE Esri layer — fetched only
+when the user switches to it. If `basemap.pmtiles` is missing (or on a
+`file://` open) the page falls back to the live Esri street layer.
+Refresh occasionally from a newer Protomaps daily build (OSM edits).
+
+- **`pmtiles extract` does not checksum tiles** — one 504 MB pull through
+  the agent proxy arrived with ~2,700 truncated/zeroed tiles (silently!).
+  `filter-basemap-layers.py` gunzips every tile and aborts on the first
+  bad one; if it aborts, re-extract.
+- **tippecanoe 2.49's `tile-join` cannot filter these tiles** — its MVT
+  reader errors ("PBF decoding error") on some Protomaps tiles even from
+  a clean archive, hence the wire-level python filter (which never
+  decodes features at all).
+- **Serve `.css` with `text/css` in any local test server** — Chromium
+  silently rejects a stylesheet served as octet-stream; with leaflet.css
+  rejected every Leaflet pane loses `position:absolute` and the map
+  renders as misplaced patches with invisible pins (cost a long
+  debugging round in the Playwright harness; the PAGE was never broken).
+
 ## Build gotchas (cost a debugging round each)
 
 - **Never use per-feature `"tippecanoe":{"minzoom":…}` for the class

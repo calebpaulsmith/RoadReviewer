@@ -1102,6 +1102,29 @@ live services. Full design narrative + verification history:
   declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
   (HTTP range requests); GitHub's 100 MB/file limit is the sizing
   constraint (per-state sizes in build/tiles/README.md).
+- Full-page shell + offline basemap, locked to Region V (2026-09-14,
+  per user direction): the map fills the viewport (no page scroll); a
+  full-height left pane holds title/inputs/find/results/exports/
+  transparency panels (header + privacy banner removed; the
+  coordinates box's placeholder is real example lines, cleared on
+  focus). maxBounds + a resize-recomputed minZoom (floor z6) forbid
+  leaving the six states. The ROAD basemap is served from the repo —
+  web/tiles/basemap.pmtiles, a 50 MB Protomaps/OSM z0-11 extract
+  (layers earth/water/roads/boundaries/places, built by
+  build/tiles/build-basemap.sh; buildings/POIs/landuse were most of
+  the unfiltered 504 MB) rendered with protomaps-leaflet's light
+  theme; satellite stays live Esri; live Esri streets is the fallback
+  when the file is missing or on file://. Result rows are compact
+  (one line: name, coords, state, badge; click = select + expand
+  detail) with a "⧉ Expand table" pop-out showing every site's full
+  detail at once. Traps: `pmtiles extract` doesn't checksum (a
+  proxy-truncated pull shipped ~2,700 corrupt tiles —
+  filter-basemap-layers.py gunzip-verifies every tile); tippecanoe
+  2.49 tile-join can't read some Protomaps tiles (wire-level python
+  layer filter instead); a test server that serves .css as
+  octet-stream makes Chromium reject leaflet.css → Leaflet panes
+  lose position:absolute and the map "breaks" while the page itself
+  is fine.
 
 ---
 

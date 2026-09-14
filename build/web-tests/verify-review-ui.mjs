@@ -261,14 +261,37 @@ checks.push(["unchecking Live layers clears the mirror", await page.evaluate(asy
   return cleared;
 })]);
 
-// --- input panel collapse (map-hero layout) ---
-checks.push(["input panel floats over the map and collapses", await page.evaluate(() => {
-  const p = document.getElementById("inputPanel");
-  const overlaid = getComputedStyle(p).position === "absolute";
-  document.getElementById("panelToggle").click();
-  const hidden = p.classList.contains("hidden") && p.offsetParent === null;
-  document.getElementById("panelToggle").click();
-  return overlaid && hidden && p.offsetParent !== null;
+// --- full-page shell: sidebar pane + no page scrolling ---
+checks.push(["full-page shell: sidebar pane, map fills the rest, no page scroll", await page.evaluate(() => {
+  const sb = document.getElementById("sidebar"), ma = document.getElementById("mapArea");
+  const noScroll = document.body.scrollHeight <= window.innerHeight + 1;
+  return sb && ma && sb.offsetHeight >= window.innerHeight - 1
+    && ma.getBoundingClientRect().right >= window.innerWidth - 1 && noScroll;
+})]);
+
+// --- compact rows: detail hidden until the row is expanded ---
+checks.push(["rows are compact until clicked (detail + links hidden)", await page.evaluate(() => {
+  const row = document.querySelector("#resultsBody .row:not(.open)") || document.querySelector("#resultsBody .row");
+  const sub = row.querySelector(".row-sub"), links = row.querySelector(".row-links");
+  const collapsedHidden = !row.classList.contains("open")
+    ? (sub ? sub.offsetParent === null : true) && links.offsetParent === null : true;
+  row.classList.add("open");
+  const openShows = (sub ? sub.offsetParent !== null : true) && links.offsetParent !== null;
+  row.classList.remove("open");
+  return collapsedHidden && openShows;
+})]);
+
+// --- pop-out: the full-detail table over the map ---
+checks.push(["pop-out table lists every site with full detail", await page.evaluate(() => {
+  document.getElementById("popoutBtn").click();
+  const wrap = document.getElementById("popoutWrap");
+  const rows = document.querySelectorAll("#popoutTable tr");
+  const txt = document.getElementById("popoutTable").textContent;
+  const ok = !wrap.hidden && rows.length === 3   // header + 2 sites
+    && txt.includes("Kalamazoo culvert") && txt.includes("Federal aid")
+    && txt.includes("Urban area") && txt.includes("42.28536");
+  document.getElementById("popoutClose").click();
+  return ok && wrap.hidden;
 })]);
 
 // --- find on map: state -> county/township matches -> road search in view ---
@@ -357,7 +380,7 @@ checks.push(["zip contains 2 PDFs with site names", zr.names.length === 2
   && zr.names.includes("Kalamazoo culvert FIRMette.pdf") && zr.names.includes("Site B FIRMette.pdf")]);
 checks.push(["zip CRCs valid (testzip clean)", zr.bad === null]);
 checks.push(["zip entries are PDFs", zr.allPdf === true]);
-checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "Download FIRMettes (ZIP)"]);
+checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "FIRMettes (ZIP)"]);
 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });
