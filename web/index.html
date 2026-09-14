@@ -292,6 +292,8 @@ details.howcolors { margin-top: 8px; }
   margin: 3px 0; cursor: pointer; background: #fff; display: flex; gap: 8px; align-items: baseline; }
 #findResults .finditem:hover { background: #eef3f9; border-color: #b9cde4; }
 #findResults .finditem span { color: var(--muted); font-size: 11.5px; margin-left: auto; white-space: nowrap; }
+#findResults .cw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  border: 1px solid rgba(0,0,0,.3); vertical-align: middle; margin-right: 4px; }
 #findResults .note { color: var(--muted); font-style: italic; font-size: 12px; margin: 3px 0; }
 
 /* Results-row filter */
@@ -371,8 +373,8 @@ details.howcolors { margin-top: 8px; }
             <option value="17">Illinois</option>
             <option value="39">Ohio</option>
           </select>
-          <input id="findText" type="search" spellcheck="false" placeholder="County, township or road…"
-            title="Type part of a county, township (county-subdivision) or road name and press Enter. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the county or township first, then the road.">
+          <input id="findText" type="search" spellcheck="false" placeholder="County, township or road… (suggests as you type)"
+            title="Start typing part of a county, township (county-subdivision) or road name — suggestions appear below as you type. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the county or township first, then the road. Road suggestions are tagged with the state's FHWA functional class in the standard class colors.">
           <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
         </div>
         <div id="findResults"></div>
@@ -1292,8 +1294,11 @@ function render() {
     body.appendChild(tr);
     tr.addEventListener("click", e => { if (e.target.closest("a")) return; selectSiteByPoint(p); });
 
-    const marker = L.circleMarker([p.lat, p.lon], { radius: 8, weight: 2, color: "#fff",
-      fillColor: BUCKET_COLOR.pending, fillOpacity: 0.95 }).addTo(markerLayer);
+    // Bolder ring + radius so the verdict color (set below once the row
+    // classifies: red/green/yellow, same as the row tint) reads clearly
+    // over the live class-colored road lines.
+    const marker = L.circleMarker([p.lat, p.lon], { radius: 9, weight: 3, color: "#fff",
+      fillColor: BUCKET_COLOR.pending, fillOpacity: 1 }).addTo(markerLayer);
     marker.bindPopup(`<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br><i>querying…</i>`);
     // Surface the pasted site name right on the map. Labels stay permanent up
     // to 25 sites; past that they'd shingle, so they become hover tooltips.
@@ -2583,10 +2588,22 @@ let findSeq = 0;
 
 function sqlSafe(s) { return String(s).replace(/'/g, "''"); }
 
+// URL-keyed fetch cache for the search: suggestions run on every keystroke
+// (debounced), so backspacing or re-typing the same prefix must not re-hit
+// TIGERweb. Failures aren't cached (retry on the next keystroke).
+const findFetchCache = new Map();
+function findGetJson(url) {
+  if (!findFetchCache.has(url)) {
+    findFetchCache.set(url, httpGetJson(url).catch(e => { findFetchCache.delete(url); throw e; }));
+    if (findFetchCache.size > 120) findFetchCache.delete(findFetchCache.keys().next().value);
+  }
+  return findFetchCache.get(url);
+}
+
 async function tigerNameQuery(url, where, outFields) {
   const u = url + "/query?where=" + encodeURIComponent(where) +
     "&outFields=" + encodeURIComponent(outFields) + "&returnGeometry=false&f=json";
-  const json = await httpGetJson(u);
+  const json = await findGetJson(u);
   if (json.error) throw new Error(json.error.message || "service error");
   return json.features || [];
 }
@@ -2616,8 +2633,12 @@ async function findShowPolygon(url, where, offset, label) {
 // parallel, segments grouped by full name.
 async function findRoads(term, bbox) {
   const where = "NAME IS NOT NULL AND UPPER(NAME) LIKE '%" + sqlSafe(term.toUpperCase()) + "%'";
-  const settled = await Promise.allSettled(
-    TIGER_FIND.roads.map(u => queryFrame(u, bbox, "NAME", where, false)));
+  const roadQuery = async u => {
+    const json = await findGetJson(buildFrameQueryUrl(u, bbox, "NAME", where, false));
+    if (json && json.error) throw new Error("service error " + (json.error.message || ""));
+    return json;
+  };
+  const settled = await Promise.allSettled(TIGER_FIND.roads.map(roadQuery));
   if (settled.every(s => s.status === "rejected")) throw settled[0].reason;
   const groups = new Map();
   for (const s of settled) {
@@ -2631,6 +2652,35 @@ async function findRoads(term, bbox) {
     }
   }
   return [...groups.values()].sort((a, b) => b.paths.length - a.paths.length);
+}
+
+// FHWA functional class for one matched road: query the state's own class
+// layer (the same rr-core per-state query the classifier uses) at the
+// midpoint of the road's longest matched segment, closest segment wins.
+// Cached by state+midpoint so retyping the same search is free; null when
+// the point falls in no wired state or the state assigns no class there.
+const roadClassCache = new Map();
+function roadGroupMidpoint(g) {
+  let best = null;
+  for (const path of g.paths) if (path.length && (!best || path.length > best.length)) best = path;
+  if (!best) return null;
+  const [x, y] = best[Math.floor(best.length / 2)];
+  return { lat: y, lon: x };
+}
+function roadGroupClassCode(g, stFips) {
+  const mid = roadGroupMidpoint(g);
+  if (!mid) return Promise.resolve(null);
+  const state = (stFips && FIPS_ABBR[stFips]) || detectState(mid.lat, mid.lon);
+  if (!state || !NFC_WIRED[state]) return Promise.resolve(null);
+  const key = state + "|" + mid.lat.toFixed(5) + "," + mid.lon.toFixed(5);
+  if (!roadClassCache.has(key)) {
+    roadClassCache.set(key, (async () => {
+      const res = await NFC_WIRED[state](mid.lat, mid.lon, 150);
+      const segs = (res.segments || []).slice().sort((a, b) => a.distFt - b.distFt);
+      return segs.length ? segs[0].code : null;
+    })().catch(() => { roadClassCache.delete(key); return null; }));
+  }
+  return roadClassCache.get(key);
 }
 
 function findShowRoad(g) {
@@ -2680,6 +2730,7 @@ async function runFind() {
       d.innerHTML = `<b>${esc(label)}</b><span>${esc(sub)}</span>`;
       d.addEventListener("click", () => fn().catch(fail));
       frag.appendChild(d);
+      return d;
     };
     const addNote = txt => { const d = document.createElement("div"); d.className = "note"; d.textContent = txt; frag.appendChild(d); };
     let hits = 0;
@@ -2698,7 +2749,16 @@ async function runFind() {
     } else if (roadGroups) {
       for (const g of roadGroups.slice(0, FIND_MAX_PER_KIND)) {
         hits++;
-        addItem(g.name, `road · ${g.paths.length} segment(s) in view`, async () => findShowRoad(g));
+        const segsTxt = `${g.paths.length} segment(s) in view`;
+        const el = addItem(g.name, `road · ${segsTxt}`, async () => findShowRoad(g));
+        // Annotate with the state's FHWA functional class, async so the
+        // suggestion list never waits on the class layers.
+        roadGroupClassCode(g, stFips).then(code => {
+          if (seq !== findSeq || code == null || !el.isConnected) return;
+          const sub = el.querySelector("span");
+          if (sub) sub.innerHTML = `<i class="cw" style="background:${FHWA_CHIP_COLOR[code] || FHWA_CHIP_COLOR[0]}"></i>` +
+            `${esc(functionalSystemLabel(code))} · road · ${esc(segsTxt)}`;
+        });
       }
     }
     if (!hits && roadGroups !== "zoomed-out") addNote("No matching county, township or road found" + (stFips ? "" : " — picking a state can help") + ".");
@@ -2710,6 +2770,18 @@ async function runFind() {
 $("findBtn").addEventListener("click", runFind);
 $("findText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); runFind(); } });
 $("findState").addEventListener("change", runFind);
+// Type-ahead: suggestions appear as you type (debounced; 2+ characters).
+// Clearing the box just clears the suggestion list — it never zooms the map
+// the way an explicit state-only Find does. Fetches are URL-cached above, so
+// backspacing through a term costs nothing.
+let findTypeTimer = null;
+$("findText").addEventListener("input", () => {
+  clearTimeout(findTypeTimer);
+  const term = $("findText").value.trim();
+  if (!term) { ++findSeq; $("findResults").innerHTML = ""; return; }
+  if (term.length < 2) return;
+  findTypeTimer = setTimeout(runFind, 300);
+});
 
 /* ---------------- results-row filter ---------------- */
 // Text filter matches anything visible on the card (site name, road/street

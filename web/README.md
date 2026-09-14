@@ -99,7 +99,10 @@ Two constraints shape it, both disclosed in the legend:
 
 The **"Find on map"** box in the input panel searches by state, county,
 township, or road name, via Census TIGERweb (free, no auth — already this
-tool's street-name source; layers documented on the sources page):
+tool's street-name source; layers documented on the sources page).
+**Suggestions appear as you type** (debounced at 2+ characters; fetches
+are URL-cached so backspacing through a term costs nothing; Enter or the
+Find button still search immediately):
 
 - **State** — pick one from the dropdown and Find with the box empty to
   zoom straight to it (the dropdown also scopes every other search).
@@ -114,7 +117,17 @@ tool's street-name source; layers documented on the sources page):
   area** (a statewide un-indexed `LIKE` would be slow for everyone), so
   the flow is find-the-county-then-the-road; below zoom 11 the results
   say so. Matches group segments by full name; clicking one highlights
-  the segments and zooms to them.
+  the segments and zooms to them. Each road suggestion is annotated
+  (asynchronously, so the list never waits) with the state's **FHWA
+  functional class**, swatched in the standard class color — looked up
+  from the state's own class layer at the midpoint of the road's longest
+  matched segment via the same per-state query the classifier uses,
+  closest segment wins, cached per road.
+
+Site pins keep taking the row's verdict color (red / green / yellow, the
+same buckets as the row tint and KML pushpins) once a pasted point
+classifies; they got a bolder white ring and slightly larger radius so
+the verdict reads clearly over the class-colored live road lines.
 
 The results list gets a matching **row filter**: a text box that hides
 result cards whose text doesn't match (site name, road/street names,

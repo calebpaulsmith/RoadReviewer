@@ -125,6 +125,11 @@ const tooltipTexts = await page.locator(".leaflet-tooltip").allTextContents();
 checks.push(["2 name labels on map", tooltipTexts.length === 2]);
 checks.push(["labels carry the pasted names", tooltipTexts.join("|").includes("Kalamazoo culvert") && tooltipTexts.join("|").includes("Site B")]);
 
+// --- map pins take the row's verdict colors once classified ---
+checks.push(["pins reflect the rows' verdict colors (red / yellow)", await page.evaluate(() =>
+  JSON.stringify(currentPoints.filter(p => !p.invalid).map(p => p._marker.options.fillColor))
+    === JSON.stringify([BUCKET_COLOR.fed, BUCKET_COLOR.review]))]);
+
 // --- result cards: verdict badge + per-segment class chips (PR #24 model) ---
 const row0 = await page.locator("#resultsBody .row").first().textContent();
 checks.push(["card carries FEDERAL AID badge text", row0.includes("FEDERAL AID")]);
@@ -256,9 +261,11 @@ checks.push(["input panel floats over the map and collapses", await page.evaluat
 await page.selectOption("#findState", "26");   // empty search box: zoom straight to the state
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Michigan"), { timeout: 15000 });
 checks.push(["find: picking a state zooms to its boundary outline", await page.evaluate(() => findOverlay.getLayers().length > 0)]);
+// type-ahead: filling the box (one input event) must surface suggestions
+// after the debounce, with NO Find click
 await page.fill("#findText", "kalamazoo");
-await page.click("#findBtn");
 await page.waitForFunction(() => document.querySelectorAll("#findResults .finditem").length >= 2, { timeout: 15000 });
+checks.push(["find: suggestions appear as you type (no Find click)", true]);
 checks.push(["find: county + township matches listed with their kinds", await page.evaluate(() => {
   const t = [...document.querySelectorAll("#findResults .finditem")].map(d => d.textContent).join("|");
   return t.includes("Kalamazoo County") && t.includes("county") && t.includes("Oshtemo charter township") && t.includes("township");
@@ -275,6 +282,13 @@ await page.uncheck("#rowFilterView");
 await page.fill("#findText", "pitcher");
 await page.click("#findBtn");
 await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("S Pitcher St")), { timeout: 15000 });
+// road suggestions get annotated (async) with the state's FHWA class from
+// the stubbed MDOT 353 point query (Minor Collector), swatched in class color
+await page.waitForFunction(() => {
+  const it = [...document.querySelectorAll("#findResults .finditem")].find(d => d.textContent.includes("S Pitcher St"));
+  return it && it.textContent.includes("Minor Collector") && !!it.querySelector(".cw");
+}, { timeout: 15000 });
+checks.push(["find: road suggestion carries FHWA class + color swatch", true]);
 await page.locator("#findResults .finditem", { hasText: "S Pitcher St" }).first().click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing road: S Pitcher St"), { timeout: 15000 });
 checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
