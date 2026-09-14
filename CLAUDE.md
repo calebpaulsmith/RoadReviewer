@@ -1085,6 +1085,23 @@ live services. Full design narrative + verification history:
   token-gated — pre-baked vector tiles from the HPMS FGDB remain the
   only true any-zoom route, parked as heavy (build pipeline, ~100s of
   MB, annual refresh).
+- Baked HPMS class tiles (2026-09-14, per user direction — "download
+  the HPMS data; high classes never change; less live querying"): the
+  class DISPLAY now serves from pre-built per-state PMTiles
+  (`web/tiles/<st>.pmtiles`, pipeline in `build/tiles/`) — the full
+  HPMS network incl. locals, progressive bands baked in (interstates
+  z6 → locals z12), rendered by vendored `protomaps-leaflet`+`pmtiles`
+  into the browse canvas pane; VERDICTS stay live per point against
+  the state DOT layers, and states without a tileset fall back to the
+  live progressive mirror. Extraction gotcha: the ~30M-row national
+  HPMS table 400s (~55 s server give-up) on ANY attribute-filtered
+  offset page and on state-sized envelopes — harvest by quadtree
+  envelope (spatial index), seed ≤1° cells, treat "Unable to perform
+  query" as a split signal, dedupe by OBJECTID. protomaps-leaflet
+  trap: a symbolizer attr function is per-feature only when it
+  declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
+  (HTTP range requests); GitHub's 100 MB/file limit is the sizing
+  constraint (per-state sizes in build/tiles/README.md).
 
 ---
 

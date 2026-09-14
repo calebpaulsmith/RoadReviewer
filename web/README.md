@@ -99,15 +99,40 @@ Two constraints shape it, both disclosed in the legend:
   codes; WisDOT's local layer encodes urban/rural into its code) — all
   six confirmed live via `returnCountOnly`.
 
-  *Why not HPMS?* FHWA's exportable HPMS data was evaluated for this:
-  the BTS-hosted nationwide service (`HPMS_National_Current`, same AGOL
-  org as the ACUB layer) is also a Query-only FeatureServer with a
-  2,000-record cap — no zoom advantage — and its data is the prior
-  year's submission, which could disagree with the authoritative state
-  layers the classifier queries. Pre-baking the downloadable HPMS FGDB
-  into vector tiles would give true any-zoom display but needs a build
-  pipeline, ~hundreds of MB hosted, and annual manual refreshes; parked
-  unless progressive display proves insufficient.
+  This progressive live path is now the **fallback** — see the next
+  section: where a state's pre-built HPMS tileset exists, the class
+  display comes from static tiles instead and none of these live layer
+  queries fire.
+
+## Baked HPMS class tiles (2026-09-14) — the primary class display
+
+Per user direction ("I don't love all this live querying — download the
+HPMS data; high classes never change"), the road-class map layer is
+served from **pre-built vector tiles** of FHWA's HPMS full-extent data —
+every public road, class 1-7, locals included — one PMTiles file per
+state in `web/tiles/`, built by `build/tiles/` (see its README for the
+pipeline: quadtree envelope harvest of the BTS `HPMS_National_Current`
+service → tippecanoe). Division of labor:
+
+- **Display = tiles.** Instant at any zoom, full network including the
+  small roads most reviewed points sit on, zero live queries, no record
+  caps, works even when a state server is down. Progressive display is
+  baked into the tileset (interstates z6 → locals z12). The legend names
+  the HPMS year and which states are tile-served.
+- **Verdicts = live.** Classification of pasted points still queries the
+  state DOT's authoritative layer per point, exactly as before — that's
+  where currency matters (collector/local reclassifications move the
+  federal-aid line) and it's only a few queries per site.
+- **Fallback = the live mirror above.** A state with no tileset (or a
+  failed tile fetch, or a `file://` open) automatically keeps the live
+  progressive class display.
+
+**GitHub Pages still hosts everything.** PMTiles are read via HTTP range
+requests, which Pages' CDN serves; the constraint is GitHub's 100 MB
+per-file limit — per-state sizes are recorded in `build/tiles/README.md`
+and a state that outgrows it splits into two files. Renderer:
+`protomaps-leaflet` + `pmtiles` vendored in `web/vendor/` (no CDN),
+drawing into the same canvas pane under the site pins.
 - **Rendering.** Everything draws into one Leaflet `<canvas>` pane
   beneath the site pins and the per-site overlay, so a few thousand
   segments render without the per-element cost of SVG. Viewport fetches

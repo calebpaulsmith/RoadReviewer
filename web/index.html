@@ -470,6 +470,8 @@ Site 12, 44.2700, -83.5200"></textarea>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/jspdf/jspdf.umd.min.js"></script>
+<script src="vendor/pmtiles/pmtiles.js"></script>
+<script src="vendor/protomaps-leaflet/protomaps-leaflet.js"></script>
 
 <!-- ============================================================
      rr-core: pure classification logic, a direct port of
@@ -2470,6 +2472,64 @@ function browseStatesInView(b) {
   return out;
 }
 
+/* ---- baked HPMS class tiles (primary road-class display where present) ----
+   web/tiles/<st>.pmtiles are pre-built vector tiles of the state's FULL
+   road network (FHWA HPMS full extent — every public road incl. locals),
+   built by build/tiles/ (see its README). Where a state's tileset exists,
+   the class map draws from these static files at any zoom — instant, no
+   record caps, zero live layer queries. Progressive display is baked into
+   the tiles (interstates z6 → locals z12). States without a tileset fall
+   back to the live progressive mirror below. VERDICTS never read tiles —
+   classification stays live against the state DOT layers. */
+const HPMS_TILE_YEAR = "2024";
+const HPMS_TILE_URL = st => "tiles/" + st.toLowerCase() + ".pmtiles";
+const hpmsTile = new Map();   // state -> { status: "checking"|"ok"|"missing", layer }
+function hpmsTilesUsable() {
+  // file:// can't fetch() at all — a locally opened copy always falls back
+  // to the live mirror rather than logging a probe error per state.
+  return typeof protomapsL !== "undefined" && typeof pmtiles !== "undefined"
+    && location.protocol !== "file:";
+}
+function hpmsPaintRules() {
+  return [{
+    dataLayer: "roads",
+    symbolizer: new protomapsL.LineSymbolizer({
+      // NOTE: protomaps-leaflet treats an attr as per-feature ONLY when the
+      // function declares BOTH (zoom, feature) parameters.
+      color: (z, f) => FHWA_CHIP_COLOR[f.props.F] || "#8c8c8c",
+      width: (z, f) => (f.props.F <= 2 ? 2.6 : f.props.F <= 4 ? 2.2 : f.props.F <= 6 ? 1.8 : 1.3),
+      opacity: 0.85,
+    }),
+  }];
+}
+async function ensureHpmsTiles(st) {
+  const cur = hpmsTile.get(st);
+  if (cur) return cur.status === "ok";
+  const entry = { status: "checking", layer: null };
+  hpmsTile.set(st, entry);
+  try {
+    if (!hpmsTilesUsable()) throw 0;
+    const r = await fetch(HPMS_TILE_URL(st), { method: "HEAD" });
+    if (!r.ok) throw 0;
+    entry.layer = protomapsL.leafletLayer({
+      url: HPMS_TILE_URL(st), pane: "browsePane",
+      paintRules: hpmsPaintRules(), labelRules: [],
+      attribution: "Class tiles: FHWA HPMS",
+    });
+    entry.status = "ok";
+    logNet(`HPMS tileset found for ${st}: ${HPMS_TILE_URL(st)} (class display now served from static tiles)`);
+    if ($("liveLayers").checked) entry.layer.addTo(map);
+    return true;
+  } catch { entry.status = "missing"; return false; }
+}
+function setHpmsTilesVisible(on) {
+  for (const e of hpmsTile.values()) {
+    if (e.status !== "ok") continue;
+    if (on) { if (!map.hasLayer(e.layer)) e.layer.addTo(map); }
+    else if (map.hasLayer(e.layer)) map.removeLayer(e.layer);
+  }
+}
+
 const liveLegendCtl = L.control({ position: "bottomleft" });
 liveLegendCtl.onAdd = () => {
   const div = L.DomUtil.create("div", "livelegend");
@@ -2498,15 +2558,23 @@ function browseCached(key, fn) {
 let browseSeq = 0, browseTimer = null;
 async function refreshBrowseLayers() {
   const seq = ++browseSeq;
-  if (!$("liveLayers").checked) { browseOverlay.clearLayers(); setLiveLegend(""); return; }
+  if (!$("liveLayers").checked) { browseOverlay.clearLayers(); setHpmsTilesVisible(false); setLiveLegend(""); return; }
   const z = map.getZoom();
   const b = map.getBounds().pad(0.08);
   const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
   const states = browseStatesInView(b).filter(st => NFC_WIRED[st]);
+  // Baked HPMS tiles first: a state with a tileset gets its class display
+  // from static files (any zoom, no live queries) and is excluded from the
+  // live road fetching below. States without tiles keep the live mirror.
+  const tiledFlags = await Promise.all(states.map(ensureHpmsTiles));
+  if (seq !== browseSeq) return;
+  setHpmsTilesVisible(true);
+  const tiled = states.filter((s, i) => tiledFlags[i]);
+  const untiled = states.filter((s, i) => !tiledFlags[i]);
   const wantAcub = z >= BROWSE_ACUB_ZOOM;
   const classCap = browseClassCap(z);
-  const wantRoads = classCap !== 0 && states.length > 0;
-  if (!wantAcub && !wantRoads) {
+  const wantRoads = classCap !== 0 && untiled.length > 0;
+  if (!wantAcub && !wantRoads && !tiled.length) {
     browseOverlay.clearLayers();
     setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, major roads from zoom ${BROWSE_MAJOR_ROAD_ZOOM}, the full road network from zoom ${BROWSE_ROAD_ZOOM}</div>`);
     return;
@@ -2524,7 +2592,7 @@ async function refreshBrowseLayers() {
       return { kind: "acub", drawingInfo: meta.drawingInfo, features: json.features || [], truncated: !!json.exceededTransferLimit };
     }).catch(e => ({ error: e })));
   }
-  if (wantRoads) for (const st of states) {
+  if (wantRoads) for (const st of untiled) {
     jobs.push(browseCached(st + "|" + (classCap || "all") + "|" + bboxKey, async () => {
       const layers = await fetchClassLayers(st, bbox,
         (bbox.minLat + bbox.maxLat) / 2, (bbox.minLon + bbox.maxLon) / 2,
@@ -2573,8 +2641,14 @@ async function refreshBrowseLayers() {
   if (seq !== browseSeq) return;
 
   const entries = [];
-  if (!wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes</div>`);
-  else if (classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
+  if (tiled.length) {
+    entries.push(`<div class="hdr">Road functional class — FHWA HPMS ${HPMS_TILE_YEAR} tiles (${tiled.join(", ")})</div>`);
+    for (let c = 1; c <= 7; c++)
+      entries.push(`<div><span class="sw" style="background:${FHWA_CHIP_COLOR[c]}"></span>${esc(functionalSystemLabel(c))}</div>`);
+    entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — the full network incl. local streets, no live queries. Interstates appear from z6, locals from z12. Verdicts are always computed live from the state DOT layers.</div>`);
+  }
+  if (untiled.length && !wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes${tiled.length ? " for " + esc(untiled.join(", ")) : ""}</div>`);
+  else if (wantRoads && classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up${tiled.length ? " for " + esc(untiled.join(", ")) : ""} — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
   if (classLegend.size) {
     entries.push(`<div class="hdr">${esc(headers.join(" + ") || "Road functional class")}</div>`);
     for (const [label, css] of classLegend) entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);
