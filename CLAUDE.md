@@ -1125,6 +1125,19 @@ live services. Full design narrative + verification history:
   octet-stream makes Chromium reject leaflet.css → Leaflet panes
   lose position:absolute and the map "breaks" while the page itself
   is fine.
+- Live street-level detail under the roads (2026-09-14, per user):
+  buildings/parks/landuse/POIs/street names/house numbers from
+  OpenFreeMap (keyless public OSM vector tiles, CORS *; runtime
+  TileJSON resolves the versioned pbf template), in a detailPane
+  (z250) between basemap (200) and HPMS overlay (350), fetch-gated
+  z13+ so region browsing stays offline; best-effort (down/blocked =
+  simply no detail). TRAP fixed on the way: protomapsL.leafletLayer
+  defaults maxDataZoom to 15 and never reads the PMTiles header —
+  past the archive's real maxzoom it fetches empty and renders BLANK
+  instead of overzooming (class lines vanished at z14+, masked by
+  Leaflet's stale lower-zoom canvases). Every layer now passes
+  explicit maxDataZoom (class 13 / basemap 11 / detail 14);
+  verify-hpms-tiles asserts painted class pixels at z15.
 
 ---
 

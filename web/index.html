@@ -481,7 +481,10 @@ Site 12, 44.2700, -83.5200
     subject to errors — check the State DOT for official documentation of each site's functional
     classification. Road-class lookup is wired for all six Region V states (MI, IN, WI, MN, IL, OH).
     Road basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a>
-    &copy; OpenStreetMap contributors, served from this site; satellite imagery &copy; Esri, fetched live.
+    &copy; OpenStreetMap contributors, served from this site. Fetched live when needed: satellite imagery
+    &copy; Esri, and street-level detail at close zoom (buildings, parks, POIs, street names)
+    &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>
+    &copy; OpenStreetMap contributors.
   </div>
   </div>
 </div>
@@ -1203,7 +1206,10 @@ const imageryBase = L.layerGroup([
         || location.protocol === "file:") throw new Error("no pmtiles runtime");
     const head = await fetch("tiles/basemap.pmtiles", { method: "HEAD" });
     if (!head.ok) throw new Error("no basemap tileset");
-    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", theme: "light",
+    // maxDataZoom = the extract's maxzoom (11): the library defaults to 15
+    // and never reads the archive header, so deeper zooms would fetch
+    // nonexistent tiles and render blank instead of overzooming.
+    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", theme: "light", maxDataZoom: 11,
       attribution: 'Basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; OpenStreetMap' });
   } catch {
     roadBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
@@ -1214,6 +1220,56 @@ const imageryBase = L.layerGroup([
   bases[roadLabel] = roadBase;
   bases["Satellite (live, Esri)"] = imageryBase;
   L.control.layers(bases, null).addTo(map);
+})();
+
+// LIVE street-level detail — buildings, parks/land use, POIs, street
+// names — from OpenFreeMap (keyless, no-limit public OSM vector tiles,
+// CORS *). Per user direction: the road basemap stays HOSTED; the other
+// stuff pops in live underneath the road/class linework. It draws in its
+// own pane between the offline basemap (tilePane, z200) and the HPMS
+// class overlay (browsePane, z350), and tile fetches are gated to z13+
+// so region-level browsing stays fully offline. Everything here is
+// best-effort: offline, blocked, or down, the map simply shows no
+// detail layer and nothing else is affected.
+(async () => {
+  try {
+    if (typeof protomapsL === "undefined" || location.protocol === "file:") return;
+    const tj = await (await fetch("https://tiles.openfreemap.org/planet")).json();
+    const tpl = tj.tiles && tj.tiles[0];   // versioned {z}/{x}/{y}.pbf template
+    if (!tpl) return;
+    map.createPane("detailPane").style.zIndex = 250;
+    const P = protomapsL;
+    const LANDCOVER = { grass: "#d9e8c8", wood: "#c6d8b2", sand: "#f0e7b2",
+                        wetland: "#d0e0d8", ice: "#eef6f6", farmland: "#eae4d2" };
+    const paintRules = [
+      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
+      { dataLayer: "landcover",
+        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) => LANDCOVER[f.props.class] || "#e2e6da", opacity: 0.45 }) },
+      { dataLayer: "landuse",
+        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) =>
+          f.props.class === "hospital" ? "#f5e3e3"
+          : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#f0e9f5"
+          : "#e9e5dd", opacity: 0.35 }) },
+      { dataLayer: "building", minzoom: 13,
+        symbolizer: new P.PolygonSymbolizer({ fill: "#d5ccc3", opacity: 0.55 }) },
+      { dataLayer: "poi", minzoom: 14, filter: (z, f) => (f.props.rank || 99) <= 25,
+        symbolizer: new P.CircleSymbolizer({ radius: 2, fill: "#8a6db0", opacity: 0.8 }) },
+    ];
+    const labelRules = [
+      { dataLayer: "transportation_name", minzoom: 14,
+        symbolizer: new P.LineLabelSymbolizer({ label_props: ["name"],
+          fill: "#3f4a55", stroke: "#ffffff", width: 2, font: "500 10.5px system-ui" }) },
+      { dataLayer: "poi", minzoom: 15, filter: (z, f) => (f.props.rank || 99) <= 12,
+        symbolizer: new P.OffsetTextSymbolizer({ label_props: ["name"], offsetX: 5, offsetY: 4,
+          fill: "#5b5470", stroke: "#ffffff", width: 2, font: "400 10px system-ui" }) },
+      { dataLayer: "housenumber", minzoom: 17,
+        symbolizer: new P.CenteredTextSymbolizer({ label_props: ["housenumber"],
+          fill: "#9a938c", font: "400 9px system-ui" }) },
+    ];
+    P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane",
+      minZoom: 13, maxDataZoom: 14,
+      attribution: 'Detail &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; OpenStreetMap' }).addTo(map);
+  } catch { /* the detail layer is a bonus — never let it break the map */ }
 })();
 map.zoomControl.setPosition("topright");
 const markerLayer = L.layerGroup().addTo(map);
@@ -2598,6 +2654,11 @@ async function ensureHpmsTiles(st) {
     entry.layer = protomapsL.leafletLayer({
       url: HPMS_TILE_URL(st), pane: "browsePane",
       paintRules: hpmsPaintRules(), labelRules: [],
+      // maxDataZoom MUST match the tileset's -z (13): protomaps-leaflet
+      // defaults to 15 and never reads the archive header, so without
+      // this the class lines silently disappear past z13 (empty fetches;
+      // Leaflet leaves stale lower-zoom canvases behind, masking it).
+      maxDataZoom: 13,
       attribution: "Class tiles: FHWA HPMS",
     });
     entry.status = "ok";

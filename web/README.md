@@ -131,6 +131,18 @@ toggles float in a bar over the map's top-left.
   **⧉ Expand table** pops the full-detail table for every site at once
   over the map (verdict-tinted, with links), closable via ✕ / Esc /
   backdrop.
+- **Live street-level detail under the roads** (per user direction:
+  hosted road map, "the other stuff popped in live underneath"):
+  buildings, parks/land use, POI dots + names, street names and house
+  numbers come from **OpenFreeMap** (keyless, no-limit public OSM
+  vector tiles, CORS `*` — TileJSON at
+  `https://tiles.openfreemap.org/planet` resolves the versioned
+  `{z}/{x}/{y}.pbf` template at runtime). It draws in its own pane
+  between the offline basemap (z200) and the HPMS class overlay
+  (z350), fetch-gated to z13+ so region browsing stays fully offline;
+  labels appear z14+ (street names), z15+ (POI names), z17+ (house
+  numbers). Best-effort: blocked or down, the map just shows no detail
+  layer.
 
 ## Baked HPMS class tiles (2026-09-14) — the primary class display
 

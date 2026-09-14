@@ -113,6 +113,26 @@ checks.push(["protomaps-leaflet painted real tile pixels in the browse pane", tr
 checks.push(["no live road-class query fired for the tile-served state", await page.evaluate(() =>
   !netLines.some(l => /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer/.test(l) && l.includes("esriGeometryEnvelope")))]);
 
+// --- class lines OVERZOOM past the tileset's z13 (maxDataZoom regression) ---
+await page.evaluate(([la, lo]) => {
+  for (const c of document.querySelectorAll(".leaflet-browse-pane canvas"))
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);   // don't let stale z13 canvases mask a blank z15
+  map.setView([la, lo], 15);
+}, [lat, lon]);
+await page.waitForFunction(() => {
+  for (const c of document.querySelectorAll(".leaflet-browse-pane canvas")) {
+    try {
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 40) if (d[i] > 0) n++;
+      if (n > 50) return true;
+    } catch { /* keep looking */ }
+  }
+  return false;
+}, { timeout: 30000 });
+checks.push(["class tiles overzoom past z13 (painted at z15)", true]);
+await page.evaluate(([la, lo]) => map.setView([la, lo], 13), [lat, lon]);
+
 // --- offline road basemap (web/tiles/basemap.pmtiles, Protomaps extract) ---
 if (existsSync(join(tilesDir, "basemap.pmtiles"))) {
   await page.waitForFunction(() => {

@@ -100,6 +100,14 @@ Refresh occasionally from a newer Protomaps daily build (OSM edits).
   reader errors ("PBF decoding error") on some Protomaps tiles even from
   a clean archive, hence the wire-level python filter (which never
   decodes features at all).
+- **Always pass `maxDataZoom` (= the archive's maxzoom) to
+  `protomapsL.leafletLayer`** — the library defaults it to 15 and never
+  reads the PMTiles header, so past the archive's real maxzoom it
+  fetches nonexistent tiles and renders BLANK instead of overzooming
+  (the HPMS class lines silently vanished at z14+; Leaflet's stale
+  lower-zoom canvases masked it until the canvases were cleared).
+  Class tilesets pass 13, the basemap 11, the live OpenFreeMap detail
+  layer 14.
 - **Serve `.css` with `text/css` in any local test server** — Chromium
   silently rejects a stylesheet served as octet-stream; with leaflet.css
   rejected every Leaflet pane loses `position:absolute` and the map
