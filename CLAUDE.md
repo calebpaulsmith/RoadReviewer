@@ -1138,6 +1138,20 @@ live services. Full design narrative + verification history:
   Leaflet's stale lower-zoom canvases). Every layer now passes
   explicit maxDataZoom (class 13 / basemap 11 / detail 14);
   verify-hpms-tiles asserts painted class pixels at z15.
+- Two input tabs + Search & Collect (2026-09-14, per user): the left
+  pane's input area is tabs — "Coordinate Input" (paste flow; State
+  dropdown REMOVED, always auto-detect; "Search radius" renamed
+  "Search buffer") and "Search & Collect" (the TIGERweb Find box moved
+  here + an add-a-point form: Site name / GPS coordinates / Note).
+  Collected points join the same currentPoints list (rebuildPoints()
+  concats pasted + collected), classify/pin/step/export identically,
+  persist in localStorage ("rr_collected") until removed, and carry
+  the note into the row detail, pop-out, CSV/TSV/GeoJSON (Note
+  column) and the new KMZ export (zipped KML via makeZip, red/green/
+  yellow pushpins by verdict — the Excel tool's KML conventions). Map
+  detail restyle same pass: POI dots/labels REMOVED (user: clutter);
+  OpenFreeMap transportation now draws Google-style white road
+  ribbons with gray casings under the FHWA class centerlines.
 
 ---
 

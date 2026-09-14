@@ -249,6 +249,25 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: row; }
 .sb-head a { color: #93c2f0; font-size: 12px; margin-left: auto; white-space: nowrap; }
 .sb-scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 12px 14px 16px; }
 
+/* ---- the two input tabs: Coordinate Input | Search & Collect ---- */
+.sb-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid var(--line); }
+.tabbtn { flex: 1 1 0; border: none; background: none; box-shadow: none; border-radius: 8px 8px 0 0;
+  padding: 8px 6px; font-size: 13px; font-weight: 600; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.tabbtn:hover { background: #eef3f8; }
+.tabbtn.active { color: var(--accent-ink); border-bottom-color: var(--accent);
+  background: #fff; box-shadow: var(--shadow-sm); }
+
+/* Search & Collect: the add-a-point form */
+.addbox { margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.addrow { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.addrow input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 13px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.addrow a { font-size: 12px; }
+.row .rnote { color: var(--muted); font-style: italic; }
+.row a.rmpt { font-size: 11.5px; }
+
 /* Input block sits in normal pane flow (the floating-card layer is gone). */
 .input-col { display: block; min-width: 0; }
 .input-col textarea { min-height: 130px; width: 100%; }
@@ -363,20 +382,13 @@ details.howcolors { margin-top: 8px; }
     <a href="sources.html" target="_blank" rel="noopener">Data sources</a>
   </div>
   <div class="sb-scroll">
+    <div class="sb-tabs">
+      <button id="tabBtnCoords" class="tabbtn active" title="Paste a batch of coordinates and classify them all at once">Coordinate Input</button>
+      <button id="tabBtnCollect" class="tabbtn" title="Search for a state, county, town or city, zoom there, and add GPS points one at a time with a name and note">Search &amp; Collect</button>
+    </div>
     <div class="input-col" id="inputPanel">
       <div class="controls">
-        <label>State:
-          <select id="stateSel">
-            <option value="AUTO" selected>Auto-detect (all 6 states)</option>
-            <option value="MI">Michigan</option>
-            <option value="IN">Indiana</option>
-            <option value="WI">Wisconsin</option>
-            <option value="MN">Minnesota</option>
-            <option value="IL">Illinois</option>
-            <option value="OH">Ohio</option>
-          </select>
-        </label>
-        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft.">Search radius:
+        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft. The state is always auto-detected from each point's location.">Search buffer:
           <select id="bufferSel">
             <option value="50">50 ft (strict)</option>
             <option value="100">100 ft</option>
@@ -387,23 +399,6 @@ details.howcolors { margin-top: 8px; }
           </select>
         </label>
         <span class="count" id="parseCount"></span>
-      </div>
-      <div class="findbox">
-        <div class="findrow">
-          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
-            <option value="">Find: any state</option>
-            <option value="55">Wisconsin</option>
-            <option value="18">Indiana</option>
-            <option value="26">Michigan</option>
-            <option value="27">Minnesota</option>
-            <option value="17">Illinois</option>
-            <option value="39">Ohio</option>
-          </select>
-          <input id="findText" type="search" spellcheck="false" placeholder="County, township or road… (suggests as you type)"
-            title="Start typing part of a county, township (county-subdivision) or road name — suggestions appear below as you type. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the county or township first, then the road. Road suggestions are tagged with the state's FHWA functional class in the standard class colors.">
-          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
-        </div>
-        <div id="findResults"></div>
       </div>
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
 Culvert on Q Ave	42.6911	-84.5360
@@ -425,6 +420,37 @@ Site 12, 44.2700, -83.5200
       </details>
     </div>
 
+    <div id="collectPanel" hidden>
+      <div class="findbox">
+        <div class="findrow">
+          <select id="findState" title="Scope the search to one state — or pick a state and hit Find with the box empty to zoom straight to it">
+            <option value="">Find: any state</option>
+            <option value="55">Wisconsin</option>
+            <option value="18">Indiana</option>
+            <option value="26">Michigan</option>
+            <option value="27">Minnesota</option>
+            <option value="17">Illinois</option>
+            <option value="39">Ohio</option>
+          </select>
+          <input id="findText" type="search" spellcheck="false" placeholder="State, county, town or city… (suggests as you type)"
+            title="Start typing part of a county, township (county-subdivision), city or road name — suggestions appear below as you type and clicking one zooms the map there. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the place first, then the road.">
+          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
+        </div>
+        <div id="findResults"></div>
+      </div>
+      <div class="addbox">
+        <div class="addrow"><input id="addName" type="text" spellcheck="false" placeholder="Site name (e.g. Culvert on Q Ave)"></div>
+        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025"></div>
+        <div class="addrow"><input id="addNote" type="text" spellcheck="false" placeholder="Note (optional — goes into the export)"></div>
+        <div class="addrow">
+          <button id="addPointBtn" class="primary" title="Adds the point to the results table below, classifies it, and zooms the map to it. Points are kept in this browser until removed.">＋ Add point</button>
+          <span class="count" id="collectCount"></span>
+          <span style="flex:1"></span>
+          <a href="#" id="clearCollected" title="Remove every collected point">clear collected</a>
+        </div>
+      </div>
+    </div>
+
     <div class="results">
       <div class="results-bar">
         <h2>Results</h2>
@@ -442,6 +468,7 @@ Site 12, 44.2700, -83.5200
       <div class="sb-exports">
         <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
         <button id="dlCsv">CSV</button>
+        <button id="dlKmz" title="KMZ for Google Earth / ArcGIS — red, green and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">KMZ</button>
         <button id="dlGeojson" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">GeoJSON</button>
         <label class="count" title="How wide an area the report map for each site covers">PDF map width:
           <select id="pdfZoom">
@@ -1241,8 +1268,20 @@ const imageryBase = L.layerGroup([
     const P = protomapsL;
     const LANDCOVER = { grass: "#d9e8c8", wood: "#c6d8b2", sand: "#f0e7b2",
                         wetland: "#d0e0d8", ice: "#eef6f6", farmland: "#eae4d2" };
+    // Google-style ground: land tints + buildings + WHITE road ribbons
+    // with gray casings, so the FHWA class lines (browsePane, above this
+    // pane) read as colored centerlines ON the streets. No POI markers —
+    // they cluttered the review view (user direction).
+    const RIBBON = { motorway: 5, trunk: 4.5, primary: 4, secondary: 3.4, tertiary: 3,
+                     minor: 2.6, service: 1.6, raceway: 1.6, busway: 2 };
+    const ribbonW = (z, f) => {
+      const base = RIBBON[f.props.class];
+      if (base == null) return 0;                          // path/track/rail etc: skip
+      const m = z >= 17 ? 2.4 : z >= 16 ? 1.9 : z >= 15 ? 1.5 : z >= 14 ? 1.2 : 1;
+      return base * m;
+    };
+    const isRibbon = (z, f) => RIBBON[f.props.class] != null;
     const paintRules = [
-      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
       { dataLayer: "landcover",
         symbolizer: new P.PolygonSymbolizer({ fill: (z, f) => LANDCOVER[f.props.class] || "#e2e6da", opacity: 0.45 }) },
       { dataLayer: "landuse",
@@ -1250,18 +1289,18 @@ const imageryBase = L.layerGroup([
           f.props.class === "hospital" ? "#f5e3e3"
           : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#f0e9f5"
           : "#e9e5dd", opacity: 0.35 }) },
+      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
       { dataLayer: "building", minzoom: 13,
         symbolizer: new P.PolygonSymbolizer({ fill: "#d5ccc3", opacity: 0.55 }) },
-      { dataLayer: "poi", minzoom: 14, filter: (z, f) => (f.props.rank || 99) <= 25,
-        symbolizer: new P.CircleSymbolizer({ radius: 2, fill: "#8a6db0", opacity: 0.8 }) },
+      { dataLayer: "transportation", filter: isRibbon,     // casing first, then fill
+        symbolizer: new P.LineSymbolizer({ color: "#c9ced4", width: (z, f) => ribbonW(z, f) + 2 }) },
+      { dataLayer: "transportation", filter: isRibbon,
+        symbolizer: new P.LineSymbolizer({ color: "#ffffff", width: ribbonW }) },
     ];
     const labelRules = [
       { dataLayer: "transportation_name", minzoom: 14,
         symbolizer: new P.LineLabelSymbolizer({ label_props: ["name"],
           fill: "#3f4a55", stroke: "#ffffff", width: 2, font: "500 10.5px system-ui" }) },
-      { dataLayer: "poi", minzoom: 15, filter: (z, f) => (f.props.rank || 99) <= 12,
-        symbolizer: new P.OffsetTextSymbolizer({ label_props: ["name"], offsetX: 5, offsetY: 4,
-          fill: "#5b5470", stroke: "#ffffff", width: 2, font: "400 10px system-ui" }) },
       { dataLayer: "housenumber", minzoom: 17,
         symbolizer: new P.CenteredTextSymbolizer({ label_props: ["housenumber"],
           fill: "#9a938c", font: "400 9px system-ui" }) },
@@ -1419,14 +1458,16 @@ function render() {
       return;
     }
     total++;
-    const stateSel = $("stateSel").value;
-    const state = stateSel === "AUTO" ? (detectState(p.lat, p.lon) || "??") : stateSel;
+    const state = detectState(p.lat, p.lon) || "??";   // always auto-detected (the State dropdown is gone)
     const buffer = bufferFeet();
     const key = p.lat + "," + p.lon + "," + state + "," + buffer;
     p._state = state;   // shown again in the pop-out table
     const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
       `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
-    const linksHtml = `<div class="row-links"><span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span></div>`;
+    const linksHtml = `<div class="row-links">` +
+      (p.note ? `<span class="rnote" title="Collected note — included in the CSV and KMZ exports">Note: ${esc(p.note)}</span>` : "") +
+      (p.collected ? `<a href="#" class="rmpt" data-cidx="${p.cIdx}" title="Remove this collected point">remove</a>` : "") +
+      `<span class="links">${pointLinks(p.lat, p.lon, state)} ${sourceLink(state)}</span></div>`;
     tr.className = "row v-pending";
     tr.innerHTML = `<div class="row-main">${headHtml}<span class="rstatus">querying…</span>` +
       `<span class="caret">▶</span></div>` + linksHtml;
@@ -1488,33 +1529,93 @@ function render() {
 }
 
 /* ---- input handling: parse + classify automatically, debounced ---- */
+/* ---- Search & Collect: collected points live alongside pasted ones ----
+   Both feed ONE currentPoints list, so the results table, map pins,
+   review stepping and every export treat them identically; collected
+   points additionally carry a note and persist in this browser
+   (localStorage) until removed. */
+let collectedPoints = [];
+try { collectedPoints = JSON.parse(localStorage.getItem("rr_collected") || "[]") || []; } catch { collectedPoints = []; }
+function saveCollected() { try { localStorage.setItem("rr_collected", JSON.stringify(collectedPoints)); } catch { /* private mode etc. */ } }
+function updateCollectCount() {
+  $("collectCount").textContent = collectedPoints.length
+    ? `${collectedPoints.length} point(s) — saved in this browser` : "";
+}
+function rebuildPoints() {
+  currentPoints = parseCoordinates($("coordsIn").value).concat(
+    collectedPoints.map((c, i) => ({ name: c.name, lat: c.lat, lon: c.lon,
+      note: c.note || "", collected: true, cIdx: i })));
+  updateCollectCount();
+}
+
 let debounceTimer = null;
 function onInput() {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    currentPoints = parseCoordinates($("coordsIn").value);
-    const ok = currentPoints.filter(p => !p.invalid).length;
-    const bad = currentPoints.length - ok;
-    $("parseCount").textContent = currentPoints.length
+    const pasted = parseCoordinates($("coordsIn").value);
+    const ok = pasted.filter(p => !p.invalid).length;
+    const bad = pasted.length - ok;
+    $("parseCount").textContent = pasted.length
       ? `${ok} point(s) parsed${bad ? ", " + bad + " line(s) unreadable" : ""}` : "";
+    rebuildPoints();
     render();
   }, 500);
 }
 $("coordsIn").addEventListener("input", onInput);
 $("resultsBody").addEventListener("click", e => {
   if (e.target.classList.contains("retry")) { e.preventDefault(); render(); }
+  if (e.target.classList.contains("rmpt")) {
+    e.preventDefault();
+    collectedPoints.splice(+e.target.dataset.cidx, 1);
+    saveCollected(); rebuildPoints(); render();
+  }
 });
-$("stateSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
-$("bufferSel").addEventListener("change", () => { currentPoints = parseCoordinates($("coordsIn").value); render(); });
+$("bufferSel").addEventListener("change", () => { rebuildPoints(); render(); });
 $("clearBtn").addEventListener("click", () => { $("coordsIn").value = ""; onInput(); });
+
+/* ---- the two input tabs ---- */
+function setTab(which) {
+  const collect = which === "collect";
+  $("collectPanel").hidden = false;                      // the attr only hides it pre-JS
+  $("inputPanel").style.display = collect ? "none" : "";
+  $("collectPanel").style.display = collect ? "" : "none";
+  $("tabBtnCoords").classList.toggle("active", !collect);
+  $("tabBtnCollect").classList.toggle("active", collect);
+}
+$("tabBtnCoords").addEventListener("click", () => setTab("coords"));
+$("tabBtnCollect").addEventListener("click", () => setTab("collect"));
+setTab("coords");
+
+/* ---- the point adder ---- */
+function addCollectedPoint() {
+  const coordsTxt = $("addCoords").value.trim();
+  const parsed = coordsTxt ? parseCoordinates(coordsTxt)[0] : null;
+  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025"); return; }
+  const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
+  collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
+  saveCollected(); rebuildPoints(); render();
+  map.setView([parsed.lat, parsed.lon], Math.max(map.getZoom(), 16));
+  $("addName").value = ""; $("addCoords").value = ""; $("addNote").value = "";
+}
+$("addPointBtn").addEventListener("click", addCollectedPoint);
+for (const id of ["addName", "addCoords", "addNote"])
+  $(id).addEventListener("keydown", e => { if (e.key === "Enter") addCollectedPoint(); });
+$("clearCollected").addEventListener("click", e => {
+  e.preventDefault();
+  if (!collectedPoints.length) return;
+  collectedPoints = []; saveCollected(); rebuildPoints(); render();
+});
+// Points saved in an earlier visit come back classified on load.
+if (collectedPoints.length) { rebuildPoints(); render(); } else updateCollectCount();
 
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
-                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason"];
+                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason", "Note"];
 function exportRows() {
   return currentPoints.filter(p => !p.invalid && p.result).map(p => [
     p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
     p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
+    p.note || "",
   ]);
 }
 $("dlCsv").addEventListener("click", () => {
@@ -1554,6 +1655,7 @@ $("dlGeojson").addEventListener("click", () => {
     add("RoadName", r.roadName);
     add("StreetName", r.streets);
     add("ReviewNote", r.reviewReason);
+    add("Note", p.note);
     props.Latitude = p.lat; props.Longitude = p.lon;
     return { type: "Feature", properties: props,
       geometry: { type: "Point", coordinates: [p.lon, p.lat] } };
@@ -1562,6 +1664,38 @@ $("dlGeojson").addEventListener("click", () => {
   a.href = URL.createObjectURL(new Blob([JSON.stringify({ type: "FeatureCollection", features }, null, 1)],
     { type: "application/geo+json" }));
   a.download = "road-checker-sites.geojson";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// KMZ export — a zipped KML for Google Earth / ArcGIS. Same red / green /
+// yellow pushpin convention as the Excel tool's KML export; the site name,
+// verdict, class, urban area, roads and the collected note all go into the
+// placemark. Reuses makeZip (the FIRMette bundler, defined in a later block).
+$("dlKmz").addEventListener("click", () => {
+  const pts = currentPoints.filter(p => !p.invalid && p.result);
+  if (!pts.length) { alert("Add or paste at least one classified point first."); return; }
+  const ICO = { fed: "red", nonfed: "grn", review: "ylw", failed: "wht" };
+  const ex = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const styles = Object.entries(ICO).map(([b, c]) =>
+    `<Style id="rr-${b}"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/${c}-pushpin.png</href></Icon></IconStyle></Style>`).join("");
+  const marks = pts.map(p => {
+    const r = p.result, b = verdictBucket(r.verdict);
+    const rows = [["Federal Aid Status", r.verdict], ["Review Reason", r.reviewReason],
+      ["FHWA Class", r.classLabel], ["Urban/Rural", r.urbanRural], ["Urban Area (ACUB)", r.acubName],
+      ["Road Name(s)", r.roadName], ["Street(s)", r.streets], ["Note", p.note],
+      ["Coordinates", p.lat + ", " + p.lon]]
+      .filter(([, v]) => v != null && String(v).trim() !== "")
+      .map(([k, v]) => `<b>${ex(k)}:</b> ${ex(v)}`).join("<br/>");
+    return `<Placemark><name>${ex(p.name)}</name><styleUrl>#rr-${b}</styleUrl>` +
+      `<description><![CDATA[${rows}]]></description>` +
+      `<Point><coordinates>${p.lon},${p.lat},0</coordinates></Point></Placemark>`;
+  }).join("");
+  const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2">` +
+    `<Document><name>Federal-Aid Road Checker sites</name>${styles}${marks}</Document></kml>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(makeZip([{ name: "doc.kml", data: new TextEncoder().encode(kml) }]));
+  a.download = "road-checker-sites.kmz";
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -2196,8 +2330,7 @@ function renderCombinedCanvas({ title, layers, point, verdictColor, frame, basem
 }
 
 async function buildPointReport(pt, radiusMeters) {
-  const stateSel = $("stateSel").value;
-  const state = stateSel === "AUTO" ? (detectState(pt.lat, pt.lon) || null) : stateSel;
+  const state = detectState(pt.lat, pt.lon) || null;
   const verdict = pt.result ? pt.result.verdict : "";
   const verdictColor = BUCKET_COLOR[verdictBucket(verdict)];
   const nowStamp = new Date().toLocaleString();
@@ -2408,8 +2541,7 @@ async function showSiteLayers(p) {
   const seq = ++layerReqSeq;
   siteOverlay.clearLayers();
   setLegendHtml("<b>Source layers at this site</b><div class='note'>loading…</div>");
-  const stateSel = $("stateSel").value;
-  const state = stateSel === "AUTO" ? detectState(p.lat, p.lon) : stateSel;
+  const state = detectState(p.lat, p.lon);
   const key = p.lat + "," + p.lon + "," + (state || "??");
   if (!siteLayerDataCache.has(key)) {
     siteLayerDataCache.set(key, (async () => {
@@ -2499,9 +2631,8 @@ async function plotAllSites() {
 
   const batch = pts.slice(0, PLOT_ALL_MAX_LAYER_SITES);
   setLegendHtml(`<b>Source layers — all sites</b><div class="note">loading ${batch.length} site frame(s)…</div>`);
-  const stateSel = $("stateSel").value;
   const results = await Promise.all(batch.map(p => {
-    const state = stateSel === "AUTO" ? detectState(p.lat, p.lon) : stateSel;
+    const state = detectState(p.lat, p.lon);
     const key = p.lat + "," + p.lon + "," + (state || "??");
     if (!siteLayerDataCache.has(key)) {
       siteLayerDataCache.set(key, (async () => {
@@ -2831,7 +2962,7 @@ function buildPopoutTable() {
   const pts = validPoints();
   const head = "<tr><th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>Verdict</th>" +
     "<th>Review reason</th><th>Closest class</th><th>Urban / rural</th><th>Urban area</th>" +
-    "<th>Roads found</th><th>Links</th></tr>";
+    "<th>Roads found</th><th>Note</th><th>Links</th></tr>";
   const rows = pts.map(p => {
     const r = p.result || {};
     const bucket = verdictBucket(r.verdict);
@@ -2842,7 +2973,8 @@ function buildPopoutTable() {
       `<td class="mono">${p.lat}</td><td class="mono">${p.lon}</td><td>${esc(p._state || "")}</td>` +
       `<td>${r.verdict ? esc(r.verdict) : "<i>querying…</i>"}</td><td>${reason}</td>` +
       `<td>${esc(r.classLabel || "")}</td><td>${esc(r.urbanRural || "")}</td><td>${esc(r.acubName || "")}</td>` +
-      `<td>${esc(r.roadName || "")}</td><td>${pointLinks(p.lat, p.lon, p._state || "")}</td></tr>`;
+      `<td>${esc(r.roadName || "")}</td><td>${esc(p.note || "")}</td>` +
+      `<td>${pointLinks(p.lat, p.lon, p._state || "")}</td></tr>`;
   });
   $("popoutTable").innerHTML = head + rows.join("");
   $("popoutCount").textContent = pts.length ? `${pts.length} site(s)` : "no sites yet — paste coordinates first";

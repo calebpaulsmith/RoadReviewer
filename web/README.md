@@ -133,16 +133,39 @@ toggles float in a bar over the map's top-left.
   backdrop.
 - **Live street-level detail under the roads** (per user direction:
   hosted road map, "the other stuff popped in live underneath"):
-  buildings, parks/land use, POI dots + names, street names and house
-  numbers come from **OpenFreeMap** (keyless, no-limit public OSM
-  vector tiles, CORS `*` — TileJSON at
-  `https://tiles.openfreemap.org/planet` resolves the versioned
-  `{z}/{x}/{y}.pbf` template at runtime). It draws in its own pane
-  between the offline basemap (z200) and the HPMS class overlay
-  (z350), fetch-gated to z13+ so region browsing stays fully offline;
-  labels appear z14+ (street names), z15+ (POI names), z17+ (house
-  numbers). Best-effort: blocked or down, the map just shows no detail
-  layer.
+  buildings, parks/land use, street names, house numbers and — the
+  Google-style ground — **white road ribbons with gray casings**, so
+  the FHWA class lines read as colored centerlines ON the streets. All
+  from **OpenFreeMap** (keyless, no-limit public OSM vector tiles,
+  CORS `*` — TileJSON at `https://tiles.openfreemap.org/planet`
+  resolves the versioned `{z}/{x}/{y}.pbf` template at runtime). It
+  draws in its own pane between the offline basemap (z200) and the
+  HPMS class overlay (z350), fetch-gated to z13+ so region browsing
+  stays fully offline; labels appear z14+ (street names), z17+ (house
+  numbers). **No POI markers** — the first cut drew POI dots + names
+  and the user rejected the clutter. Best-effort: blocked or down, the
+  map just shows no detail layer.
+
+## Two input tabs: Coordinate Input + Search & Collect (2026-09-14)
+
+Per user direction the left pane's input area is two tabs:
+
+- **Coordinate Input** — the paste-a-batch flow: the Search **buffer**
+  select (renamed from "Search radius") and the coordinates box. The
+  State dropdown is GONE — the state is always auto-detected per point.
+- **Search & Collect** — the field-collection flow: the Find box
+  (state / county / township / city / road via Census TIGERweb — click
+  a suggestion and the map zooms there), then an **add-a-point form**:
+  Site name, GPS coordinates, and a **Note**. Each added point drops
+  into the same shared results table, classifies exactly like a pasted
+  point, pins on the map, and **persists in localStorage** until
+  removed (per-row "remove" link, or "clear collected"). The note
+  shows in the row detail and the pop-out table.
+- **Exports**: CSV/Copy-for-Excel/GeoJSON gained a **Note** column, and
+  a new **KMZ** export (zipped KML via the FIRMette bundle's store-zip
+  builder) writes red/green/yellow pushpins by verdict with name,
+  status, class, urban area, roads and note in each placemark — the
+  same conventions as the Excel tool's KML.
 
 ## Baked HPMS class tiles (2026-09-14) — the primary class display
 
