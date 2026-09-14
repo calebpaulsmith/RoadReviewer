@@ -70,9 +70,11 @@ Measured (2026-09-14, HPMS_National_Current):
 | OH | 487,331 | 26 MB |
 | IL | 445,757 | 22 MB |
 | MN | 509,570 | 22 MB |
+| WI | 902,580 | 36 MB |
 
-Extrapolating by segment count, WI (~2.6× MI) lands near 50 MB — all six
-fit comfortably; total ≈ 90-120 MB across files.
+All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
+across files. (IN is an outlier at 6.4 MB despite its feature count —
+INDOT submits shorter, simpler segment geometry.)
 
 ## Build gotchas (cost a debugging round each)
 
