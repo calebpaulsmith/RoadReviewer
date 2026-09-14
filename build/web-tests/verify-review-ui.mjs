@@ -194,6 +194,39 @@ checks.push(["legend labels it as the Public map (official)", (await page.locato
 checks.push(["legend first-tier pinned links → FEMA Map Viewer", await page.locator('#siteLegend a[href*="fema.maps.arcgis.com"]').count() >= 2]);
 checks.push(["legend pinned links labeled 'pinned view'", (await page.locator("#siteLegend").textContent()).includes("pinned view")]);
 
+// --- live layer mirror (browse mode): at z17 the viewport-wide MIRROR of the
+// state class layer + ACUB should have fetched (same stubbed envelope
+// fixtures), drawn into the canvas browse pane, and populated its own legend ---
+await page.waitForFunction(() => {
+  const el = document.getElementById("liveLegend");
+  return el && el.style.display === "block" && el.textContent.includes("Urban boundary (USDOT NTAD 2020)")
+    && !el.textContent.includes("Zoom to street level");
+}, { timeout: 15000 });
+const liveLegendText = await page.locator("#liveLegend").textContent();
+checks.push(["live mirror legend lists source class labels", liveLegendText.includes("Minor Collector") && liveLegendText.includes("Local")]);
+checks.push(["live mirror legend cites the urban-area layer", liveLegendText.includes("2020 Adjusted Urban Area")]);
+checks.push(["live mirror drew into its canvas pane (under pins)", await page.evaluate(() =>
+  !!document.querySelector(".leaflet-browse-pane canvas") && browseOverlay.getLayers().length > 50)]);
+checks.push(["unchecking Live layers clears the mirror", await page.evaluate(async () => {
+  document.getElementById("liveLayers").checked = false;
+  document.getElementById("liveLayers").dispatchEvent(new Event("change"));
+  await new Promise(r => setTimeout(r, 50));
+  const cleared = browseOverlay.getLayers().length === 0 && document.getElementById("liveLegend").style.display === "none";
+  document.getElementById("liveLayers").checked = true;
+  document.getElementById("liveLayers").dispatchEvent(new Event("change"));
+  return cleared;
+})]);
+
+// --- input panel collapse (map-hero layout) ---
+checks.push(["input panel floats over the map and collapses", await page.evaluate(() => {
+  const p = document.getElementById("inputPanel");
+  const overlaid = getComputedStyle(p).position === "absolute";
+  document.getElementById("panelToggle").click();
+  const hidden = p.classList.contains("hidden") && p.offsetParent === null;
+  document.getElementById("panelToggle").click();
+  return overlaid && hidden && p.offsetParent !== null;
+})]);
+
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("1 / 2"), { timeout: 10000 });

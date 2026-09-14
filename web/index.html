@@ -223,6 +223,70 @@ details.svcpanel summary, details.netlog summary { color: var(--accent-ink); fon
 footer { max-width: 1680px; padding: 20px 26px 34px; font-size: 12.5px; color: var(--muted);
   border-top: 1px solid var(--line); margin-top: 14px; }
 </style>
+
+<style>
+/* ============================================================
+   Map-hero restyle (2026-09-14) — the map IS the page. The input
+   column becomes a collapsible card floating over the map's top-left
+   corner; the site legend floats bottom-right; the map fills the
+   viewport width and most of its height. Same additive-layer pattern
+   as the county restyle above: every ID and class the JS generates
+   is kept, so behaviour (and the Playwright verifiers) are untouched.
+   ============================================================ */
+header { padding: 12px 26px; }
+header h1 { font-size: 19px; }
+header .sub { margin-top: 4px; font-size: 12.5px; }
+.privacy { padding: 7px 26px; font-size: 12px; }
+main { max-width: none; padding: 12px 16px 22px; }
+
+.top { display: block; }
+.map-col { width: 100%; }
+.reviewbar { margin-bottom: 8px; }
+.map-wrap { display: block; position: relative; }
+#map, .map-wrap #map { width: 100%; height: calc(100vh - 215px); min-height: 520px; }
+
+/* Input panel: floating card over the map. It's a SIBLING of #map (not a
+   child), so its mouse/scroll events never reach Leaflet's handlers. */
+.input-col, .map-wrap .input-col {
+  position: absolute; top: 12px; left: 12px; z-index: 1000;
+  width: 400px; max-width: calc(100% - 24px); min-width: 0;
+  max-height: calc(100% - 24px); overflow-y: auto;
+  background: rgba(255,255,255,.97); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px;
+}
+.input-col.hidden { display: none; }
+.input-col textarea { min-height: 140px; }
+.controls { margin-bottom: 8px; gap: 10px; }
+.legend { margin-top: 8px; gap: 10px 14px; }
+details.howcolors { margin-top: 8px; }
+
+/* Site legend: floating card bottom-right (above the attribution line). */
+#siteLegend, .map-wrap #siteLegend {
+  position: absolute; right: 12px; bottom: 26px; z-index: 1000;
+  max-height: 60%; max-width: min(280px, calc(100% - 24px));
+}
+
+/* Live-layer legend (a Leaflet bottom-left control) — same visual language
+   as #siteLegend, whose .hdr/.sw/.swp/.note/.src styles it reuses. */
+.livelegend { background: rgba(255,255,255,.95); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 11px; font-size: 11.5px; max-width: 250px; max-height: 40vh; overflow-y: auto;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.livelegend b { display: block; margin-bottom: 3px; }
+.livelegend div { margin: 2px 0; }
+.livelegend .hdr { margin-top: 6px; font-weight: 600; font-size: 11px; color: #4a5865; }
+.livelegend .note { color: var(--muted); font-style: italic; font-size: 11px; }
+.livelegend .src { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 11px; }
+.livelegend .sw { display: inline-block; width: 16px; height: 5px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.livelegend .swp { display: inline-block; width: 12px; height: 12px; border: 1px solid #7c8b98; margin-right: 6px; vertical-align: middle; }
+
+/* Phone / short-viewport fallback: the panel drops out of the overlay into
+   normal flow above the map, and the map takes a fixed viewport share. */
+@media (max-width: 820px), (max-height: 600px) {
+  .input-col, .map-wrap .input-col { position: static; width: auto; max-height: none; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
+  #map, .map-wrap #map { height: 62vh; min-height: 380px; }
+  #siteLegend, .map-wrap #siteLegend { position: static; max-height: 240px; margin-top: 8px; }
+}
+</style>
 </head>
 <body>
 
@@ -239,7 +303,20 @@ footer { max-width: 1680px; padding: 20px 26px 34px; font-size: 12.5px; color: v
 
 <main>
   <div class="top">
-    <div class="input-col">
+    <div class="map-col">
+      <div class="reviewbar">
+        <button id="panelToggle" title="Show or hide the coordinates input panel">☰ Input panel</button>
+        <button id="prevSite" title="Previous site">◀ Prev</button>
+        <button id="nextSite" title="Next site">Next ▶</button>
+        <button id="plotAllSites" title="Zoom out to show every site at once and, when Site layers is on, draw the authoritative road-class and urban-boundary geometry around all of them">Plot all sites</button>
+        <span class="rinfo" id="reviewInfo">Click a row or pin — or hit Next — to step through sites</span>
+        <span style="flex:1"></span>
+        <label title="Continuously mirror every wired state's official functional-class layer and the 2020 ACUB urban boundaries across the visible map, in each source's own published colors. Road geometry loads once you zoom to street level (the services cap how much one query returns)"><input type="checkbox" id="liveLayers" checked> Live class + urban layers</label>
+        <label title="Draw the authoritative road-class and urban-boundary geometry around the selected site, in each source's own published colors"><input type="checkbox" id="showLayers" checked> Site layers</label>
+        <a href="sources.html" target="_blank" rel="noopener">Sources</a>
+      </div>
+      <div class="map-wrap">
+        <div class="input-col" id="inputPanel">
       <div class="controls">
         <label>State:
           <select id="stateSel">
@@ -288,18 +365,7 @@ Site 12, 44.2700, -83.5200"></textarea>
         </ol>
         <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
       </details>
-    </div>
-    <div class="map-col">
-      <div class="reviewbar">
-        <button id="prevSite" title="Previous site">◀ Prev</button>
-        <button id="nextSite" title="Next site">Next ▶</button>
-        <button id="plotAllSites" title="Zoom out to show every site at once and, when Source layers is on, draw the authoritative road-class and urban-boundary geometry around all of them">Plot all sites</button>
-        <span class="rinfo" id="reviewInfo">Click a row or pin — or hit Next — to step through sites</span>
-        <span style="flex:1"></span>
-        <label title="Draw the authoritative road-class and urban-boundary geometry around the selected site, in each source's own published colors"><input type="checkbox" id="showLayers" checked> Source layers</label>
-        <a href="sources.html" target="_blank" rel="noopener">Sources</a>
-      </div>
-      <div class="map-wrap">
+        </div>
         <div id="map"></div>
         <div id="siteLegend"></div>
       </div>
@@ -1024,6 +1090,9 @@ const imageryBase = L.layerGroup([
 ]);
 streetsBase.addTo(map);
 L.control.layers({ "Streets (road names)": streetsBase, "Satellite imagery": imageryBase }, null).addTo(map);
+// The input panel now floats over the map's top-left corner, so the zoom
+// control moves to the top-right (stacked above the basemap switcher).
+map.zoomControl.setPosition("topright");
 const markerLayer = L.layerGroup().addTo(map);
 
 function verdictBucket(v) {
@@ -1426,7 +1495,9 @@ function buildFrameQueryUrl(baseUrl, bbox, outFields, whereClause, generalize) {
     "&spatialRel=esriSpatialRelIntersects" +
     "&outFields=" + encodeURIComponent(outFields) +
     "&outSR=4326&returnGeometry=true&f=json";
-  if (generalize) url += "&maxAllowableOffset=0.0001";  // ~11m; for the huge ACUB polygons
+  // true -> 0.0001 deg (~11 m; for the huge ACUB polygons); a number is used
+  // as-is, letting the live-layer mirror generalize to the current pixel grid.
+  if (generalize) url += "&maxAllowableOffset=" + (typeof generalize === "number" ? generalize : 0.0001);
   return url;
 }
 async function queryFrame(baseUrl, bbox, outFields, whereClause, generalize) {
@@ -2276,6 +2347,166 @@ $("prevSite").addEventListener("click", () => selectSite(reviewIdx < 0 ? validPo
 $("showLayers").addEventListener("change", () => {
   if (reviewIdx >= 0) selectSite(reviewIdx);
   else { siteOverlay.clearLayers(); setLegendHtml(""); }
+});
+
+/* ---------------- live layer mirror (browse mode) ---------------- */
+// Continuously mirrors every wired state's official functional-class layer
+// and the NTAD 2020 ACUB urban boundaries across the visible map — the same
+// public services the classifier queries, drawn with each source's own
+// published renderer (reusing rr-report's fetchClassLayers / queryFrame /
+// symbolForFeature). Zoom-gated: the services cap a query at ~1000-2000
+// features and the AGOL-hosted FeatureServers are Query-only (no server-side
+// /export rendering), so road geometry loads from BROWSE_ROAD_ZOOM in and the
+// urban boundaries (generalized to the current pixel grid) from
+// BROWSE_ACUB_ZOOM; any record-cap truncation is disclosed in the legend.
+// Everything draws into one Leaflet <canvas> pane UNDER the site overlay and
+// pins, so thousands of segments stay cheap to render.
+const BROWSE_ROAD_ZOOM = 13, BROWSE_ACUB_ZOOM = 7;
+map.createPane("browsePane").style.zIndex = 350;   // above tiles (200), under site overlay (400) + pins
+const browseCanvas = L.canvas({ pane: "browsePane", padding: 0.4 });
+const browseOverlay = L.layerGroup().addTo(map);
+// Rough per-state boxes — the same bounds detectState() splits on. Overlaps
+// at borders just mean both states' layers are fetched there (each fails
+// soft to zero features outside its own network).
+const STATE_EXTENT = {
+  MI: [41.69, -90.45, 48.35, -82.10], WI: [42.45, -92.95, 47.35, -86.20],
+  MN: [43.50, -97.24, 49.38, -89.48], IL: [36.97, -91.52, 42.49, -87.02],
+  IN: [37.75, -88.10, 41.77, -84.79], OH: [38.40, -84.82, 41.98, -80.52],
+};
+function browseStatesInView(b) {
+  const out = [];
+  for (const [st, [s, w, n, e]] of Object.entries(STATE_EXTENT))
+    if (b.getSouth() <= n && b.getNorth() >= s && b.getWest() <= e && b.getEast() >= w) out.push(st);
+  return out;
+}
+
+const liveLegendCtl = L.control({ position: "bottomleft" });
+liveLegendCtl.onAdd = () => {
+  const div = L.DomUtil.create("div", "livelegend");
+  div.id = "liveLegend"; div.style.display = "none";
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+  return div;
+};
+liveLegendCtl.addTo(map);
+function setLiveLegend(html) {
+  const el = document.getElementById("liveLegend");
+  if (el) { el.innerHTML = html; el.style.display = html ? "block" : "none"; }
+}
+
+// Small keyed cache so zooming back out / toggling doesn't re-fetch the
+// exact frames just seen. Failed fetches aren't cached (retry on next pan).
+const browseCache = new Map();
+function browseCached(key, fn) {
+  if (!browseCache.has(key)) {
+    browseCache.set(key, fn().catch(e => { browseCache.delete(key); throw e; }));
+    if (browseCache.size > 60) browseCache.delete(browseCache.keys().next().value);
+  }
+  return browseCache.get(key);
+}
+
+let browseSeq = 0, browseTimer = null;
+async function refreshBrowseLayers() {
+  const seq = ++browseSeq;
+  if (!$("liveLayers").checked) { browseOverlay.clearLayers(); setLiveLegend(""); return; }
+  const z = map.getZoom();
+  const b = map.getBounds().pad(0.08);
+  const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
+  const states = browseStatesInView(b).filter(st => NFC_WIRED[st]);
+  const wantAcub = z >= BROWSE_ACUB_ZOOM;
+  const wantRoads = z >= BROWSE_ROAD_ZOOM && states.length > 0;
+  if (!wantAcub && !wantRoads) {
+    browseOverlay.clearLayers();
+    setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, road classes from zoom ${BROWSE_ROAD_ZOOM} (street level)</div>`);
+    return;
+  }
+  const bboxKey = [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat].map(v => v.toFixed(4)).join(",");
+  const degPerPx = (bbox.maxLon - bbox.minLon) / Math.max(1, map.getSize().x);
+  const jobs = [];
+  if (wantAcub) {
+    const offs = Math.max(0.0001, degPerPx);
+    jobs.push(browseCached("ACUB|" + bboxKey, async () => {
+      const [json, meta] = await Promise.all([
+        queryFrame(svc("ACUB"), bbox, "NAME", "1=1", offs),
+        fetchLayerMeta(svc("ACUB")),
+      ]);
+      return { kind: "acub", drawingInfo: meta.drawingInfo, features: json.features || [], truncated: !!json.exceededTransferLimit };
+    }).catch(e => ({ error: e })));
+  }
+  if (wantRoads) for (const st of states) {
+    jobs.push(browseCached(st + "|" + bboxKey, async () => {
+      const layers = await fetchClassLayers(st, bbox, (bbox.minLat + bbox.maxLat) / 2, (bbox.minLon + bbox.maxLon) / 2);
+      return { kind: "roads", layers };
+    }).catch(e => ({ error: e })));
+  }
+  const results = await Promise.all(jobs);
+  if (seq !== browseSeq) return;   // superseded by a newer pan/zoom
+
+  browseOverlay.clearLayers();
+  const classLegend = new Map(), headers = [];
+  let acubDrawn = false, acubCss = "rgb(252,201,237)", failures = 0, truncated = false, synth = false;
+  for (const r of results) {
+    if (!r || r.error) { failures++; continue; }
+    if (r.kind === "acub") {
+      const psym = r.drawingInfo && r.drawingInfo.renderer && r.drawingInfo.renderer.symbol;
+      const pc = (psym && psym.color) || [252, 201, 237, 255];
+      acubCss = `rgb(${pc[0]},${pc[1]},${pc[2]})`;
+      for (const f of r.features) {
+        for (const ring of ((f.geometry && f.geometry.rings) || [])) {
+          L.polygon(ring.map(([x, y]) => [y, x]), { renderer: browseCanvas, pane: "browsePane",
+            color: "#6e6e6e", weight: 1, fillColor: acubCss, fillOpacity: 0.22, interactive: false }).addTo(browseOverlay);
+          acubDrawn = true;
+        }
+      }
+      truncated = truncated || r.truncated;
+    } else {
+      for (const layer of r.layers) {
+        if (!headers.includes(layer.legendHeader)) headers.push(layer.legendHeader);
+        for (const f of layer.features) {
+          const s = symbolForFeature(layer.drawingInfo, layer.rendererField, f.attributes || {});
+          const css = `rgb(${s.color[0]},${s.color[1]},${s.color[2]})`;
+          for (const path of ((f.geometry && f.geometry.paths) || [])) {
+            L.polyline(path.map(([x, y]) => [y, x]), { renderer: browseCanvas, pane: "browsePane",
+              color: css, weight: Math.max(s.width || 2, 2), opacity: 0.85, interactive: false }).addTo(browseOverlay);
+          }
+        }
+        for (const [label, css] of orderedLineLegend(layer.drawingInfo, layer.rendererField, layer.features))
+          if (!classLegend.has(label)) classLegend.set(label, css);
+        truncated = truncated || layer.truncated;
+        synth = synth || layer.synthSymbology;
+      }
+    }
+  }
+  if (seq !== browseSeq) return;
+
+  const entries = [];
+  if (!wantRoads) entries.push(`<div class="note">Zoom to street level (zoom ${BROWSE_ROAD_ZOOM}+) to load road classes</div>`);
+  if (classLegend.size) {
+    entries.push(`<div class="hdr">${esc(headers.join(" + ") || "Road functional class")}</div>`);
+    for (const [label, css] of classLegend) entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);
+  } else if (wantRoads && !failures) {
+    entries.push(`<div class="note">No classified roads in view</div>`);
+  }
+  entries.push(`<div class="hdr">Urban boundary (USDOT NTAD 2020)</div>`);
+  entries.push(acubDrawn
+    ? `<div><span class="swp" style="background:${acubCss};opacity:.55"></span>2020 Adjusted Urban Area</div>`
+    : `<div class="note">No adjusted urban area in view (rural)</div>`);
+  if (truncated) entries.push(`<div class="note">Record cap hit — zoom in for complete coverage</div>`);
+  if (synth) entries.push(`<div class="note">Colors: standard FHWA palette where a source publishes a single-symbol renderer</div>`);
+  if (failures) entries.push(`<div class="note">${failures} layer fetch(es) failed — pan or zoom to retry</div>`);
+  entries.push(`<div class="src"><a href="sources.html" target="_blank" rel="noopener">Sources &amp; citations</a></div>`);
+  setLiveLegend(`<b>Live layers — official data</b>${entries.join("")}`);
+}
+function scheduleBrowseRefresh() { clearTimeout(browseTimer); browseTimer = setTimeout(refreshBrowseLayers, 250); }
+map.on("moveend", scheduleBrowseRefresh);
+$("liveLayers").addEventListener("change", refreshBrowseLayers);
+refreshBrowseLayers();
+
+/* ---------------- input-panel collapse ---------------- */
+$("panelToggle").addEventListener("click", () => {
+  const p = $("inputPanel");
+  p.classList.toggle("hidden");
+  $("panelToggle").textContent = (p.classList.contains("hidden") ? "☰ Show input panel" : "☰ Input panel");
 });
 
 /* ---------------- FIRMette batch -> ZIP ---------------- */

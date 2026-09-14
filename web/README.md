@@ -52,7 +52,7 @@ same FeatureCollection shape as the Excel tool's GeoJSON export
 Pasted site names are surfaced as labels on the map pins (permanent up to
 25 sites, hover past that). Clicking a result card or a pin zooms straight
 to that site; **Prev / Next** above the map step through the sites one by
-one (wrapping at the ends). While a site is selected and "Source layers"
+one (wrapping at the ends). While a site is selected and "Site layers"
 is checked, the page fetches the authoritative geometry around it — the
 state's road-class layer(s) and the 2020 ACUB urban-boundary polygon,
 via the same frame-envelope queries the PDF figures use — and draws it
@@ -61,6 +61,39 @@ colors. An on-map legend names the exact layers drawn, lists only the
 classes present, links each layer to a live ArcGIS view centered on the
 site, and links to the citations page below. Per-site layer fetches are
 cached, so stepping back and forth doesn't re-query.
+
+## Full-page map + live layer mirror (2026-09-14)
+
+The map is the page hero: it fills the viewport width and most of its
+height, with the coordinate-input controls in a collapsible card floating
+over its top-left corner ("☰ Input panel" toggles it) and the site legend
+floating bottom-right. On phone-width or short viewports the panel drops
+back into normal flow above the map.
+
+The **"Live class + urban layers"** toggle (on by default) continuously
+mirrors every wired state's official functional-class layer and the NTAD
+2020 ACUB urban boundaries across whatever area is visible — pan or zoom
+anywhere in the six Region V states and the page fetches that viewport's
+geometry from the same public services the classifier queries, drawn in
+each source's own published renderer colors (states are picked by
+bounding-box intersection with the view, so a border viewport draws both
+sides). A bottom-left legend lists exactly the classes present in view.
+
+Two constraints shape it, both disclosed in the legend:
+
+- **Zoom gating.** The services cap a single query at ~1000–2000 features
+  and the AGOL-hosted FeatureServers are *Query-only* (no server-side
+  `/export` rendering), so road geometry loads from zoom 13 (street
+  level) in; the urban-boundary polygons — generalized server-side to the
+  current pixel grid via `maxAllowableOffset` — load from zoom 7. Below
+  the gates the legend says what to do ("zoom in"); if a query still hits
+  the record cap, the legend discloses the truncation.
+- **Rendering.** Everything draws into one Leaflet `<canvas>` pane
+  beneath the site pins and the per-site overlay, so a few thousand
+  segments render without the per-element cost of SVG. Viewport fetches
+  are debounced (250 ms), keyed-cached, and sequence-guarded so a stale
+  response never paints over a newer view; failed fetches are not cached
+  and retry on the next pan.
 
 ## Data sources page
 
