@@ -81,13 +81,58 @@ sides). A bottom-left legend lists exactly the classes present in view.
 
 Two constraints shape it, both disclosed in the legend:
 
-- **Zoom gating.** The services cap a single query at ~1000–2000 features
-  and the AGOL-hosted FeatureServers are *Query-only* (no server-side
-  `/export` rendering), so road geometry loads from zoom 13 (street
-  level) in; the urban-boundary polygons — generalized server-side to the
-  current pixel grid via `maxAllowableOffset` — load from zoom 7. Below
-  the gates the legend says what to do ("zoom in"); if a query still hits
-  the record cap, the legend discloses the truncation.
+- **Zoom gating — progressive by class (2026-09-14).** The services cap a
+  single query at ~1000–2000 features and the AGOL-hosted FeatureServers
+  are *Query-only* (no server-side `/export` rendering), so the mirror
+  displays scale-dependently the way professional viewers do: **principal
+  arterials appear from zoom 10, minor arterials from zoom 12, and the
+  full network (collectors + local streets) from zoom 13** — at the lower
+  bands each state is queried with a server-side class filter
+  (arterials are a tiny fraction of the segments: metro Columbus at a
+  z11-sized view is 23,768 segments total but 1,144 at class ≤ 4,
+  live-verified), with geometry generalized to the pixel grid. The
+  urban-boundary polygons load from zoom 7 the same way. The legend
+  always says what's shown ("principal arterials and up — zoom in for
+  collectors and local streets"); if a query still hits the record cap
+  (downtown Chicago's fine-chopped arterials can), the legend discloses
+  the truncation. Per-state filter syntax differs (numeric vs string
+  codes; WisDOT's local layer encodes urban/rural into its code) — all
+  six confirmed live via `returnCountOnly`.
+
+  This progressive live path is now the **fallback** — see the next
+  section: where a state's pre-built HPMS tileset exists, the class
+  display comes from static tiles instead and none of these live layer
+  queries fire.
+
+## Baked HPMS class tiles (2026-09-14) — the primary class display
+
+Per user direction ("I don't love all this live querying — download the
+HPMS data; high classes never change"), the road-class map layer is
+served from **pre-built vector tiles** of FHWA's HPMS full-extent data —
+every public road, class 1-7, locals included — one PMTiles file per
+state in `web/tiles/`, built by `build/tiles/` (see its README for the
+pipeline: quadtree envelope harvest of the BTS `HPMS_National_Current`
+service → tippecanoe). Division of labor:
+
+- **Display = tiles.** Instant at any zoom, full network including the
+  small roads most reviewed points sit on, zero live queries, no record
+  caps, works even when a state server is down. Progressive display is
+  baked into the tileset (interstates z6 → locals z12). The legend names
+  the HPMS year and which states are tile-served.
+- **Verdicts = live.** Classification of pasted points still queries the
+  state DOT's authoritative layer per point, exactly as before — that's
+  where currency matters (collector/local reclassifications move the
+  federal-aid line) and it's only a few queries per site.
+- **Fallback = the live mirror above.** A state with no tileset (or a
+  failed tile fetch, or a `file://` open) automatically keeps the live
+  progressive class display.
+
+**GitHub Pages still hosts everything.** PMTiles are read via HTTP range
+requests, which Pages' CDN serves; the constraint is GitHub's 100 MB
+per-file limit — per-state sizes are recorded in `build/tiles/README.md`
+and a state that outgrows it splits into two files. Renderer:
+`protomaps-leaflet` + `pmtiles` vendored in `web/vendor/` (no CDN),
+drawing into the same canvas pane under the site pins.
 - **Rendering.** Everything draws into one Leaflet `<canvas>` pane
   beneath the site pins and the per-site overlay, so a few thousand
   segments render without the per-element cost of SVG. Viewport fetches

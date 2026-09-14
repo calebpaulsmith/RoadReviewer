@@ -1069,6 +1069,39 @@ live services. Full design narrative + verification history:
   segment wins, cached) + standard class-color swatch; verdict pins got
   a bolder white ring/radius so red/green/yellow reads over the
   class-colored mirror lines.
+- Progressive class display (2026-09-14): the live mirror now shows
+  principal arterials from z10, minor arterials from z12, full network
+  from z13 — lower bands query each state layer with a server-side
+  class filter (per-state syntax: numeric `<=` for MI/IN/MN/OH, string
+  `IN` lists for IL `FC` and WI trunk `FED_FC_CD`, numeric IN list of
+  WisDOT's urban/rural-encoded local codes; all six confirmed live via
+  returnCountOnly — metro Columbus: 23,768 segs total vs 1,144 at
+  class<=4) + pixel-grid `maxAllowableOffset`. `fetchClassLayers` takes
+  an optional `{classCap, offset}` 5th arg (PDF figures/site review
+  pass none — unchanged). HPMS was evaluated as an alternative: the
+  BTS nationwide service is a Query-only FeatureServer with the same
+  2,000-record cap and prior-year data (would disagree with the
+  authoritative state layers), and geo.dot.gov's NTAD MapServers are
+  token-gated — pre-baked vector tiles from the HPMS FGDB remain the
+  only true any-zoom route, parked as heavy (build pipeline, ~100s of
+  MB, annual refresh).
+- Baked HPMS class tiles (2026-09-14, per user direction — "download
+  the HPMS data; high classes never change; less live querying"): the
+  class DISPLAY now serves from pre-built per-state PMTiles
+  (`web/tiles/<st>.pmtiles`, pipeline in `build/tiles/`) — the full
+  HPMS network incl. locals, progressive bands baked in (interstates
+  z6 → locals z12), rendered by vendored `protomaps-leaflet`+`pmtiles`
+  into the browse canvas pane; VERDICTS stay live per point against
+  the state DOT layers, and states without a tileset fall back to the
+  live progressive mirror. Extraction gotcha: the ~30M-row national
+  HPMS table 400s (~55 s server give-up) on ANY attribute-filtered
+  offset page and on state-sized envelopes — harvest by quadtree
+  envelope (spatial index), seed ≤1° cells, treat "Unable to perform
+  query" as a split signal, dedupe by OBJECTID. protomaps-leaflet
+  trap: a symbolizer attr function is per-feature only when it
+  declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
+  (HTTP range requests); GitHub's 100 MB/file limit is the sizing
+  constraint (per-state sizes in build/tiles/README.md).
 
 ---
 

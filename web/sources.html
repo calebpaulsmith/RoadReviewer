@@ -174,6 +174,23 @@
     these layers are generalized Census cartography for navigation, not authoritative jurisdiction lines.</p>
 </section>
 
+<section id="hpms">
+  <h2>Pre-built class tiles — FHWA HPMS</h2>
+  <div class="org">Organization: <b>FHWA / USDOT BTS</b> — Highway Performance Monitoring System (full extent)</div>
+  <div class="url"><a href="https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/HPMS_National_Current/FeatureServer/0" target="_blank" rel="noopener">https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/HPMS_National_Current/FeatureServer/0</a></div>
+  <p>The road-class <em>map layer</em> is served from vector tiles pre-built from this nationwide HPMS
+    dataset (every public road, FHWA class 1-7; fields read: <code>F_SYSTEM</code>, filtered by
+    <code>STATE_ID</code>), one static file per state under <code>tiles/</code>. The legend names the HPMS
+    submission year and which states are tile-served. <b>Classification verdicts never read these tiles</b> —
+    they are always computed live from the state DOT layers above, where currency matters most
+    (collector/local reclassifications move the federal-aid line). States without a tileset fall back to
+    drawing the live state layers directly.</p>
+  <div class="quirk"><b>Quirk — extraction.</b> The national table is ~30M rows; attribute-filtered paging
+    times out server-side, so the build pipeline (<code>build/tiles/</code> in the repo) harvests each state
+    by quadtree envelope queries riding the spatial index, deduplicating boundary-crossing segments by
+    <code>OBJECTID</code>.</div>
+</section>
+
 <section id="firmette">
   <h2>FIRMettes (flood map extracts)</h2>
   <div class="org">Organization: <b>FEMA</b> — Map Service Center, Print FIRMette geoprocessing service</div>
