@@ -69,6 +69,7 @@ Measured (2026-09-14, HPMS_National_Current):
 | IN | 529,343 | 6.4 MB |
 | OH | 487,331 | 26 MB |
 | IL | 445,757 | 22 MB |
+| MN | 509,570 | 22 MB |
 
 Extrapolating by segment count, WI (~2.6× MI) lands near 50 MB — all six
 fit comfortably; total ≈ 90-120 MB across files.
