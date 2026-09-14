@@ -81,13 +81,33 @@ sides). A bottom-left legend lists exactly the classes present in view.
 
 Two constraints shape it, both disclosed in the legend:
 
-- **Zoom gating.** The services cap a single query at ~1000–2000 features
-  and the AGOL-hosted FeatureServers are *Query-only* (no server-side
-  `/export` rendering), so road geometry loads from zoom 13 (street
-  level) in; the urban-boundary polygons — generalized server-side to the
-  current pixel grid via `maxAllowableOffset` — load from zoom 7. Below
-  the gates the legend says what to do ("zoom in"); if a query still hits
-  the record cap, the legend discloses the truncation.
+- **Zoom gating — progressive by class (2026-09-14).** The services cap a
+  single query at ~1000–2000 features and the AGOL-hosted FeatureServers
+  are *Query-only* (no server-side `/export` rendering), so the mirror
+  displays scale-dependently the way professional viewers do: **principal
+  arterials appear from zoom 10, minor arterials from zoom 12, and the
+  full network (collectors + local streets) from zoom 13** — at the lower
+  bands each state is queried with a server-side class filter
+  (arterials are a tiny fraction of the segments: metro Columbus at a
+  z11-sized view is 23,768 segments total but 1,144 at class ≤ 4,
+  live-verified), with geometry generalized to the pixel grid. The
+  urban-boundary polygons load from zoom 7 the same way. The legend
+  always says what's shown ("principal arterials and up — zoom in for
+  collectors and local streets"); if a query still hits the record cap
+  (downtown Chicago's fine-chopped arterials can), the legend discloses
+  the truncation. Per-state filter syntax differs (numeric vs string
+  codes; WisDOT's local layer encodes urban/rural into its code) — all
+  six confirmed live via `returnCountOnly`.
+
+  *Why not HPMS?* FHWA's exportable HPMS data was evaluated for this:
+  the BTS-hosted nationwide service (`HPMS_National_Current`, same AGOL
+  org as the ACUB layer) is also a Query-only FeatureServer with a
+  2,000-record cap — no zoom advantage — and its data is the prior
+  year's submission, which could disagree with the authoritative state
+  layers the classifier queries. Pre-baking the downloadable HPMS FGDB
+  into vector tiles would give true any-zoom display but needs a build
+  pipeline, ~hundreds of MB hosted, and annual manual refreshes; parked
+  unless progressive display proves insufficient.
 - **Rendering.** Everything draws into one Leaflet `<canvas>` pane
   beneath the site pins and the per-site overlay, so a few thousand
   segments render without the per-element cost of SVG. Viewport fetches

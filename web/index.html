@@ -332,7 +332,7 @@ details.howcolors { margin-top: 8px; }
         <button id="plotAllSites" title="Zoom out to show every site at once and, when Site layers is on, draw the authoritative road-class and urban-boundary geometry around all of them">Plot all sites</button>
         <span class="rinfo" id="reviewInfo">Click a row or pin — or hit Next — to step through sites</span>
         <span style="flex:1"></span>
-        <label title="Continuously mirror every wired state's official functional-class layer and the 2020 ACUB urban boundaries across the visible map, in each source's own published colors. Road geometry loads once you zoom to street level (the services cap how much one query returns)"><input type="checkbox" id="liveLayers" checked> Live class + urban layers</label>
+        <label title="Continuously mirror every wired state's official functional-class layer and the 2020 ACUB urban boundaries across the visible map, in each source's own published colors. Progressive by zoom so it stays fast: arterials appear from zoom 10, collectors from zoom 12, the full network from zoom 13 (the services cap how much one query returns)"><input type="checkbox" id="liveLayers" checked> Live class + urban layers</label>
         <label title="Draw the authoritative road-class and urban-boundary geometry around the selected site, in each source's own published colors"><input type="checkbox" id="showLayers" checked> Site layers</label>
         <a href="sources.html" target="_blank" rel="noopener">Sources</a>
       </div>
@@ -1606,7 +1606,29 @@ function officialAppLink(state) {
 // Mirrors rr-core's NFC_WIRED dispatch (all six states), but frame-wide and
 // with the layer's own drawingInfo so the figure is drawn in that source's
 // real published symbology instead of an invented color scheme.
-async function fetchClassLayers(state, bbox, lat, lon) {
+//
+// opts (optional; used by the live mirror's progressive low-zoom bands):
+//   classCap — only fetch segments with FHWA class <= this number (3 =
+//     principal arterials, 4 = + minor arterials). The filter is expressed
+//     per state because field names/types differ (numeric vs string codes;
+//     Wisconsin's local layer encodes urban/rural INTO its code). All six
+//     filters confirmed live 2026-09-14 via returnCountOnly.
+//   offset — maxAllowableOffset (degrees) to generalize geometry serverside.
+function capWhere(base, expr) { return base === "1=1" ? expr : base + " AND " + expr; }
+function fhwaInList(cap, quoted) {
+  const v = []; for (let c = 1; c <= cap; c++) v.push(quoted ? `'${c}'` : c);
+  return "(" + v.join(",") + ")";
+}
+// WisDOT local-layer codes (FNCT_CLS_CTGY_TYCD, SmallInteger) grouped by the
+// bare FHWA class WisconsinLocalCategoryToFhwa() decodes them to.
+const WI_LOCAL_CODES_BY_FHWA = { 3: [10, 60], 4: [20, 86], 5: [30, 96], 6: [40], 7: [45, 97] };
+function wiLocalCapList(cap) {
+  const v = []; for (let c = 1; c <= cap; c++) for (const code of (WI_LOCAL_CODES_BY_FHWA[c] || [])) v.push(code);
+  return "(" + v.join(",") + ")";
+}
+async function fetchClassLayers(state, bbox, lat, lon, opts) {
+  const cap = opts && opts.classCap;
+  const gen = (opts && opts.offset) || false;
   // MN/IL/OH (PR #36): one classic MapServer layer each, all publishing a
   // real uniqueValue renderer (confirmed live 2026-07-15). Renderer-field
   // trap, WI-style: MnDOT keys its renderer off FUNCTIONAL_CLASS_DESC (the
@@ -1614,16 +1636,19 @@ async function fetchClassLayers(state, bbox, lat, lon) {
   // the frame query fetches both fields.
   const SIMPLE_STATES = {
     MN: { key: "MN_NFC", out: "FUNCTIONAL_CLASS,FUNCTIONAL_CLASS_DESC", rf: "FUNCTIONAL_CLASS_DESC", codeField: "FUNCTIONAL_CLASS",
+          capExpr: c => `FUNCTIONAL_CLASS <= ${c}`,
           fallbackName: "MnDOT Functional Class", hdr: "Road functional class (MnDOT)" },
     IL: { key: "IL_NFC", out: "FC", rf: "FC", codeField: "FC",
+          capExpr: c => `FC IN ${fhwaInList(c, true)}`,   // FC is a STRING '1'-'7'
           fallbackName: "IDOT Functional Class", hdr: "Road functional class (IDOT)" },
     OH: { key: "OH_NFC", out: "FUNCTION_CLASS_CD", rf: "FUNCTION_CLASS_CD", codeField: "FUNCTION_CLASS_CD",
+          capExpr: c => `FUNCTION_CLASS_CD <= ${c}`,
           fallbackName: "ODOT Functional Class", hdr: "Road functional class (ODOT)" },
   };
   if (SIMPLE_STATES[state]) {
     const s = SIMPLE_STATES[state];
     const [json, meta] = await Promise.all([
-      queryFrame(svc(s.key), bbox, s.out, "1=1", false),
+      queryFrame(svc(s.key), bbox, s.out, cap ? s.capExpr(cap) : "1=1", gen),
       fetchLayerMeta(svc(s.key)),
     ]);
     const published = meta.drawingInfo && meta.drawingInfo.renderer && meta.drawingInfo.renderer.type === "uniqueValue";
@@ -1637,7 +1662,8 @@ async function fetchClassLayers(state, bbox, lat, lon) {
   }
   if (state === "MI") {
     const [json, meta] = await Promise.all([
-      queryFrame(svc("MI_NFC"), bbox, "FunctionalSystem,PR", "RHRetireDate IS NULL", false),
+      queryFrame(svc("MI_NFC"), bbox, "FunctionalSystem,PR",
+        cap ? capWhere("RHRetireDate IS NULL", `FunctionalSystem <= ${cap} AND FunctionalSystem >= 1`) : "RHRetireDate IS NULL", gen),
       fetchLayerMeta(svc("MI_NFC")),
     ]);
     return [{ url: svc("MI_NFC"), layerName: meta.name || "MDOT Functional System (NFC)",
@@ -1648,7 +1674,7 @@ async function fetchClassLayers(state, bbox, lat, lon) {
   }
   if (state === "IN") {
     const [json, meta] = await Promise.all([
-      queryFrame(svc("IN_NFC"), bbox, "FUNCTIONAL_CLASS", "1=1", false),
+      queryFrame(svc("IN_NFC"), bbox, "FUNCTIONAL_CLASS", cap ? `FUNCTIONAL_CLASS <= ${cap}` : "1=1", gen),
       fetchLayerMeta(svc("IN_NFC")),
     ]);
     // INDOT publishes a single-symbol renderer (every class the same color) —
@@ -1667,9 +1693,11 @@ async function fetchClassLayers(state, bbox, lat, lon) {
     // state trunk network on top — together they cover the whole network the
     // way the classifier's trunk-then-local fallback sees it.
     const [localJson, localMeta, trunkJson, trunkMeta] = await Promise.all([
-      queryFrame(svc("WI_LOCAL_ROADS"), bbox, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", false),
+      queryFrame(svc("WI_LOCAL_ROADS"), bbox, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM",
+        cap ? `FNCT_CLS_CTGY_TYCD IN ${wiLocalCapList(cap)}` : "1=1", gen),
       fetchLayerMeta(svc("WI_LOCAL_ROADS")),
-      queryFrame(svc("WI_STATE_TRUNK"), bbox, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", false),
+      queryFrame(svc("WI_STATE_TRUNK"), bbox, "FED_FC_CD,FC_CD,HWYTYPE,HWYNUM,HWYDIR",
+        cap ? `FED_FC_CD IN ${fhwaInList(cap, true)}` : "1=1", gen),
       fetchLayerMeta(svc("WI_STATE_TRUNK")),
     ]);
     return [
@@ -2411,7 +2439,19 @@ $("showLayers").addEventListener("change", () => {
 // BROWSE_ACUB_ZOOM; any record-cap truncation is disclosed in the legend.
 // Everything draws into one Leaflet <canvas> pane UNDER the site overlay and
 // pins, so thousands of segments stay cheap to render.
-const BROWSE_ROAD_ZOOM = 13, BROWSE_ACUB_ZOOM = 7;
+const BROWSE_ROAD_ZOOM = 13, BROWSE_MAJOR_ROAD_ZOOM = 10, BROWSE_ACUB_ZOOM = 7;
+// Progressive class display (2026-09-14): between BROWSE_MAJOR_ROAD_ZOOM and
+// BROWSE_ROAD_ZOOM the mirror fetches only the higher functional classes —
+// arterials are a tiny fraction of the segments (live-verified: metro
+// Columbus at a z11-sized view is 23,768 segments total but 1,144 at class
+// <= 4), so big areas draw fast and under the services' record caps without
+// waiting for street-level zoom. The full network still starts at z13.
+function browseClassCap(z) {
+  if (z >= BROWSE_ROAD_ZOOM) return null;       // full network, no filter
+  if (z >= 12) return 4;                        // principal + minor arterials
+  if (z >= BROWSE_MAJOR_ROAD_ZOOM) return 3;    // principal arterials only
+  return 0;                                     // no roads yet
+}
 map.createPane("browsePane").style.zIndex = 350;   // above tiles (200), under site overlay (400) + pins
 const browseCanvas = L.canvas({ pane: "browsePane", padding: 0.4 });
 const browseOverlay = L.layerGroup().addTo(map);
@@ -2464,10 +2504,11 @@ async function refreshBrowseLayers() {
   const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
   const states = browseStatesInView(b).filter(st => NFC_WIRED[st]);
   const wantAcub = z >= BROWSE_ACUB_ZOOM;
-  const wantRoads = z >= BROWSE_ROAD_ZOOM && states.length > 0;
+  const classCap = browseClassCap(z);
+  const wantRoads = classCap !== 0 && states.length > 0;
   if (!wantAcub && !wantRoads) {
     browseOverlay.clearLayers();
-    setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, road classes from zoom ${BROWSE_ROAD_ZOOM} (street level)</div>`);
+    setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, major roads from zoom ${BROWSE_MAJOR_ROAD_ZOOM}, the full road network from zoom ${BROWSE_ROAD_ZOOM}</div>`);
     return;
   }
   const bboxKey = [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat].map(v => v.toFixed(4)).join(",");
@@ -2484,8 +2525,10 @@ async function refreshBrowseLayers() {
     }).catch(e => ({ error: e })));
   }
   if (wantRoads) for (const st of states) {
-    jobs.push(browseCached(st + "|" + bboxKey, async () => {
-      const layers = await fetchClassLayers(st, bbox, (bbox.minLat + bbox.maxLat) / 2, (bbox.minLon + bbox.maxLon) / 2);
+    jobs.push(browseCached(st + "|" + (classCap || "all") + "|" + bboxKey, async () => {
+      const layers = await fetchClassLayers(st, bbox,
+        (bbox.minLat + bbox.maxLat) / 2, (bbox.minLon + bbox.maxLon) / 2,
+        classCap ? { classCap, offset: Math.max(0.0001, degPerPx) } : undefined);
       return { kind: "roads", layers };
     }).catch(e => ({ error: e })));
   }
@@ -2530,7 +2573,8 @@ async function refreshBrowseLayers() {
   if (seq !== browseSeq) return;
 
   const entries = [];
-  if (!wantRoads) entries.push(`<div class="note">Zoom to street level (zoom ${BROWSE_ROAD_ZOOM}+) to load road classes</div>`);
+  if (!wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes</div>`);
+  else if (classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
   if (classLegend.size) {
     entries.push(`<div class="hdr">${esc(headers.join(" + ") || "Road functional class")}</div>`);
     for (const [label, css] of classLegend) entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);

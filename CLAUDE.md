@@ -1069,6 +1069,22 @@ live services. Full design narrative + verification history:
   segment wins, cached) + standard class-color swatch; verdict pins got
   a bolder white ring/radius so red/green/yellow reads over the
   class-colored mirror lines.
+- Progressive class display (2026-09-14): the live mirror now shows
+  principal arterials from z10, minor arterials from z12, full network
+  from z13 — lower bands query each state layer with a server-side
+  class filter (per-state syntax: numeric `<=` for MI/IN/MN/OH, string
+  `IN` lists for IL `FC` and WI trunk `FED_FC_CD`, numeric IN list of
+  WisDOT's urban/rural-encoded local codes; all six confirmed live via
+  returnCountOnly — metro Columbus: 23,768 segs total vs 1,144 at
+  class<=4) + pixel-grid `maxAllowableOffset`. `fetchClassLayers` takes
+  an optional `{classCap, offset}` 5th arg (PDF figures/site review
+  pass none — unchanged). HPMS was evaluated as an alternative: the
+  BTS nationwide service is a Query-only FeatureServer with the same
+  2,000-record cap and prior-year data (would disagree with the
+  authoritative state layers), and geo.dot.gov's NTAD MapServers are
+  token-gated — pre-baked vector tiles from the HPMS FGDB remain the
+  only true any-zoom route, parked as heavy (build pipeline, ~100s of
+  MB, annual refresh).
 
 ---
 

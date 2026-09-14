@@ -237,6 +237,20 @@ checks.push(["live mirror legend lists source class labels", liveLegendText.incl
 checks.push(["live mirror legend cites the urban-area layer", liveLegendText.includes("2020 Adjusted Urban Area")]);
 checks.push(["live mirror drew into its canvas pane (under pins)", await page.evaluate(() =>
   !!document.querySelector(".leaflet-browse-pane canvas") && browseOverlay.getLayers().length > 50)]);
+// progressive low-zoom band: at z11 the mirror fetches arterials-only
+// (classCap 3 -> MI where clause carries FunctionalSystem <= 3) and the
+// legend discloses the partial display
+await page.evaluate(() => map.setView([42.28536, -85.57025], 11));
+await page.waitForFunction(() => {
+  const el = document.getElementById("liveLegend");
+  return el && el.textContent.includes("principal arterials") && el.textContent.includes("zoom in for collectors");
+}, { timeout: 15000 });
+checks.push(["live mirror low-zoom band discloses arterials-only display", true]);
+checks.push(["low-zoom band queried with a class-cap filter", await page.evaluate(() =>
+  netLines.some(l => l.includes("FeatureServer/353/query") && l.includes("FunctionalSystem%20%3C%3D%203")))]);
+await page.evaluate(() => map.setView([42.6911, -84.5360], 17));   // restore for the checks below
+await page.waitForFunction(() => document.getElementById("liveLegend").textContent.includes("Minor Collector"), { timeout: 15000 });
+
 checks.push(["unchecking Live layers clears the mirror", await page.evaluate(async () => {
   document.getElementById("liveLayers").checked = false;
   document.getElementById("liveLayers").dispatchEvent(new Event("change"));
