@@ -1062,6 +1062,13 @@ live services. Full design narrative + verification history:
   spatial filter (visual only — exports/stepping still cover all
   sites). Also fixed: vendored Leaflet was missing its `images/` dir,
   so the basemap-switcher icon rendered as a blank square.
+  Follow-up (same date): the Find box suggests as you type (300 ms
+  debounce, 2+ chars, URL-keyed fetch cache); each road suggestion is
+  annotated async with the state's FHWA class (rr-core `NFC_WIRED`
+  point query at the longest matched segment's midpoint, closest
+  segment wins, cached) + standard class-color swatch; verdict pins got
+  a bolder white ring/radius so red/green/yellow reads over the
+  class-colored mirror lines.
 
 ---
 
