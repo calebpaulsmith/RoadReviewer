@@ -1494,10 +1494,14 @@ function render() {
       const bucket = verdictBucket(res.verdict);
       tr.className = "row v-" + bucket;
       const retry = res.failed ? ` <a href="#" class="retry">retry</a>` : "";
+      const seg0 = closestStateSeg(res);
+      const segChip = seg0
+        ? `<span class="chip" title="The closest segment's identifiers in the STATE's own linear referencing system, as submitted to FHWA (HPMS ${HPMS_TILE_YEAR}) — e.g. an MDOT PR number. Use it to look the segment up in the state's inventory. Included in the CSV / GeoJSON / KMZ exports."><i class="cw" style="background:#c8b6e2"></i>State route ${esc(seg0.routeId)}${seg0.mp ? " \u00b7 MP " + esc(seg0.mp) : ""}</span>`
+        : "";
       const srcChip = res.srcNote
         ? `<span class="chip" title="Classified from the tilesets hosted with this site — FHWA HPMS ${HPMS_TILE_YEAR} classes + the 2020 Adjusted Urban Boundaries — with no live state-DOT queries. Tick 'Live verdicts' under Data service URLs to query the live layers instead."><i class="cw" style="background:#9fb6cc"></i>cached data</span>`
         : "";
-      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), srcChip, extrasHtml(res)].filter(Boolean).join(" ");
+      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
         `<span class="caret">▶</span></div>` +
         (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
@@ -1612,14 +1616,26 @@ $("liveVerdicts").addEventListener("change", () => {
 });
 
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
+// The closest segment's STATE LRS linkage (route id + mileposts) — only
+// the rebuilt tilesets carry it; blank otherwise and on the live path.
+function closestStateSeg(res) {
+  const s0 = res && res.segments && res.segments[0];
+  if (!s0 || !s0.routeId) return null;
+  const mp = (s0.mpFrom != null && s0.mpTo != null) ? `${s0.mpFrom}\u2013${s0.mpTo}` : "";
+  return { routeId: s0.routeId, mp };
+}
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
-                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason", "Note"];
+                        "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason",
+                        "State Route ID (closest segment)", "Milepost Range (closest segment)", "Note"];
 function exportRows() {
-  return currentPoints.filter(p => !p.invalid && p.result).map(p => [
-    p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
-    p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
-    p.note || "",
-  ]);
+  return currentPoints.filter(p => !p.invalid && p.result).map(p => {
+    const seg = closestStateSeg(p.result);
+    return [
+      p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
+      p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
+      seg ? seg.routeId : "", seg ? seg.mp : "", p.note || "",
+    ];
+  });
 }
 $("dlCsv").addEventListener("click", () => {
   const q = v => '"' + String(v ?? "").replaceAll('"', '""') + '"';
@@ -1658,6 +1674,8 @@ $("dlGeojson").addEventListener("click", () => {
     add("RoadName", r.roadName);
     add("StreetName", r.streets);
     add("ReviewNote", r.reviewReason);
+    const seg = closestStateSeg(r);
+    if (seg) { add("StateRouteID", seg.routeId); add("MilepostRange", seg.mp); }
     add("Note", p.note);
     props.Latitude = p.lat; props.Longitude = p.lon;
     return { type: "Feature", properties: props,
@@ -1686,8 +1704,10 @@ $("dlKmz").addEventListener("click", () => {
     const r = p.result, b = verdictBucket(r.verdict);
     const rows = [["Federal Aid Status", r.verdict], ["Review Reason", r.reviewReason],
       ["FHWA Class", r.classLabel], ["Urban/Rural", r.urbanRural], ["Urban Area (ACUB)", r.acubName],
-      ["Road Name(s)", r.roadName], ["Street(s)", r.streets], ["Note", p.note],
-      ["Coordinates", p.lat + ", " + p.lon]]
+      ["Road Name(s)", r.roadName], ["Street(s)", r.streets],
+      ["State Route ID (closest segment)", (closestStateSeg(r) || {}).routeId],
+      ["Milepost Range", (closestStateSeg(r) || {}).mp],
+      ["Note", p.note], ["Coordinates", p.lat + ", " + p.lon]]
       .filter(([, v]) => v != null && String(v).trim() !== "")
       .map(([k, v]) => `<b>${ex(k)}:</b> ${ex(v)}`).join("<br/>");
     return `<Placemark><name>${ex(p.name)}</name><styleUrl>#rr-${b}</styleUrl>` +
@@ -2910,18 +2930,27 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
   out.acubName = acub.name;
   out.acubBoundary = acub.boundary;
 
+  // Segments carry the STATE's own LRS keys where the tileset has them
+  // (rebuilt tiles: R = ROUTE_ID, B/E = mileposts, N = RouteName, RN =
+  // RouteNumber — HPMS is built from the states' submissions, so R points
+  // straight back at the state inventory, e.g. an MDOT PR number).
+  const roads = [];
   const roadFeats = await tileFeaturesNear(HPMS_TILE_URL(stateCode), "roads", CLASS_TILE_Z, lat, lon, bufferFt);
   for (const f of roadFeats) {
     if (f.geomType !== 2) continue;
     const d = minDistanceFt({ paths: f.parts }, lat, lon);
-    if (d <= bufferFt)
-      out.segments.push({ code: Math.trunc(Number(f.props.F)), name: "", distFt: Math.round(d) });
+    if (d > bufferFt) continue;
+    const nm = cleanStr(f.props.N);
+    out.segments.push({ code: Math.trunc(Number(f.props.F)), name: nm, distFt: Math.round(d),
+      routeId: f.props.R != null ? String(f.props.R) : "",
+      mpFrom: f.props.B != null ? f.props.B : null,
+      mpTo: f.props.E != null ? f.props.E : null });
+    if (nm) roads.push({ name: nm, distFt: Math.round(d) });   // Road Name column, offline
   }
   out.segments.sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
 
   // Street names still come from Census TIGER when reachable — non-fatal
   // and verdict-irrelevant, exactly like the live path's name backfill.
-  const roads = [];
   try {
     const tiger = await runQuery(svc("TIGER_ROADS"), lat, lon, "NAME", "1=1", bufferFt, true);
     const seen = new Set();
@@ -3112,7 +3141,7 @@ function buildPopoutTable() {
   const pts = validPoints();
   const head = "<tr><th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>Verdict</th>" +
     "<th>Review reason</th><th>Closest class</th><th>Urban / rural</th><th>Urban area</th>" +
-    "<th>Roads found</th><th>Note</th><th>Links</th></tr>";
+    "<th>Roads found</th><th>State route ID \u00b7 MP</th><th>Note</th><th>Links</th></tr>";
   const rows = pts.map(p => {
     const r = p.result || {};
     const bucket = verdictBucket(r.verdict);
@@ -3123,7 +3152,9 @@ function buildPopoutTable() {
       `<td class="mono">${p.lat}</td><td class="mono">${p.lon}</td><td>${esc(p._state || "")}</td>` +
       `<td>${r.verdict ? esc(r.verdict) : "<i>querying…</i>"}</td><td>${reason}</td>` +
       `<td>${esc(r.classLabel || "")}</td><td>${esc(r.urbanRural || "")}</td><td>${esc(r.acubName || "")}</td>` +
-      `<td>${esc(r.roadName || "")}</td><td>${esc(p.note || "")}</td>` +
+      `<td>${esc(r.roadName || "")}</td>` +
+      `<td class="mono">${(seg => seg ? esc(seg.routeId) + (seg.mp ? " \u00b7 " + esc(seg.mp) : "") : "")(closestStateSeg(r))}</td>` +
+      `<td>${esc(p.note || "")}</td>` +
       `<td>${pointLinks(p.lat, p.lon, p._state || "")}</td></tr>`;
   });
   $("popoutTable").innerHTML = head + rows.join("");

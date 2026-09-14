@@ -1169,6 +1169,19 @@ live services. Full design narrative + verification history:
   queries. Find box: state dropdown REMOVED (searches span the six
   states; typing a state name matches it); a shown road reports how
   many of the user's points lie within the buffer of it.
+- State-linkage tiles (2026-09-14 round 2, per user: "connect the
+  segments to state segments"): the state tilesets are rebuilt with
+  each segment's STATE LRS keys from HPMS (R=ROUTE_ID — MI: the MDOT
+  PR number, verified 0006904 at the Kalamazoo test point; B/E =
+  mileposts; N=RouteName — offline street names incl. MN/IL whose own
+  layers have none; RN=RouteNumber). Cached segments carry
+  routeId/mpFrom/mpTo/name; rows show a "State route <id> · MP" chip;
+  CSV/GeoJSON/KMZ export State Route ID + Milepost Range
+  (closestStateSeg helper). SERVICE TRAP: the HPMS layer stopped
+  accepting resultRecordCount that evening (400 on every query with
+  it; republished as HPMS_National_2024_FullJoin) — the harvester
+  dropped the param; maxRecordCount still caps pages and
+  exceededTransferLimit still drives the quadtree split.
 
 ---
 

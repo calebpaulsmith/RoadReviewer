@@ -76,6 +76,33 @@ All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
 across files. (IN is an outlier at 6.4 MB despite its feature count —
 INDOT submits shorter, simpler segment geometry.)
 
+## State-linkage attributes in the class tiles (2026-09-14, round 2)
+
+Per user direction ("connect the segments to state segments"), the
+state tilesets are rebuilt carrying each segment's **state LRS keys** —
+HPMS is built from the states' own submissions, so these point straight
+back at the state inventory:
+
+| tile key | HPMS field | meaning |
+|---|---|---|
+| `F` | F_SYSTEM | FHWA class 1-7 (as before) |
+| `R` | ROUTE_ID | the STATE's LRS route id (MI: the MDOT PR number — live-verified `0006904` at the Kalamazoo test point; IN: INDOT LRS id; IL: IDOT key-route; OH: ODOT NLFID-style; MN/WI: their LRS ids) |
+| `B`/`E` | BEGIN/END_POINT | state mileposts (3 decimals) |
+| `N` | RouteName | street/route name — offline names, incl. states whose own layers publish none (MN, IL) |
+| `RN` | RouteNumber | signed route number where present |
+
+Null/empty attrs are omitted per feature. The cached classifier reads
+them into segments (routeId/mpFrom/mpTo/name), the row detail shows a
+"State route <id> · MP <a–b>" chip on the closest segment, and the
+CSV / GeoJSON / KMZ exports carry State Route ID + Milepost Range.
+
+**Service gotcha (2026-09-14 evening):** the HPMS service stopped
+accepting `resultRecordCount` (every query with it → 400 "Invalid query
+parameters"; a republish — the layer now names itself
+HPMS_National_2024_FullJoin). The harvester dropped the parameter; the
+layer's own maxRecordCount (2000) still caps pages and
+`exceededTransferLimit` still signals the quadtree split.
+
 ## Cached-tile CLASSIFICATION (2026-09-14, per user direction)
 
 Verdicts now run against the hosted tilesets by default — "couldn't we
