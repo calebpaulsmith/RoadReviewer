@@ -34,8 +34,10 @@ const FAKE_PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n(
 
 const PAGE = "file://" + join(here, "..", "..", "web", "index.html");
 const SOURCES = "file://" + join(here, "..", "..", "web", "sources.html");
-const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH
-  || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
+// /opt/pw-browsers/chromium is a stable symlink to the installed build; a
+// version-pinned path (or playwright's own bundled default) rots whenever the
+// sandbox image bumps, and fails with a misleading "npx playwright install".
+const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });

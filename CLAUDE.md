@@ -1780,19 +1780,23 @@ cd build/web-tests && npm install          # once — playwright-core only
 node verify-review-ui.mjs
 node verify-pdf-report.mjs
 node verify-hpms-tiles.mjs
+node verify-map-render.mjs
 node verify-inspection-filler.mjs
 node ../verify-web-core.mjs                # from build/web-tests or build/
 ```
 
 Two invocation traps:
 
-- **`verify-map-render.mjs` needs the browser path passed in.** Every other
-  script defaults `PLAYWRIGHT_CHROMIUM_PATH` to the sandbox's Chromium; this
-  one defaults to `undefined`, so it fails with playwright's "npx playwright
-  install" message unless you run it as
-  `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell node verify-map-render.mjs`.
-  (`verify-inspection-filler.mjs` reads `CHROMIUM`, not
-  `PLAYWRIGHT_CHROMIUM_PATH`.)
+- **Never answer "npx playwright install".** Every script launches with an
+  explicit `executablePath`, defaulting to **`/opt/pw-browsers/chromium`** —
+  a stable symlink to whichever build the sandbox image installed. Leave that
+  default off (or pin a versioned path like
+  `chromium_headless_shell-1194/...`) and the script asks playwright-core for
+  its OWN bundled build instead; that version drifts from the image (1.61.1
+  wants 1228, the image ships 1194), and the failure reads as a missing
+  install rather than a version mismatch. Downloading a browser is the wrong
+  fix. Override with `PLAYWRIGHT_CHROMIUM_PATH` (or `CHROMIUM` for
+  `verify-inspection-filler.mjs`) if you need a different binary.
 - **The static server must send real MIME types.** PMTiles needs HTTP range
   requests (python's `http.server` can't do them, which is why the tile
   scripts start their own server), and a server that hands back `.css` as

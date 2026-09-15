@@ -38,8 +38,10 @@ const miMeta = fixture("mi-meta.json"), miGeom = fixture("mi-geom.json");
 const acubMeta = fixture("acub-meta.json"), acubGeom = fixture("acub-geom.json");
 
 const PAGE = "file://" + join(here, "..", "..", "web", "index.html");
-const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH
-  || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
+// /opt/pw-browsers/chromium is a stable symlink to the installed build; a
+// version-pinned path (or playwright's own bundled default) rots whenever the
+// sandbox image bumps, and fails with a misleading "npx playwright install".
+const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const page = await browser.newPage({ viewport: { width: 1400, height: 950 } });
