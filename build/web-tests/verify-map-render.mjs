@@ -12,9 +12,9 @@
 //
 // Asserts:
 //   - region view (map minZoom): the basemap paints roads/labels/borders
-//     (many distinct colours, not just land + water), class tiles paint
-//     interstate-blue pixels, and a point outside the six states shows the
-//     mask ground colour
+//     (many distinct colours, not just land + water), NO class lines yet
+//     (the opening map is a clean atlas view; classes start at z9), and a
+//     point outside the six states shows the mask ground colour
 //   - Minneapolis z10: the ACUB tiles paint pink, and no cyan "sliver" pixel
 //     sits on a land point that the old renderer filled
 //   - Long Lake, MI z17: the class-7 subdivision street (Totem Trl) has
@@ -103,7 +103,7 @@ const z0 = await page.evaluate(() => map.getZoom());
 const base = await paneColours("leaflet-tile-pane");
 ok(base.distinct > 40, "region view: basemap paints more than land + water", `${base.distinct} distinct colours at z${z0}`);
 const browse = await paneColours("leaflet-browse-pane");
-ok(browse.blue > 200, "region view: class tiles paint interstate blue", `${browse.blue} sampled blue px`);
+ok(browse.blue === 0, "region view: NO class lines at the region zoom (clean opening map)", `${browse.blue} sampled blue px`);
 const outside = await paneAt("leaflet-mask-pane", 38.5, -95.5);        // Kansas: outside the six states
 ok(outside.some(p => p[3] > 250), "region view: mask covers points outside the six states", JSON.stringify(outside[0]));
 const inside = await paneAt("leaflet-mask-pane", 44.9, -93.2);         // Minneapolis: inside a hole
@@ -111,6 +111,8 @@ ok(inside.every(p => p[3] === 0), "region view: mask leaves the states open", JS
 
 // ---- 2. Minneapolis z10: ACUB from tiles, no river slivers ----
 await page.evaluate(() => map.setView([44.95, -93.5], 10)); await sleep(8000);
+const browse10 = await paneColours("leaflet-browse-pane");
+ok(browse10.blue > 200, "z10: class tiles paint interstate blue", `${browse10.blue} sampled blue px`);
 const pink = await paneAt("leaflet-acub-pane", 44.98, -93.27);         // inside the Minneapolis urban area
 ok(pink.some(p => p[3] > 30 && p[0] > 200 && p[2] > 150), "z10: ACUB tiles paint the urban area", JSON.stringify(pink[0]));
 const land = await paneAt("leaflet-tile-pane", 44.760, -93.610);        // farmland SW of the metro; a sliver crossed here before

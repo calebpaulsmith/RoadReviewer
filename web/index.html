@@ -1203,6 +1203,34 @@ function lockRegionZoom() {
 lockRegionZoom();
 map.on("resize", lockRegionZoom);
 
+const ATLAS = { paper: "#f3ecd9", ground: "#e8e1cd", water: "#a8c6c7", park: "#c8d0ad", wood: "#c3cca6",
+                ink: "#3d342b", inkSoft: "#6d6255", border: "#9d917c", casing: "#d4cab5", ribbon: "#fbf8ef",
+                ochre: "#e8c98a", ochreCasing: "#bf9d5a", majorFill: "#f0dfb1", majorCasing: "#c9b27a",
+                building: "#d8d0c2", rail: "#a99e8a" };
+const ATLAS_FLAVOR = {
+  background: ATLAS.ground, earth: ATLAS.paper,
+  park_a: "#d9dfbd", park_b: ATLAS.park, hospital: "#ece0d5", industrial: "#e8e1d0", school: "#ece5d2",
+  wood_a: "#d3dab8", wood_b: ATLAS.wood, pedestrian: "#ece6d4", scrub_a: "#dfe2c4", scrub_b: "#cfd5b0",
+  glacier: "#eef0ea", sand: "#eee4c4", beach: "#efe6c8", aerodrome: "#e6e0d0", runway: "#ece7d8",
+  water: ATLAS.water, zoo: "#d9dfbd", military: "#e2dccb",
+  tunnel_other_casing: "#d8cfbb", tunnel_minor_casing: "#d8cfbb", tunnel_link_casing: "#d8cfbb",
+  tunnel_major_casing: "#d8cfbb", tunnel_highway_casing: "#d8cfbb",
+  tunnel_other: "#e6dfcc", tunnel_minor: "#e6dfcc", tunnel_link: "#e6dfcc", tunnel_major: "#e6dfcc", tunnel_highway: "#e6dfcc",
+  pier: "#ddd5c1", buildings: ATLAS.building,
+  minor_service_casing: "#d9d0bc", minor_casing: ATLAS.casing, link_casing: "#cfbf98",
+  major_casing_late: ATLAS.majorCasing, highway_casing_late: ATLAS.ochreCasing,
+  other: "#f7f2e4", minor_service: "#f7f2e4", minor_a: "#f7f2e4", minor_b: ATLAS.ribbon, link: ATLAS.majorFill,
+  major_casing_early: ATLAS.majorCasing, major: ATLAS.majorFill, highway_casing_early: ATLAS.ochreCasing, highway: ATLAS.ochre,
+  railway: ATLAS.rail, boundaries: ATLAS.border,
+  bridges_other_casing: ATLAS.casing, bridges_minor_casing: ATLAS.casing, bridges_link_casing: "#cfbf98",
+  bridges_major_casing: ATLAS.majorCasing, bridges_highway_casing: ATLAS.ochreCasing,
+  bridges_other: "#f7f2e4", bridges_minor: ATLAS.ribbon, bridges_link: ATLAS.majorFill, bridges_major: ATLAS.majorFill, bridges_highway: ATLAS.ochre,
+  roads_label_minor: ATLAS.inkSoft, roads_label_minor_halo: "#f7f2e4", roads_label_major: "#5a4f42", roads_label_major_halo: "#f7f2e4",
+  ocean_label: "#5f7f80", subplace_label: "#7a6f62", subplace_label_halo: ATLAS.paper,
+  city_label: ATLAS.ink, city_label_halo: ATLAS.paper, state_label: "#8f8474", state_label_halo: ATLAS.paper,
+  country_label: "#7d7263", address_label: "#7a6f62", address_label_halo: "#f7f2e4",
+  pois: { blue: "#1A8CBD", green: "#20834D", lapis: "#315BCF", pink: "#EF56BA", red: "#F2567A", slategray: "#6A5B8F", tangerine: "#CB6704", turquoise: "#00C3D4" },
+};
 const STREETS_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 const imageryBase = L.layerGroup([
   L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
@@ -1234,7 +1262,15 @@ const imageryBase = L.layerGroup([
     // first shipped with only knew the v3 "pmap:kind" names, so roads,
     // boundaries and place labels never matched a rule (blank grey land)
     // and every river line got filled as a polygon (the cyan "slivers").
-    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", flavor: "light", lang: "en", maxDataZoom: 11,
+    // ATLAS palette (per user, 2026-09-15: "a beautiful map, something
+    // you'd expect when opening a map product"): warm ivory paper, muted
+    // blue-green water, sage parks/woods, ochre highways, restrained minor
+    // roads, dark brown-grey type. Same key set as the library's built-in
+    // "light" flavor; handed to its exported paintRules/labelRules because
+    // the flavor option itself only accepts the built-in names.
+    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", maxDataZoom: 11,
+      paintRules: protomapsL.paintRules(ATLAS_FLAVOR), labelRules: protomapsL.labelRules(ATLAS_FLAVOR, "en"),
+      backgroundColor: ATLAS_FLAVOR.background,
       attribution: 'Basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; OpenStreetMap' });
   } catch {
     roadBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
@@ -1264,8 +1300,8 @@ const imageryBase = L.layerGroup([
     if (!tpl) return;
     map.createPane("detailPane").style.zIndex = 250;
     const P = protomapsL;
-    const LANDCOVER = { grass: "#d9e8c8", wood: "#c6d8b2", sand: "#f0e7b2",
-                        wetland: "#d0e0d8", ice: "#eef6f6", farmland: "#eae4d2" };
+    const LANDCOVER = { grass: "#d9dfbd", wood: ATLAS.wood, sand: "#eee4c4",
+                        wetland: "#d3dcc9", ice: "#eef0ea", farmland: "#ede6d0" };
     // Google-style ground: land tints + buildings + WHITE road ribbons
     // with gray casings, so the FHWA class lines (browsePane, above this
     // pane) read as colored centerlines ON the streets. No POI markers —
@@ -1281,32 +1317,32 @@ const imageryBase = L.layerGroup([
     const isRibbon = (z, f) => RIBBON[f.props.class] != null;
     const paintRules = [
       { dataLayer: "landcover",
-        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) => LANDCOVER[f.props.class] || "#e2e6da", opacity: 0.45 }) },
+        symbolizer: new P.PolygonSymbolizer({ fill: (z, f) => LANDCOVER[f.props.class] || "#e6e2d0", opacity: 0.5 }) },
       { dataLayer: "landuse",
         symbolizer: new P.PolygonSymbolizer({ fill: (z, f) =>
-          f.props.class === "hospital" ? "#f5e3e3"
-          : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#f0e9f5"
-          : "#e9e5dd", opacity: 0.35 }) },
-      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
+          f.props.class === "hospital" ? "#ece0d5"
+          : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#ece5d2"
+          : "#e8e1d0", opacity: 0.4 }) },
+      { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: ATLAS.park, opacity: 0.55 }) },
       // Water redrawn here at street zooms: the offline basemap's z11 water
       // overzoomed 16x is blocky; OpenFreeMap's z13/14 shorelines are crisp.
       // Same colour as the basemap's light flavor so the hand-off is invisible.
-      { dataLayer: "water", symbolizer: new P.PolygonSymbolizer({ fill: "rgb(128,222,234)", opacity: 1 }) },
-      { dataLayer: "waterway", symbolizer: new P.LineSymbolizer({ color: "rgb(128,222,234)", width: (z, f) => z >= 16 ? 2.5 : 1.5 }) },
+      { dataLayer: "water", symbolizer: new P.PolygonSymbolizer({ fill: ATLAS.water, opacity: 1 }) },
+      { dataLayer: "waterway", symbolizer: new P.LineSymbolizer({ color: ATLAS.water, width: (z, f) => z >= 16 ? 2.5 : 1.5 }) },
       { dataLayer: "building", minzoom: 15,
-        symbolizer: new P.PolygonSymbolizer({ fill: "#d5ccc3", opacity: 0.55 }) },
+        symbolizer: new P.PolygonSymbolizer({ fill: ATLAS.building, opacity: 0.6 }) },
       { dataLayer: "transportation", filter: isRibbon,     // casing first, then fill
-        symbolizer: new P.LineSymbolizer({ color: "#c9ced4", width: (z, f) => ribbonW(z, f) + 2 }) },
+        symbolizer: new P.LineSymbolizer({ color: ATLAS.casing, width: (z, f) => ribbonW(z, f) + 2 }) },
       { dataLayer: "transportation", filter: isRibbon,
-        symbolizer: new P.LineSymbolizer({ color: "#ffffff", width: ribbonW }) },
+        symbolizer: new P.LineSymbolizer({ color: ATLAS.ribbon, width: ribbonW }) },
     ];
     const labelRules = [
       { dataLayer: "transportation_name", minzoom: 14,
         symbolizer: new P.LineLabelSymbolizer({ labelProps: ["name"],
-          fill: "#3f4a55", stroke: "#ffffff", width: 2, font: "500 10.5px system-ui" }) },
+          fill: "#4a4036", stroke: "#f7f2e4", width: 2, font: "500 10.5px system-ui" }) },
       { dataLayer: "housenumber", minzoom: 18,
         symbolizer: new P.CenteredTextSymbolizer({ labelProps: ["housenumber"],
-          fill: "#9a938c", font: "400 9px system-ui" }) },
+          fill: "#8a7f70", font: "400 9px system-ui" }) },
     ];
     P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane", updateWhenIdle: true,
       minZoom: 13, maxDataZoom: 14,
@@ -1335,8 +1371,8 @@ map.createPane("maskPane").style.zIndex = 300;
     }
     const world = [[-89, -540], [-89, 540], [89, 540], [89, -540]];
     L.polygon([world, ...holes], { pane: "maskPane", renderer: L.canvas({ pane: "maskPane", padding: 0.5 }),
-      stroke: true, color: "#8f959c", weight: 1.2, opacity: 0.9,
-      fill: true, fillColor: "#e6e4df", fillOpacity: 1, fillRule: "evenodd", interactive: false }).addTo(map);
+      stroke: true, color: ATLAS.border, weight: 1.2, opacity: 0.9,
+      fill: true, fillColor: ATLAS.ground, fillOpacity: 1, fillRule: "evenodd", interactive: false }).addTo(map);
   } catch { /* no mask file (file:// or missing): the rectangle extract shows as before */ }
 })();
 const markerLayer = L.layerGroup().addTo(map);
@@ -2771,7 +2807,11 @@ $("showLayers").addEventListener("change", () => {
 // BROWSE_ACUB_ZOOM; any record-cap truncation is disclosed in the legend.
 // Everything draws into one Leaflet <canvas> pane UNDER the site overlay and
 // pins, so thousands of segments stay cheap to render.
-const BROWSE_ROAD_ZOOM = 13, BROWSE_MAJOR_ROAD_ZOOM = 10, BROWSE_ACUB_ZOOM = 7;
+const BROWSE_ROAD_ZOOM = 13, BROWSE_MAJOR_ROAD_ZOOM = 10, BROWSE_ACUB_ZOOM = 9;
+// The class tiles carry interstates from z6, but the OPENING map is the
+// atlas alone (per user: no interstates at the region view - it read as
+// "a bunch of purple lines"). Class lines appear from this zoom.
+const BROWSE_CLASS_ZOOM = 9;
 // Progressive class display (2026-09-14): between BROWSE_MAJOR_ROAD_ZOOM and
 // BROWSE_ROAD_ZOOM the mirror fetches only the higher functional classes —
 // arterials are a tiny fraction of the segments (live-verified: metro
@@ -3107,8 +3147,9 @@ async function refreshBrowseLayers() {
   // live road fetching below. States without tiles keep the live mirror.
   const tiledFlags = await Promise.all(states.map(ensureHpmsTiles));
   if (seq !== browseSeq) return;
-  setHpmsTilesVisible(true, states);
-  const tiled = states.filter((s, i) => tiledFlags[i]);
+  const wantClass = z >= BROWSE_CLASS_ZOOM;
+  setHpmsTilesVisible(wantClass, states);
+  const tiled = wantClass ? states.filter((s, i) => tiledFlags[i]) : [];
   const untiled = states.filter((s, i) => !tiledFlags[i]);
   const wantAcub = z >= BROWSE_ACUB_ZOOM;
   const acubTiled = wantAcub && await ensureAcubTileLayer();
@@ -3118,7 +3159,7 @@ async function refreshBrowseLayers() {
   const wantRoads = classCap !== 0 && untiled.length > 0;
   if (!wantAcub && !wantRoads && !tiled.length) {
     browseOverlay.clearLayers();
-    setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, major roads from zoom ${BROWSE_MAJOR_ROAD_ZOOM}, the full road network from zoom ${BROWSE_ROAD_ZOOM}</div>`);
+    setLiveLegend(`<b>Live layers — official data</b><div class="note">Zoom in: urban boundaries appear from zoom ${BROWSE_ACUB_ZOOM}, road classes from zoom ${BROWSE_CLASS_ZOOM}, the full road network from zoom ${BROWSE_ROAD_ZOOM}</div>`);
     return;
   }
   const bboxKey = [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat].map(v => v.toFixed(4)).join(",");

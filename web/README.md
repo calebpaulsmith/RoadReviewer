@@ -130,6 +130,18 @@ toggles float in a bar over the map's top-left.
   triangles across Minnesota). Any future protomaps-leaflet upgrade must
   stay on a version whose flavors read the schema version of
   `basemap.pmtiles`.
+- **Atlas palette (2026-09-15, per user: "a beautiful map, something
+  you'd expect when opening a map product, not a bunch of purple
+  lines").** The basemap renders through a custom flavor object
+  (`ATLAS_FLAVOR` in index.html, handed to protomaps-leaflet's exported
+  `paintRules`/`labelRules` because the `flavor` option only takes the
+  built-in names): warm ivory paper `#f3ecd9`, muted blue-green water
+  `#a8c6c7`, sage parks/woods, ochre highways, restrained minor roads,
+  brown-grey type; the street-level OpenFreeMap detail and the region
+  mask use the same `ATLAS` swatches. The OPENING map is the atlas
+  alone: class lines and urban boundaries now start at **z9**
+  (`BROWSE_CLASS_ZOOM` / `BROWSE_ACUB_ZOOM`), even though the class
+  tiles carry interstates from z6.
 - **Cut to the state shapes.** `web/data/r5-states.geojson` (Census
   TIGERweb state boundaries, generalized, 58 KB) is drawn as one mask
   polygon — world outer ring, the six states as holes — in a pane above

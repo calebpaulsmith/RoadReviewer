@@ -1190,6 +1190,15 @@ live services. Full design narrative + verification history:
   canvas-count fix is the best candidate — re-check on the real laptop.
   Wheel-debounce coalescing was tried and reverted (same cost, fewer
   levels per scroll).
+- Atlas opening map (2026-09-15, per user: "a beautiful map ... not a
+  bunch of purple lines. No need for interstates here"): the basemap
+  renders through a custom `ATLAS_FLAVOR` object (ivory paper, muted
+  water, sage parks, ochre highways, brown-grey type) via
+  protomapsL.paintRules/labelRules — the `flavor` option only accepts
+  built-in names; the OpenFreeMap detail layer and the state mask share
+  the `ATLAS` swatches. Class lines AND urban boundaries are held until
+  z9 (`BROWSE_CLASS_ZOOM`, `BROWSE_ACUB_ZOOM`); verify-map-render asserts
+  zero class pixels at the region view and class pixels at z10.
 - Cached-tile classification (2026-09-14, per user: "check every
   point with the data we have cached"): verdicts default to the
   hosted tilesets — HPMS z13 road tiles (read via
