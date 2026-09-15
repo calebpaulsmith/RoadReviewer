@@ -1229,6 +1229,24 @@ live services. Full design narrative + verification history:
   it; republished as HPMS_National_2024_FullJoin) — the harvester
   dropped the param; maxRecordCount still caps pages and
   exceededTransferLimit still drives the quadtree split.
+- Auto-Detect panel + table/map mirroring (2026-09-15, per user): the
+  results heading is **"Auto-Detect"**, carrying a one-line disclaimer
+  (same message as the Excel products' DisclaimerBodyText, compressed:
+  screening aid, results may be incorrect, verify with the responsible
+  governing agency) and, directly under it, the renamed **Detection
+  Buffer** select (moved out of the Coordinate Input panel, so it also
+  governs collected points) with an ⓘ hover explaining the buffer logic
+  (closest road decides; another federal-aid road inside the buffer can
+  only downgrade to yellow; ACUB never narrows below 250 ft). The "in
+  map view" checkbox is GONE — the table always shows only the sites in
+  the visible map area, and the text filter now hides the matching
+  sites' PINS too, so table and map never disagree. TRAP that forced a
+  design detail: a row click / Prev-Next / add-point zooms to ONE site,
+  which with a naive always-on view filter collapses the list to that
+  site. Those moves go through `focusMapOnSite()` (animate:false so
+  moveend stays synchronous and the flag can't leak) and re-apply the
+  filter against `filterBounds` — the last view the USER chose — instead
+  of the new one.
 
 ---
 

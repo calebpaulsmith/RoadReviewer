@@ -364,6 +364,18 @@ details.howcolors { margin-top: 8px; }
   border: 1px solid rgba(0,0,0,.3); vertical-align: middle; margin-right: 4px; }
 #findResults .note { color: var(--muted); font-style: italic; font-size: 12px; margin: 3px 0; }
 
+/* Auto-Detect header: short disclaimer + the detection-buffer control.
+   The bar carrying the heading drops its rule so heading, disclaimer and
+   buffer read as one block. */
+.results-bar.nb { border-bottom: none; padding-bottom: 0; margin-bottom: 6px; }
+.disclaim { margin: 0 0 8px; padding: 5px 8px; font-size: 11px; line-height: 1.35;
+  color: #8a2f22; background: #fdf0ed; border: 1px solid #f0cec5;
+  border-left: 3px solid #c0392b; border-radius: 6px; }
+.infodot { display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 15px; height: 15px; border-radius: 50%; border: 1px solid #9bacbd; color: #5b6b7b;
+  font: italic 700 10.5px/1 Georgia, "Times New Roman", serif; cursor: help; user-select: none; }
+.infodot:hover, .infodot:focus { background: #eef3f9; border-color: #5b6b7b; color: var(--navy); outline: none; }
+
 /* Results-row filter */
 #rowFilter { font: inherit; font-size: 12.5px; padding: 5px 9px; width: 170px;
   border: 1px solid var(--line); border-radius: 8px; background: #fff; }
@@ -388,16 +400,6 @@ details.howcolors { margin-top: 8px; }
     </div>
     <div class="input-col" id="inputPanel">
       <div class="controls">
-        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft. The state is always auto-detected from each point's location.">Search buffer:
-          <select id="bufferSel">
-            <option value="50">50 ft (strict)</option>
-            <option value="100">100 ft</option>
-            <option value="150">150 ft</option>
-            <option value="250" selected>250 ft (default)</option>
-            <option value="500">500 ft</option>
-            <option value="1000">1,000 ft (wide)</option>
-          </select>
-        </label>
         <span class="count" id="parseCount"></span>
       </div>
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
@@ -443,16 +445,29 @@ Site 12, 44.2700, -83.5200
     </div>
 
     <div class="results">
-      <div class="results-bar">
-        <h2>Results</h2>
+      <div class="results-bar nb">
+        <h2>Auto-Detect</h2>
         <span class="count" id="statusCount"></span>
         <span style="flex:1"></span>
         <button id="popoutBtn" title="Open every site's full detail — verdict, class, urban area, roads — as one big table">⧉ Expand table</button>
       </div>
+      <p class="disclaim">Screening aid only — results may be incorrect. Verify every site with the responsible governing agency.</p>
+      <div class="results-bar">
+        <label title="How far from each point to look for roads. The state is always auto-detected from the point's location.">Detection Buffer:
+          <select id="bufferSel">
+            <option value="50">50 ft (strict)</option>
+            <option value="100">100 ft</option>
+            <option value="150">150 ft</option>
+            <option value="250" selected>250 ft (default)</option>
+            <option value="500">500 ft</option>
+            <option value="1000">1,000 ft (wide)</option>
+          </select>
+        </label>
+        <span class="infodot" tabindex="0" role="note" aria-label="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft." title="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft.">i</span>
+      </div>
       <div class="results-bar">
         <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
-          title="Show only result rows whose text matches — site name, road or street names, verdict, class, urban area">
-        <label class="count" title="Show only sites currently inside the visible map area — Find a state, county or township first, then tick this"><input type="checkbox" id="rowFilterView"> in map view</label>
+          title="Show only sites whose text matches — site name, road or street names, verdict, class, urban area. The map pins filter with the table, and the table always shows the sites inside the visible map area.">
         <span class="count" id="filterCount"></span>
       </div>
       <div id="resultsBody" class="rowlist"></div>
@@ -1597,7 +1612,9 @@ function render() {
   $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
   if (bounds.length === 1) map.setView(bounds[0], 15);
   else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
-  if (window.applyRowFilter) window.applyRowFilter();
+  // The re-fit is the new baseline: every site is in view, so nothing is
+  // filtered out until the user moves the map again.
+  if (window.applyRowFilter) window.applyRowFilter(true);
 }
 
 /* ---- input handling: parse + classify automatically, debounced ---- */
@@ -1666,7 +1683,7 @@ function addCollectedPoint() {
   const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
   collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
   saveCollected(); rebuildPoints(); render();
-  map.setView([parsed.lat, parsed.lon], Math.max(map.getZoom(), 16));
+  focusMapOnSite(parsed.lat, parsed.lon, Math.max(map.getZoom(), 16));
   $("addName").value = ""; $("addCoords").value = ""; $("addNote").value = "";
 }
 $("addPointBtn").addEventListener("click", addCollectedPoint);
@@ -2622,7 +2639,8 @@ async function selectSite(i) {
     p._tr.classList.add("selected", "open");
     p._tr.scrollIntoView({ block: "nearest" });
   }
-  map.setView([p.lat, p.lon], 17);
+  focusMapOnSite(p.lat, p.lon, 17);
+  if (p._tr) p._tr.style.display = "";   // the site under review always shows
   if (p._marker) p._marker.openPopup();
   $("reviewInfo").textContent = `${reviewIdx + 1} / ${pts.length} — ${p.name}`;
   if ($("showLayers").checked) await showSiteLayers(p);
@@ -3526,28 +3544,45 @@ $("findText").addEventListener("input", () => {
 });
 
 /* ---------------- results-row filter ---------------- */
-// Text filter matches anything visible on the card (site name, road/street
-// names, verdict, class, urban area); "in map view" keeps only sites inside
-// the current map bounds — Find a county/township first and the list
-// filters to it. Purely visual: exports and Prev/Next still cover all sites.
-function applyRowFilter() {
+// The table always mirrors the map: only sites inside the visible area are
+// listed (no checkbox — Find a county and the list follows), and the text
+// filter hides the matching sites' PINS too, so map and table never disagree.
+// Still purely visual: exports, the pop-out and Prev/Next cover every site.
+//
+// `filterBounds` is the last view the USER chose. Zooming to one site (a row
+// click, Prev/Next, adding a collected point) must NOT collapse the list to
+// that site, so those moves go through focusMapOnSite() and re-apply the
+// filter against the remembered bounds instead of the new ones.
+let filterBounds = null;
+let siteFocusMove = false;
+
+function focusMapOnSite(lat, lon, zoom) {
+  siteFocusMove = true;
+  // animate:false keeps moveend synchronous, so the flag can't leak into the
+  // user's next pan (zoom animation is already off globally).
+  try { map.setView([lat, lon], zoom, { animate: false }); } finally { siteFocusMove = false; }
+}
+
+function applyRowFilter(updateBounds) {
+  if (updateBounds || !filterBounds) filterBounds = map.getBounds();
   const term = $("rowFilter").value.trim().toLowerCase();
-  const inView = $("rowFilterView").checked;
-  const b = inView ? map.getBounds() : null;
   let shown = 0, total = 0;
   for (const p of currentPoints) {
     if (!p._tr) continue;
     total++;
-    let ok = !term || p._tr.textContent.toLowerCase().includes(term);
-    if (ok && b) ok = b.contains([p.lat, p.lon]);
+    const matches = !term || p._tr.textContent.toLowerCase().includes(term);
+    const ok = matches && filterBounds.contains([p.lat, p.lon]);
     p._tr.style.display = ok ? "" : "none";
+    if (p._marker) {                       // pins mirror the text filter
+      if (matches && !markerLayer.hasLayer(p._marker)) p._marker.addTo(markerLayer);
+      else if (!matches && markerLayer.hasLayer(p._marker)) markerLayer.removeLayer(p._marker);
+    }
     if (ok) shown++;
   }
-  $("filterCount").textContent = (term || inView) && total ? `showing ${shown} of ${total}` : "";
+  $("filterCount").textContent = total && shown < total ? `showing ${shown} of ${total}` : "";
 }
-$("rowFilter").addEventListener("input", applyRowFilter);
-$("rowFilterView").addEventListener("change", applyRowFilter);
-map.on("moveend", () => { if ($("rowFilterView").checked) applyRowFilter(); });
+$("rowFilter").addEventListener("input", () => applyRowFilter(false));
+map.on("moveend", () => applyRowFilter(!siteFocusMove));
 
 /* ---------------- FIRMette batch -> ZIP ---------------- */
 const FIRMETTE_BASE = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette";

@@ -163,7 +163,20 @@ checks.push(["Public map link -> MI official app root (no coords)", await page.e
     && !x.href.includes("marker"));
 })]);
 
-// --- search-radius (sensitivity) control ---
+// --- Auto-Detect header: disclaimer + Detection Buffer control ---
+checks.push(["Auto-Detect heading, short disclaimer and Detection Buffer label with an info dot",
+  await page.evaluate(() => {
+    const h = [...document.querySelectorAll(".results h2")].map(x => x.textContent).join("|");
+    const d = document.querySelector(".results .disclaim");
+    const lbl = document.getElementById("bufferSel").closest("label").textContent;
+    const info = document.querySelector(".results .infodot");
+    return h.includes("Auto-Detect") && !h.includes("Results")
+      && !!d && /verify/i.test(d.textContent)
+      && lbl.includes("Detection Buffer") && !lbl.includes("Search buffer")
+      && !!info && (info.title || "").length > 60;   // the buffer-logic explainer
+  })]);
+
+// --- detection-buffer (sensitivity) control ---
 checks.push(["buffer select defaults to 250 ft", (await page.locator("#bufferSel").inputValue()) === "250"]);
 await page.selectOption("#bufferSel", "50");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
@@ -261,6 +274,11 @@ checks.push(["unchecking Live layers clears the mirror", await page.evaluate(asy
   return cleared;
 })]);
 
+// The results table mirrors the map view now (the "in map view" checkbox is
+// gone), and the legend checks above zoomed to one site — put every site back
+// in view before the row-level checks below.
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
+
 // --- full-page shell: sidebar pane + no page scrolling ---
 checks.push(["full-page shell: sidebar pane, map fills the rest, no page scroll", await page.evaluate(() => {
   const sb = document.getElementById("sidebar"), ma = document.getElementById("mapArea");
@@ -334,10 +352,14 @@ await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).cl
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
   const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
-await page.check("#rowFilterView");
-checks.push(["'in map view' filter keeps only sites inside the county view", await page.evaluate(() =>
-  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
-await page.uncheck("#rowFilterView");
+checks.push(["table mirrors the map view with no checkbox to tick", await page.evaluate(() =>
+  !document.getElementById("rowFilterView")
+  && [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
+// A row click zooms to that site — which must NOT collapse the list to it.
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
+await page.evaluate(() => selectSite(0));
+checks.push(["zooming to one site under review keeps the other sites listed", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 2)]);
 await page.fill("#findText", "pitcher");
 await page.click("#findBtn");
 await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("S Pitcher St")), { timeout: 15000 });
@@ -385,13 +407,17 @@ await page.click("#tabBtnCoords");
 checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
 
 // --- results-row text filter ---
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
 await page.fill("#rowFilter", "Site B");
 checks.push(["row filter hides non-matching rows + counts", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1
   && document.getElementById("filterCount").textContent.includes("showing 1 of 2"))]);
+checks.push(["row filter hides the non-matching site's map pin too (table and map mirror)",
+  await page.evaluate(() => markerLayer.getLayers().length === 1)]);
 await page.fill("#rowFilter", "");
-checks.push(["clearing the filter restores all rows", await page.evaluate(() =>
-  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none"))]);
+checks.push(["clearing the filter restores all rows and pins", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none")
+  && markerLayer.getLayers().length === 2)]);
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");

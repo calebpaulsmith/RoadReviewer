@@ -6,8 +6,8 @@ is parsed, classified, and pinned on the map automatically — no submit
 button, no server, nothing stored. The page is a direct JavaScript port of
 `src/modClassify.bas` + `src/modConstants.bas` + `src/modHttp.bas`'s
 distance math: same layer URLs, same retired-segment filters, same
-exact-intersect-then-buffer fallback (radius adjustable in the UI,
-default 250 ft, matching the Excel Search buffer), same per-road
+exact-intersect-then-buffer fallback (the **Detection Buffer** control,
+default 250 ft, matching the Excel search buffer), same per-road
 distances, and the same PR #24 verdict model — the **closest** road
 segment decides red vs green, yellow only downgrades green with an
 explicit Review Reason ("Second road close" / "Nearby FHWA road" /
@@ -291,11 +291,16 @@ the verdict reads clearly over the class-colored live road lines.
 
 The results list gets a matching **row filter**: a text box that hides
 result cards whose text doesn't match (site name, road/street names,
-verdict, class, urban area), and an **"in map view"** checkbox that
-keeps only sites inside the current map bounds — Find a county or
-township first and the list filters to it, live as you pan. Both are
-purely visual: exports, Prev/Next stepping, and classification always
-cover every site.
+verdict, class, urban area) **and hides those sites' map pins with
+them**, so the table and the map never show different sets. The
+map-view filter has no checkbox — the list **always** shows just the
+sites inside the current map bounds, live as you pan, so finding a
+county or township filters the list to it by itself. Zooming to a
+single site (a row click, Prev/Next, or adding a collected point) is
+deliberately exempt: it would otherwise collapse the list to that one
+site, so those moves re-apply the filter against the last view the user
+chose. All of it is purely visual — exports, the pop-out table,
+Prev/Next stepping and classification always cover every site.
 
 ## Data sources page
 
