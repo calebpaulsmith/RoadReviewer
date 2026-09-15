@@ -563,6 +563,276 @@ summarized here so it isn't relitigated:
   run (push, or Actions > Run workflow / `workflow_dispatch`) rather than
   "Re-run all jobs".
 
+### Web rounds, 2026-09-14/15 (moved out of CLAUDE.md §7b)
+
+Round-by-round record of the map/tiles/export work. The durable
+shape and the load-bearing traps are summarized in CLAUDE.md §7b;
+everything below is the archaeology of how each one was found.
+
+- Full-page-map restyle + live layer mirror (2026-09-14): the map is the
+  page hero (the input controls float over it in a collapsible card); a
+  "Live class + urban layers" toggle mirrors all six states' NFC layers +
+  the NTAD ACUB boundaries across the visible viewport in each source's
+  published symbology, drawn on a dedicated Leaflet canvas pane (z-index
+  350, under the site overlay/pins). Zoom-gated — roads from z13, ACUB
+  from z7 with a pixel-grid `maxAllowableOffset` — because the
+  FeatureServers are Query-only (no `/export`) and cap ~1000-2000
+  features/query; record-cap truncation is disclosed in the bottom-left
+  legend. Leaflet trap: `createPane("browsePane")` yields CSS class
+  `leaflet-browse-pane` — the "Pane" suffix is stripped.
+- Find on map + row filter (2026-09-14): search by state / county /
+  township / road via Census TIGERweb (`State_County` layers 0/1,
+  `Places_CouSub_ConCity_SubMCD` layer 1 = county subdivisions,
+  Transportation layers 2/6/8 = full-detail primary/secondary/local
+  roads; all confirmed live). Boundary matches zoom + draw a dashed
+  outline (generalized via `maxAllowableOffset`); road-name search is
+  limited to the visible map area (z≥11) — statewide un-indexed `LIKE`
+  is too slow. Results bar gained a text row filter + "in map view"
+  spatial filter (visual only — exports/stepping still cover all
+  sites). Also fixed: vendored Leaflet was missing its `images/` dir,
+  so the basemap-switcher icon rendered as a blank square.
+  Follow-up (same date): the Find box suggests as you type (300 ms
+  debounce, 2+ chars, URL-keyed fetch cache); each road suggestion is
+  annotated async with the state's FHWA class (rr-core `NFC_WIRED`
+  point query at the longest matched segment's midpoint, closest
+  segment wins, cached) + standard class-color swatch; verdict pins got
+  a bolder white ring/radius so red/green/yellow reads over the
+  class-colored mirror lines.
+- Progressive class display (2026-09-14): the live mirror now shows
+  principal arterials from z10, minor arterials from z12, full network
+  from z13 — lower bands query each state layer with a server-side
+  class filter (per-state syntax: numeric `<=` for MI/IN/MN/OH, string
+  `IN` lists for IL `FC` and WI trunk `FED_FC_CD`, numeric IN list of
+  WisDOT's urban/rural-encoded local codes; all six confirmed live via
+  returnCountOnly — metro Columbus: 23,768 segs total vs 1,144 at
+  class<=4) + pixel-grid `maxAllowableOffset`. `fetchClassLayers` takes
+  an optional `{classCap, offset}` 5th arg (PDF figures/site review
+  pass none — unchanged). HPMS was evaluated as an alternative: the
+  BTS nationwide service is a Query-only FeatureServer with the same
+  2,000-record cap and prior-year data (would disagree with the
+  authoritative state layers), and geo.dot.gov's NTAD MapServers are
+  token-gated — pre-baked vector tiles from the HPMS FGDB remain the
+  only true any-zoom route, parked as heavy (build pipeline, ~100s of
+  MB, annual refresh).
+- Baked HPMS class tiles (2026-09-14, per user direction — "download
+  the HPMS data; high classes never change; less live querying"): the
+  class DISPLAY now serves from pre-built per-state PMTiles
+  (`web/tiles/<st>.pmtiles`, pipeline in `build/tiles/`) — the full
+  HPMS network incl. locals, progressive bands baked in (interstates
+  z6 → locals z12), rendered by vendored `protomaps-leaflet`+`pmtiles`
+  into the browse canvas pane; VERDICTS stay live per point against
+  the state DOT layers, and states without a tileset fall back to the
+  live progressive mirror. Extraction gotcha: the ~30M-row national
+  HPMS table 400s (~55 s server give-up) on ANY attribute-filtered
+  offset page and on state-sized envelopes — harvest by quadtree
+  envelope (spatial index), seed ≤1° cells, treat "Unable to perform
+  query" as a split signal, dedupe by OBJECTID. protomaps-leaflet
+  trap: a symbolizer attr function is per-feature only when it
+  declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
+  (HTTP range requests); GitHub's 100 MB/file limit is the sizing
+  constraint (per-state sizes in build/tiles/README.md).
+- Full-page shell + offline basemap, locked to Region V (2026-09-14,
+  per user direction): the map fills the viewport (no page scroll); a
+  full-height left pane holds title/inputs/find/results/exports/
+  transparency panels (header + privacy banner removed; the
+  coordinates box's placeholder is real example lines, cleared on
+  focus). maxBounds + a resize-recomputed minZoom (floor z6) forbid
+  leaving the six states. The ROAD basemap is served from the repo —
+  web/tiles/basemap.pmtiles, a 50 MB Protomaps/OSM z0-11 extract
+  (layers earth/water/roads/boundaries/places, built by
+  build/tiles/build-basemap.sh; buildings/POIs/landuse were most of
+  the unfiltered 504 MB) rendered with protomaps-leaflet's light
+  theme; satellite stays live Esri; live Esri streets is the fallback
+  when the file is missing or on file://. Result rows are compact
+  (one line: name, coords, state, badge; click = select + expand
+  detail) with a "⧉ Expand table" pop-out showing every site's full
+  detail at once. Traps: `pmtiles extract` doesn't checksum (a
+  proxy-truncated pull shipped ~2,700 corrupt tiles —
+  filter-basemap-layers.py gunzip-verifies every tile); tippecanoe
+  2.49 tile-join can't read some Protomaps tiles (wire-level python
+  layer filter instead); a test server that serves .css as
+  octet-stream makes Chromium reject leaflet.css → Leaflet panes
+  lose position:absolute and the map "breaks" while the page itself
+  is fine.
+- Live street-level detail under the roads (2026-09-14, per user):
+  buildings/parks/landuse/POIs/street names/house numbers from
+  OpenFreeMap (keyless public OSM vector tiles, CORS *; runtime
+  TileJSON resolves the versioned pbf template), in a detailPane
+  (z250) between basemap (200) and HPMS overlay (350), fetch-gated
+  z13+ so region browsing stays offline; best-effort (down/blocked =
+  simply no detail). TRAP fixed on the way: protomapsL.leafletLayer
+  defaults maxDataZoom to 15 and never reads the PMTiles header —
+  past the archive's real maxzoom it fetches empty and renders BLANK
+  instead of overzooming (class lines vanished at z14+, masked by
+  Leaflet's stale lower-zoom canvases). Every layer now passes
+  explicit maxDataZoom (class 13 / basemap 11 / detail 14);
+  verify-hpms-tiles asserts painted class pixels at z15.
+- Two input tabs + Search & Collect (2026-09-14, per user): the left
+  pane's input area is tabs — "Coordinate Input" (paste flow; State
+  dropdown REMOVED, always auto-detect; "Search radius" renamed
+  "Search buffer") and "Search & Collect" (the TIGERweb Find box moved
+  here + an add-a-point form: Site name / GPS coordinates / Note).
+  Collected points join the same currentPoints list (rebuildPoints()
+  concats pasted + collected), classify/pin/step/export identically,
+  persist in localStorage ("rr_collected") until removed, and carry
+  the note into the row detail, pop-out, CSV/TSV/GeoJSON (Note
+  column) and the new KMZ export (zipped KML via makeZip, red/green/
+  yellow pushpins by verdict — the Excel tool's KML conventions). Map
+  detail restyle same pass: POI dots/labels REMOVED (user: clutter);
+  OpenFreeMap transportation now draws Google-style white road
+  ribbons with gray casings under the FHWA class centerlines.
+- Map render fix pass (2026-09-14, user screenshots: crash at street
+  level, nothing at region zoom, rectangle cut, weird water, "roads
+  without a class", slow): ROOT CAUSE of the first three visuals was a
+  renderer/tile SCHEMA mismatch — the daily Protomaps builds are the v4
+  schema (`kind`; rivers as LINE features in the `water` layer) and the
+  vendored protomaps-leaflet was 3.x (v3 `pmap:kind` themes), so only
+  earth+water matched a rule (blank land everywhere) and river lines were
+  filled as polygons (the cyan "slivers"). Vendored **5.1.0**
+  (`flavor:"light", lang:"en"`, `labelProps`; `theme`/`label_props` are
+  gone). Then: `levelDiff: 0` on the class tiles (renderer default 1
+  asked for z5 tiles from a -Z6 tileset → nothing at the region view);
+  the six-state CUT is a mask polygon (`web/data/r5-states.geojson`,
+  Census TIGERweb generalized, world ring + state holes, pane z300) —
+  the basemap extract is still rectangles (no `pmtiles` CLI locally);
+  ACUB display now comes from `acub.pmtiles` (pane z340) instead of a
+  live NTAD frame query + canvas rebuild on every pan; class layers for
+  states OUTSIDE the view are detached (all six stayed attached from the
+  region view → 150 tile canvases at every street zoom, most empty —
+  the bulk of the per-zoom cost under 4x CPU throttling); "roads with
+  no class" were two things: streets absent from HPMS entirely (private
+  drives / some subdivision streets — tile == live service, verified
+  Long Lake MI) and class-7 lines that WERE painted but at 1.3 px × 85%
+  opacity anti-aliased to ~25% alpha and vanished over the white OSM
+  ribbons — width now scales with zoom, opacity 0.95. Water/waterway
+  are redrawn from OpenFreeMap at z13+ (the z11 basemap lakes overzoom
+  blocky); house numbers z18+. `build/web-tests/verify-map-render.mjs`
+  pins all of it (pixel reads against the real tilesets + a zoom
+  long-task budget). The "Page Unresponsive" crash did NOT reproduce
+  headless (max long task ~0.5 s under 4x throttling + DPR 2); the
+  canvas-count fix is the best candidate — re-check on the real laptop.
+  Wheel-debounce coalescing was tried and reverted (same cost, fewer
+  levels per scroll).
+- Atlas opening map (2026-09-15, per user: "a beautiful map ... not a
+  bunch of purple lines. No need for interstates here"): the basemap
+  renders through a custom `ATLAS_FLAVOR` object (ivory paper, muted
+  water, sage parks, ochre highways, brown-grey type) via
+  protomapsL.paintRules/labelRules — the `flavor` option only accepts
+  built-in names; the OpenFreeMap detail layer and the state mask share
+  the `ATLAS` swatches. Class lines AND urban boundaries are held until
+  z9 (`BROWSE_CLASS_ZOOM`, `BROWSE_ACUB_ZOOM`); verify-map-render asserts
+  zero class pixels at the region view and class pixels at z10.
+- Cached-tile classification (2026-09-14, per user: "check every
+  point with the data we have cached"): verdicts default to the
+  hosted tilesets — HPMS z13 road tiles (read via
+  protomapsL.PmtilesSource, tile coords -> lon/lat, real
+  point-to-segment distances) + new web/tiles/acub.pmtiles (549
+  Region V NTAD 2020 urban polygons, 3 MB, build-acub.sh; NTAD
+  harvest needs ids-then-objectId-batches + ~3 m maxAllowableOffset —
+  resultOffset gives the HPMS-style 55 s give-up and full precision
+  504s). Same computeVerdict/classLabels code as the live path;
+  TIGER names stay live non-fatal; "cached data" chip on rows;
+  "Live verdicts" checkbox (svcpanel, localStorage) restores
+  per-point live queries; automatic live fallback on file:///missing
+  tiles/errors/out-of-region. verify-hpms-tiles asserts the known
+  Federal-aid verdict from tiles with zero live class/ACUB point
+  queries. Find box: state dropdown REMOVED (searches span the six
+  states; typing a state name matches it); a shown road reports how
+  many of the user's points lie within the buffer of it.
+- State-linkage tiles (2026-09-14 round 2, per user: "connect the
+  segments to state segments"): the state tilesets are rebuilt with
+  each segment's STATE LRS keys from HPMS (R=ROUTE_ID — MI: the MDOT
+  PR number, verified 0006904 at the Kalamazoo test point; B/E =
+  mileposts; N=RouteName — offline street names incl. MN/IL whose own
+  layers have none; RN=RouteNumber). Cached segments carry
+  routeId/mpFrom/mpTo/name; rows show a "State route <id> · MP" chip;
+  CSV/GeoJSON/KMZ export State Route ID + Milepost Range
+  (closestStateSeg helper). SERVICE TRAP: the HPMS layer stopped
+  accepting resultRecordCount that evening (400 on every query with
+  it; republished as HPMS_National_2024_FullJoin) — the harvester
+  dropped the param; maxRecordCount still caps pages and
+  exceededTransferLimit still drives the quadtree split.
+- Auto-Detect panel + table/map mirroring (2026-09-15, per user): the
+  results heading is **"Auto-Detect"**, carrying a one-line disclaimer
+  (same message as the Excel products' DisclaimerBodyText, compressed:
+  screening aid, results may be incorrect, verify with the responsible
+  governing agency) and, directly under it, the renamed **Detection
+  Buffer** select (moved out of the Coordinate Input panel, so it also
+  governs collected points) with an ⓘ hover explaining the buffer logic
+  (closest road decides; another federal-aid road inside the buffer can
+  only downgrade to yellow; ACUB never narrows below 250 ft). The text
+  row filter now hides the matching sites' PINS too, so table and map
+  never disagree. The map-view checkbox reads "filter by map view" and
+  ships UNCHECKED (it was briefly removed/always-on; the user asked for
+  it back as opt-in — don't re-remove it). TRAP that forced a design
+  detail: a row click / Prev-Next / add-point zooms to ONE site, which
+  with the box ticked would collapse the list to that site. Those moves
+  go through `focusMapOnSite()` (animate:false so moveend stays
+  synchronous and the flag can't leak) and re-apply the filter against
+  `filterBounds` — the last view the USER chose — instead of the new
+  one; ticking the box takes the current view as the baseline.
+- One Export pill + export dialogue (2026-09-15, per user): every export
+  moved off the results area into a single blue split pill (button opens
+  the dialogue, caret drops a per-format menu) placed with the INPUT, not
+  under Auto-Detect. The dialogue has a tab per FORMAT (Excel / KMZ /
+  GeoJSON / PDF), each with its own actions, options and a live preview of
+  what that format writes, over ONE editable table of every site
+  (`exportTable`, Notes column included). Cell edits live in `rowEdits`
+  keyed by "lat,lon" — NOT by point identity, because `currentPoints` is
+  rebuilt on every keystroke in the coordinates box — and `exportRowFor()`
+  applies them, so CSV / clipboard / KMZ / GeoJSON all carry the edits (a
+  Note edit also writes back to a collected point's localStorage record).
+  `buildKml()` / `buildGeojson()` were split out of their click handlers so
+  the previews and the downloads share one builder. "Copy for Excel" split
+  into **Copy site + coordinates** and **Copy Auto-Detect results**, both
+  confirming with a bottom-screen toast (`navigator.clipboard` on the https
+  site, textarea+execCommand fallback, and an honest "select the preview and
+  press Ctrl+C" toast if both fail). The dialogue's buttons are the ORIGINAL
+  elements (same ids: dlCsv/copyTsv/dlKmz/dlGeojson/pdfBtn/firmZipBtn/
+  pdfZoom), so no export handler was rewired — only its home moved; the
+  verifiers now open the dialogue before clicking them.
+- Identity columns WRITE BACK (2026-09-15, same pass, after the user asked
+  what a coordinate edit actually does): Site Name / Latitude / Longitude are
+  the site's identity, not export decoration, so editing one rewrites the
+  site's line in the coordinates box (or its `collectedPoints` record), which
+  re-parses, re-classifies at the new location and moves the pin — the verdict
+  can never belong to different coordinates than the ones printed beside it.
+  Before this, a lat edit changed the CSV only: the KMZ/GeoJSON geometry kept
+  reading `p.lat`/`p.lon`, so the two exports described different places.
+  Mechanics: `parseCoordinates` now records each number's own span + which one
+  is the latitude, so `rewritePastedLine()` splices just the edited number and
+  leaves the user's tabs/commas and the other number byte-identical (a NAME
+  edit can't be spliced — the name can sit on either side of the numbers — so
+  that one rebuilds the line keeping both numbers as typed). Commit is on
+  blur/Enter, NOT on input (a coordinate would re-query on every digit); a
+  value outside the parser's own lat 17..72 / lon -180..-64 window is refused
+  and the cell reverts; the row's remaining edits (the Note) are re-keyed to
+  the new coordinates; `refreshExportDialog()` rebuilds the dialogue when the
+  re-classification lands, and skips while a cell has focus (rebuilding would
+  drop the caret mid-edit).
+  **Row-scoped, per user ("tabbing to the next cell shouldn't perform the
+  check yet, but should save the edit"):** an edit is validated and stashed in
+  `pendingIdentity` when the CELL loses focus, but the write-back + re-check
+  only run when focus leaves the ROW (`focusout` with `relatedTarget` outside
+  the `<tr>`), on Enter, or when the dialogue closes (`closeExport` flushes).
+  So a transposed pair is one correction, not two re-checks — the first of
+  which would have queried a half-corrected location. `rewritePastedLine`
+  therefore takes the whole `{name?, lat?, lon?}` set and splices the later
+  span first so the earlier offsets stay valid. While a re-check is in flight
+  the edited site has no verdict, so `setReclassifying()` disables the
+  dialogue's export buttons and shows "re-checking the edited site…" rather
+  than letting a download silently omit the row.
+- **PDF map width — labels only, and REVISIT THIS.** The select's option
+  labels are now plain feet then miles (500 ft / 1,000 ft / 2,000 ft /
+  0.75 mi / 1.5 mi / 3 mi); the VALUES are the same metre half-widths
+  (76/152/300/600/1200/2400) `reportRadiusMeters()` feeds to
+  `reportFrame()`, so the figure geometry and the §7g-adjacent PDF layout
+  are untouched — deliberately, since changing the values changes every
+  figure's scale. **Open item (user, 2026-09-15): revisit what this control
+  is for at all** — whether a fixed scale, a per-site auto-fit to the roads
+  found, or a plain "zoom" is the right model; the odd 0.75 mi step is an
+  artifact of the metre values, not a choice.
+
 ---
 
 ## 7c. Two-product split + workflow simplification (2026-07-05)

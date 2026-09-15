@@ -34,8 +34,10 @@ const FAKE_PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n(
 
 const PAGE = "file://" + join(here, "..", "..", "web", "index.html");
 const SOURCES = "file://" + join(here, "..", "..", "web", "sources.html");
-const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH
-  || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
+// /opt/pw-browsers/chromium is a stable symlink to the installed build; a
+// version-pinned path (or playwright's own bundled default) rots whenever the
+// sandbox image bumps, and fails with a misleading "npx playwright install".
+const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
@@ -228,6 +230,87 @@ try {
   editedPrevOk = true;
 } catch { /* reported as a failure below */ }
 checks.push(["an edited cell flows into the export rows and the preview", editedRowOk && editedPrevOk]);
+// --- identity columns write BACK to the coordinates box and re-classify ---
+{
+  const before = await page.inputValue("#coordsIn");
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const td = tr.querySelectorAll("td")[EX.lon];
+    td.focus();
+    td.textContent = "-84.5360";                 // move site 1 onto site 2's street
+    td.dispatchEvent(new Event("input", { bubbles: true }));
+    td.blur();
+  });
+  await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 20000 });
+  const after = await page.inputValue("#coordsIn");
+  checks.push(["editing Longitude rewrites that line in the coordinates box, keeping the rest",
+    after !== before && after.split("\n")[0].includes("-84.5360") && after.split("\n")[0].includes("42.28536")
+    && after.split("\n")[1] === before.split("\n")[1]]);
+  checks.push(["the moved site re-classifies and its pin moves with it", await page.evaluate(() => {
+    const p = validPoints()[0];
+    return p.lon === -84.536 && !!p.result && Math.abs(p._marker.getLatLng().lng + 84.536) < 1e-6;
+  })]);
+  // a coordinate the parser would never accept is refused, not exported
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const td = tr.querySelectorAll("td")[EX.lat];
+    td.focus();
+    td.textContent = "not a latitude";
+    td.dispatchEvent(new Event("input", { bubbles: true }));
+    td.blur();
+  });
+  checks.push(["a bad coordinate is refused and the cell reverts", await page.evaluate(() =>
+    document.querySelector("#exportTable tr[data-k]").querySelectorAll("td")[EX.lat].textContent === "42.28536"
+    && exportRows()[0][EX.lat] === 42.28536)]);
+  // Both halves of a transposed pair: TAB from Latitude to Longitude must
+  // stash the first edit without re-checking a half-corrected location, then
+  // leaving the row applies both at once.
+  const boxBeforePair = await page.inputValue("#coordsIn");
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const tds = tr.querySelectorAll("td");
+    const latTd = tds[EX.lat], lonTd = tds[EX.lon];
+    latTd.focus();
+    latTd.textContent = "42.6911";
+    latTd.dispatchEvent(new Event("input", { bubbles: true }));
+    lonTd.focus();                      // tab to the next cell in the SAME row
+  });
+  checks.push(["tabbing to the next cell in the row saves the edit but holds the re-check",
+    await page.evaluate(([box]) => document.getElementById("coordsIn").value === box
+      && validPoints()[0].lat !== 42.6911, [boxBeforePair])]);
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const lonTd = tr.querySelectorAll("td")[EX.lon];
+    lonTd.textContent = "-84.5360";
+    lonTd.dispatchEvent(new Event("input", { bubbles: true }));
+    lonTd.blur();                       // leaving the row applies both
+  });
+  let bothOk = false;
+  try {
+    await page.waitForFunction(() => {
+      const p = validPoints()[0];
+      return p.lat === 42.6911 && p.lon === -84.536 && !!p.result;
+    }, { timeout: 20000 });
+    bothOk = true;
+  } catch { /* reported below */ }
+  checks.push(["leaving the row applies both halves of the pair in one re-check", bothOk]);
+
+  // put it back so the checks below see the original two sites
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const set = (col, v) => {
+      const td = tr.querySelectorAll("td")[col];
+      td.focus(); td.textContent = v;
+      td.dispatchEvent(new Event("input", { bubbles: true }));
+      td.blur();
+    };
+    set(EX.lat, "42.28536");
+    set(EX.lon, "-85.57025");
+  });
+  await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified")
+    && validPoints()[0].lat === 42.28536 && validPoints()[0].lon === -85.57025, { timeout: 20000 });
+}
+
 {
   const [gj] = await Promise.all([
     page.waitForEvent("download", { timeout: 15000 }),

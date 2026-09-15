@@ -22,10 +22,22 @@ Excel workbooks that staff can actually use without training.
    FIRMette download, MapPages and the combined-map PDF. Same three-sheet
    shape.
 
+**Two web deliverables ship alongside them** from the same repo, both static
+and deployed to GitHub Pages by `.github/workflows/pages.yml`:
+
+3. **FHWA Road Checker** (`web/index.html`, §7b) — Workflow 1 as a public
+   page for applicants: paste coordinates, see verdicts on a full-page map,
+   export. Client-side only, no backend, no accounts.
+4. **Cat C site-inspection filler** (`web/inspection/index.html`, §7h) — fills
+   FEMA's real Cat C Road / Low Water Crossing PDF in the browser; installs as
+   an offline PWA, and the same file works emailed around.
+
 Target users: FEMA PA staff and partners, most of whom will not use anything
 complicated. Target platform: Excel on a hardened government-issued Windows
 laptop. No add-ins, no PowerShell, no admin rights — only what is already
-installed.
+installed. (The web deliverables target a phone or any browser, and are the
+part of this repo that CAN be built and verified from a cloud session — the
+workbooks need Excel on the user's Windows laptop, §9.1.)
 
 ---
 
@@ -956,8 +968,20 @@ build/                                  Local assembly + verification scripts (n
   verify-output-folder.ps1              §8 resolved #9 — OneDrive-for-Business / SharePoint URL
                                           workbook path maps to the local sync folder (regression
                                           for the mangled "<base>\https:\...sharepoint.com" bug)
+  verify-agol-map.ps1                   AGOL Map column + Send Sites to AGOL Map (§9.3a)
+  compile-check.ps1                     forces a full VBA compile of every module (catches the
+                                          JIT-only traps in §9.3); opens the workbook READONLY
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
                                           for reference (not version-controlled)
+  inspection-filler/                    source + build for the Cat C site-inspection filler (§7h):
+                                          form_src.html spec, build.py inliner, make_template.py,
+                                          the cleaned blank FEMA PDF, vendored pdf-lib, and
+                                          survey123/ (XLSForm generator + field map)
+  tiles/                                pipeline for the baked PMTiles under web/tiles/ —
+                                          fetch-hpms-state.mjs + build-state-tiles.sh (per-state
+                                          HPMS class tiles), fetch-acub.mjs + build-acub.sh,
+                                          build-basemap.sh + filter-basemap-layers.py (the OSM
+                                          basemap extract); README.md has per-state sizes
   verify-web-core.mjs                   web prototype — executes web/index.html's rr-core
                                           <script> block headless (Node + curl) against the live
                                           services, asserting the §4.2/§4.2a/§4.2b test coords
@@ -972,6 +996,13 @@ build/                                  Local assembly + verification scripts (n
     verify-map-render.mjs               map rendering against the real tilesets: basemap paints at
                                           the region view, class + ACUB tile pixels, six-state mask,
                                           local class line visible at z17, zoom long-task budget
+    verify-hpms-tiles.mjs               the baked-tile path: legend switches to the HPMS section,
+                                          protomaps-leaflet paints real pixels, and a known verdict
+                                          resolves with ZERO live class/ACUB point queries
+    verify-inspection-filler.mjs        §7h — fills every section of web/inspection/index.html,
+                                          draws on the pads, attaches a geotagged photo, generates,
+                                          then re-opens the PDF with pdf-lib to assert field values,
+                                          checkboxes, page count and the EXIF GPS auto-fill
     fixtures/                           real captured MDOT + ACUB responses used to stub the
                                           network (see each script's header comment for why)
 web/                                    FHWA Road Checker (provisional) — static web prototype (§7b)
@@ -986,6 +1017,16 @@ web/                                    FHWA Road Checker (provisional) — stat
   data/r5-states.geojson                six-state boundaries (Census TIGERweb, generalized) — the
                                           region mask + state borders on the web map
   vendor/jspdf/                         jsPDF 2.5.2 UMD build vendored locally (no CDN calls)
+  tiles/                                baked PMTiles served by the page (~350 MB, committed):
+                                          basemap.pmtiles (OSM z0-11 atlas basemap), <st>.pmtiles
+                                          per state (HPMS class network + state LRS keys),
+                                          acub.pmtiles (Region V NTAD urban boundaries).
+                                          GitHub Pages serves these by HTTP range request; the
+                                          100 MB/file limit is the sizing constraint (§7b)
+  inspection/                           Cat C Road / Low Water Crossing site-inspection filler
+                                          (§7h) — index.html (~1 MB, fully self-contained),
+                                          plus manifest + service worker + icons so the hosted
+                                          copy installs as an offline PWA
   README.md                             privacy model, hosting, PDF report design, verification
 docs/
   probe-mdot-layers.md                  how to re-run the §5.1 schema probe locally
@@ -994,7 +1035,18 @@ docs/
   HISTORY.md                            historical narrative moved out of this file (prototype
                                           autopsy, increments 1-6, web design story, PR #21-#32)
   Region V Test Coordinates.xlsx        the 19 live-verified test points, all six states (§7f)
+  MI Test Sites.xlsx                    earlier Michigan-only test set (superseded by the above)
+  agol-review-app.md                    build guide for the AGOL site-review app + Excel hand-off
+  map-image-export.md                   why per-site figures render on the web side and Excel
+                                          only places them
+  notebook-web-tool-implementation.md   publishing notebooks/ as an AGOL Web Tool and calling it
+                                          from Experience Builder
+  web-manual-tests.md                   hand-test pass for the web tool — clipboard, Excel, Google
+                                          Earth, PDF layout, the editable export table; the things
+                                          build/web-tests/ can't judge (ids are stable, quote them)
 notebooks/                              AGOL notebook port of rr-core (jupytext-paired .py/.ipynb)
+AutoChecker/                            loose reference snippets from the user's other automation
+                                          (column lists, GPS extraction, sample output) — not built
 ```
 
 The two prototype `.xlsm` files are kept in `archive/` as references. The V1
@@ -1009,6 +1061,17 @@ reflects them.
 ---
 
 ## 7a. Implementation status (V1)
+
+**Where things stand (2026-09-15).** All four deliverables are built and
+deployed/committed. Excel side: stable, nothing outstanding — it last moved
+in PR #37 (§7f) / the 2026-07-16 direct-PDF pass (§7g), and any `src/` change
+still needs a local Windows rebuild (§9.1). Web side: this is where the
+active work is — the latest round (branch `claude/web-map-roads-hvran-6akxmg`,
+PR #43) added the single Export pill + export dialogue with the editable table
+and the identity write-back (§7b). Outstanding: Caleb's hand pass over that
+work (`docs/web-manual-tests.md`), the PDF map-width redesign question, and
+the never-reproduced "Page Unresponsive" zoom crash — all three tracked as
+open items at the end of §7b.
 
 Everything in the §3 V1 scope is BUILT and covered by the §9.2 verifier
 suite: all six Region V states classify live (PR #36), Fetch Imagery is the
@@ -1042,242 +1105,97 @@ live services. Full design narrative + verification history:
   off FUNCTIONAL_CLASS_DESC.
 - jsPDF must be created `compress: true` (else ~5 MB/figure); basemap tiles
   load `crossOrigin="anonymous"` against Esri's CORS tile service.
-- Leaflet map is created `zoomAnimation: false` (in-flight zoom animations
-  swallow the next setView).
 - GitHub Pages: "Re-run all jobs" fails with duplicate github-pages
   artifacts — recover with a FRESH run, or re-run only the deploy job.
-- Full-page-map restyle + live layer mirror (2026-09-14): the map is the
-  page hero (the input controls float over it in a collapsible card); a
-  "Live class + urban layers" toggle mirrors all six states' NFC layers +
-  the NTAD ACUB boundaries across the visible viewport in each source's
-  published symbology, drawn on a dedicated Leaflet canvas pane (z-index
-  350, under the site overlay/pins). Zoom-gated — roads from z13, ACUB
-  from z7 with a pixel-grid `maxAllowableOffset` — because the
-  FeatureServers are Query-only (no `/export`) and cap ~1000-2000
-  features/query; record-cap truncation is disclosed in the bottom-left
-  legend. Leaflet trap: `createPane("browsePane")` yields CSS class
-  `leaflet-browse-pane` — the "Pane" suffix is stripped.
-- Find on map + row filter (2026-09-14): search by state / county /
-  township / road via Census TIGERweb (`State_County` layers 0/1,
-  `Places_CouSub_ConCity_SubMCD` layer 1 = county subdivisions,
-  Transportation layers 2/6/8 = full-detail primary/secondary/local
-  roads; all confirmed live). Boundary matches zoom + draw a dashed
-  outline (generalized via `maxAllowableOffset`); road-name search is
-  limited to the visible map area (z≥11) — statewide un-indexed `LIKE`
-  is too slow. Results bar gained a text row filter + "in map view"
-  spatial filter (visual only — exports/stepping still cover all
-  sites). Also fixed: vendored Leaflet was missing its `images/` dir,
-  so the basemap-switcher icon rendered as a blank square.
-  Follow-up (same date): the Find box suggests as you type (300 ms
-  debounce, 2+ chars, URL-keyed fetch cache); each road suggestion is
-  annotated async with the state's FHWA class (rr-core `NFC_WIRED`
-  point query at the longest matched segment's midpoint, closest
-  segment wins, cached) + standard class-color swatch; verdict pins got
-  a bolder white ring/radius so red/green/yellow reads over the
-  class-colored mirror lines.
-- Progressive class display (2026-09-14): the live mirror now shows
-  principal arterials from z10, minor arterials from z12, full network
-  from z13 — lower bands query each state layer with a server-side
-  class filter (per-state syntax: numeric `<=` for MI/IN/MN/OH, string
-  `IN` lists for IL `FC` and WI trunk `FED_FC_CD`, numeric IN list of
-  WisDOT's urban/rural-encoded local codes; all six confirmed live via
-  returnCountOnly — metro Columbus: 23,768 segs total vs 1,144 at
-  class<=4) + pixel-grid `maxAllowableOffset`. `fetchClassLayers` takes
-  an optional `{classCap, offset}` 5th arg (PDF figures/site review
-  pass none — unchanged). HPMS was evaluated as an alternative: the
-  BTS nationwide service is a Query-only FeatureServer with the same
-  2,000-record cap and prior-year data (would disagree with the
-  authoritative state layers), and geo.dot.gov's NTAD MapServers are
-  token-gated — pre-baked vector tiles from the HPMS FGDB remain the
-  only true any-zoom route, parked as heavy (build pipeline, ~100s of
-  MB, annual refresh).
-- Baked HPMS class tiles (2026-09-14, per user direction — "download
-  the HPMS data; high classes never change; less live querying"): the
-  class DISPLAY now serves from pre-built per-state PMTiles
-  (`web/tiles/<st>.pmtiles`, pipeline in `build/tiles/`) — the full
-  HPMS network incl. locals, progressive bands baked in (interstates
-  z6 → locals z12), rendered by vendored `protomaps-leaflet`+`pmtiles`
-  into the browse canvas pane; VERDICTS stay live per point against
-  the state DOT layers, and states without a tileset fall back to the
-  live progressive mirror. Extraction gotcha: the ~30M-row national
-  HPMS table 400s (~55 s server give-up) on ANY attribute-filtered
-  offset page and on state-sized envelopes — harvest by quadtree
-  envelope (spatial index), seed ≤1° cells, treat "Unable to perform
-  query" as a split signal, dedupe by OBJECTID. protomaps-leaflet
-  trap: a symbolizer attr function is per-feature only when it
-  declares BOTH (zoom, feature) params. GitHub Pages serves PMTiles
-  (HTTP range requests); GitHub's 100 MB/file limit is the sizing
-  constraint (per-state sizes in build/tiles/README.md).
-- Full-page shell + offline basemap, locked to Region V (2026-09-14,
-  per user direction): the map fills the viewport (no page scroll); a
-  full-height left pane holds title/inputs/find/results/exports/
-  transparency panels (header + privacy banner removed; the
-  coordinates box's placeholder is real example lines, cleared on
-  focus). maxBounds + a resize-recomputed minZoom (floor z6) forbid
-  leaving the six states. The ROAD basemap is served from the repo —
-  web/tiles/basemap.pmtiles, a 50 MB Protomaps/OSM z0-11 extract
-  (layers earth/water/roads/boundaries/places, built by
-  build/tiles/build-basemap.sh; buildings/POIs/landuse were most of
-  the unfiltered 504 MB) rendered with protomaps-leaflet's light
-  theme; satellite stays live Esri; live Esri streets is the fallback
-  when the file is missing or on file://. Result rows are compact
-  (one line: name, coords, state, badge; click = select + expand
-  detail) with a "⧉ Expand table" pop-out showing every site's full
-  detail at once. Traps: `pmtiles extract` doesn't checksum (a
-  proxy-truncated pull shipped ~2,700 corrupt tiles —
-  filter-basemap-layers.py gunzip-verifies every tile); tippecanoe
-  2.49 tile-join can't read some Protomaps tiles (wire-level python
-  layer filter instead); a test server that serves .css as
-  octet-stream makes Chromium reject leaflet.css → Leaflet panes
-  lose position:absolute and the map "breaks" while the page itself
-  is fine.
-- Live street-level detail under the roads (2026-09-14, per user):
-  buildings/parks/landuse/POIs/street names/house numbers from
-  OpenFreeMap (keyless public OSM vector tiles, CORS *; runtime
-  TileJSON resolves the versioned pbf template), in a detailPane
-  (z250) between basemap (200) and HPMS overlay (350), fetch-gated
-  z13+ so region browsing stays offline; best-effort (down/blocked =
-  simply no detail). TRAP fixed on the way: protomapsL.leafletLayer
-  defaults maxDataZoom to 15 and never reads the PMTiles header —
-  past the archive's real maxzoom it fetches empty and renders BLANK
-  instead of overzooming (class lines vanished at z14+, masked by
-  Leaflet's stale lower-zoom canvases). Every layer now passes
-  explicit maxDataZoom (class 13 / basemap 11 / detail 14);
-  verify-hpms-tiles asserts painted class pixels at z15.
-- Two input tabs + Search & Collect (2026-09-14, per user): the left
-  pane's input area is tabs — "Coordinate Input" (paste flow; State
-  dropdown REMOVED, always auto-detect; "Search radius" renamed
-  "Search buffer") and "Search & Collect" (the TIGERweb Find box moved
-  here + an add-a-point form: Site name / GPS coordinates / Note).
-  Collected points join the same currentPoints list (rebuildPoints()
-  concats pasted + collected), classify/pin/step/export identically,
-  persist in localStorage ("rr_collected") until removed, and carry
-  the note into the row detail, pop-out, CSV/TSV/GeoJSON (Note
-  column) and the new KMZ export (zipped KML via makeZip, red/green/
-  yellow pushpins by verdict — the Excel tool's KML conventions). Map
-  detail restyle same pass: POI dots/labels REMOVED (user: clutter);
-  OpenFreeMap transportation now draws Google-style white road
-  ribbons with gray casings under the FHWA class centerlines.
-- Map render fix pass (2026-09-14, user screenshots: crash at street
-  level, nothing at region zoom, rectangle cut, weird water, "roads
-  without a class", slow): ROOT CAUSE of the first three visuals was a
-  renderer/tile SCHEMA mismatch — the daily Protomaps builds are the v4
-  schema (`kind`; rivers as LINE features in the `water` layer) and the
-  vendored protomaps-leaflet was 3.x (v3 `pmap:kind` themes), so only
-  earth+water matched a rule (blank land everywhere) and river lines were
-  filled as polygons (the cyan "slivers"). Vendored **5.1.0**
-  (`flavor:"light", lang:"en"`, `labelProps`; `theme`/`label_props` are
-  gone). Then: `levelDiff: 0` on the class tiles (renderer default 1
-  asked for z5 tiles from a -Z6 tileset → nothing at the region view);
-  the six-state CUT is a mask polygon (`web/data/r5-states.geojson`,
-  Census TIGERweb generalized, world ring + state holes, pane z300) —
-  the basemap extract is still rectangles (no `pmtiles` CLI locally);
-  ACUB display now comes from `acub.pmtiles` (pane z340) instead of a
-  live NTAD frame query + canvas rebuild on every pan; class layers for
-  states OUTSIDE the view are detached (all six stayed attached from the
-  region view → 150 tile canvases at every street zoom, most empty —
-  the bulk of the per-zoom cost under 4x CPU throttling); "roads with
-  no class" were two things: streets absent from HPMS entirely (private
-  drives / some subdivision streets — tile == live service, verified
-  Long Lake MI) and class-7 lines that WERE painted but at 1.3 px × 85%
-  opacity anti-aliased to ~25% alpha and vanished over the white OSM
-  ribbons — width now scales with zoom, opacity 0.95. Water/waterway
-  are redrawn from OpenFreeMap at z13+ (the z11 basemap lakes overzoom
-  blocky); house numbers z18+. `build/web-tests/verify-map-render.mjs`
-  pins all of it (pixel reads against the real tilesets + a zoom
-  long-task budget). The "Page Unresponsive" crash did NOT reproduce
-  headless (max long task ~0.5 s under 4x throttling + DPR 2); the
-  canvas-count fix is the best candidate — re-check on the real laptop.
-  Wheel-debounce coalescing was tried and reverted (same cost, fewer
-  levels per scroll).
-- Atlas opening map (2026-09-15, per user: "a beautiful map ... not a
-  bunch of purple lines. No need for interstates here"): the basemap
-  renders through a custom `ATLAS_FLAVOR` object (ivory paper, muted
-  water, sage parks, ochre highways, brown-grey type) via
-  protomapsL.paintRules/labelRules — the `flavor` option only accepts
-  built-in names; the OpenFreeMap detail layer and the state mask share
-  the `ATLAS` swatches. Class lines AND urban boundaries are held until
-  z9 (`BROWSE_CLASS_ZOOM`, `BROWSE_ACUB_ZOOM`); verify-map-render asserts
-  zero class pixels at the region view and class pixels at z10.
-- Cached-tile classification (2026-09-14, per user: "check every
-  point with the data we have cached"): verdicts default to the
-  hosted tilesets — HPMS z13 road tiles (read via
-  protomapsL.PmtilesSource, tile coords -> lon/lat, real
-  point-to-segment distances) + new web/tiles/acub.pmtiles (549
-  Region V NTAD 2020 urban polygons, 3 MB, build-acub.sh; NTAD
-  harvest needs ids-then-objectId-batches + ~3 m maxAllowableOffset —
-  resultOffset gives the HPMS-style 55 s give-up and full precision
-  504s). Same computeVerdict/classLabels code as the live path;
-  TIGER names stay live non-fatal; "cached data" chip on rows;
-  "Live verdicts" checkbox (svcpanel, localStorage) restores
-  per-point live queries; automatic live fallback on file:///missing
-  tiles/errors/out-of-region. verify-hpms-tiles asserts the known
-  Federal-aid verdict from tiles with zero live class/ACUB point
-  queries. Find box: state dropdown REMOVED (searches span the six
-  states; typing a state name matches it); a shown road reports how
-  many of the user's points lie within the buffer of it.
-- State-linkage tiles (2026-09-14 round 2, per user: "connect the
-  segments to state segments"): the state tilesets are rebuilt with
-  each segment's STATE LRS keys from HPMS (R=ROUTE_ID — MI: the MDOT
-  PR number, verified 0006904 at the Kalamazoo test point; B/E =
-  mileposts; N=RouteName — offline street names incl. MN/IL whose own
-  layers have none; RN=RouteNumber). Cached segments carry
-  routeId/mpFrom/mpTo/name; rows show a "State route <id> · MP" chip;
-  CSV/GeoJSON/KMZ export State Route ID + Milepost Range
-  (closestStateSeg helper). SERVICE TRAP: the HPMS layer stopped
-  accepting resultRecordCount that evening (400 on every query with
-  it; republished as HPMS_National_2024_FullJoin) — the harvester
-  dropped the param; maxRecordCount still caps pages and
-  exceededTransferLimit still drives the quadtree split.
-- Auto-Detect panel + table/map mirroring (2026-09-15, per user): the
-  results heading is **"Auto-Detect"**, carrying a one-line disclaimer
-  (same message as the Excel products' DisclaimerBodyText, compressed:
-  screening aid, results may be incorrect, verify with the responsible
-  governing agency) and, directly under it, the renamed **Detection
-  Buffer** select (moved out of the Coordinate Input panel, so it also
-  governs collected points) with an ⓘ hover explaining the buffer logic
-  (closest road decides; another federal-aid road inside the buffer can
-  only downgrade to yellow; ACUB never narrows below 250 ft). The text
-  row filter now hides the matching sites' PINS too, so table and map
-  never disagree. The map-view checkbox reads "filter by map view" and
-  ships UNCHECKED (it was briefly removed/always-on; the user asked for
-  it back as opt-in — don't re-remove it). TRAP that forced a design
-  detail: a row click / Prev-Next / add-point zooms to ONE site, which
-  with the box ticked would collapse the list to that site. Those moves
-  go through `focusMapOnSite()` (animate:false so moveend stays
-  synchronous and the flag can't leak) and re-apply the filter against
-  `filterBounds` — the last view the USER chose — instead of the new
-  one; ticking the box takes the current view as the baseline.
-- One Export pill + export dialogue (2026-09-15, per user): every export
-  moved off the results area into a single blue split pill (button opens
-  the dialogue, caret drops a per-format menu) placed with the INPUT, not
-  under Auto-Detect. The dialogue has a tab per FORMAT (Excel / KMZ /
-  GeoJSON / PDF), each with its own actions, options and a live preview of
-  what that format writes, over ONE editable table of every site
-  (`exportTable`, Notes column included). Cell edits live in `rowEdits`
-  keyed by "lat,lon" — NOT by point identity, because `currentPoints` is
+- **Current shape of the page (2026-09-15).** Full-viewport Leaflet map as
+  the hero (no page scroll), with a full-height LEFT PANE carrying, top to
+  bottom: title, two input tabs (**Coordinate Input** — paste flow, no State
+  dropdown, always auto-detect — and **Search & Collect** — TIGERweb find box
+  + an add-a-point form with Site name / GPS / Note), the **Export** split
+  pill, and the **Auto-Detect** results panel (disclaimer line + **Detection
+  Buffer** select with an ⓘ explainer, text row filter, opt-in "filter by
+  map view" checkbox, compact one-line rows, "⧉ Expand table"). The map is
+  locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
+- **Where the map's pixels come from.** Basemap = `web/tiles/basemap.pmtiles`
+  (50 MB Protomaps/OSM z0-11 extract) rendered by protomaps-leaflet 5.1.0
+  through a custom `ATLAS_FLAVOR` paint/label rule set (ivory paper, muted
+  water, sage parks — the `flavor` option only accepts built-in names, so the
+  atlas look must go through `paintRules`/`labelRules`). Road CLASS display =
+  baked per-state HPMS PMTiles (`web/tiles/<st>.pmtiles`, pipeline in
+  `build/tiles/`), progressive bands z6 interstates → z12 locals, held until
+  `BROWSE_CLASS_ZOOM` (z9). Urban boundaries = `web/tiles/acub.pmtiles` (549
+  Region V NTAD polygons). Street-level detail (buildings, parks, street
+  names, house numbers z18+) = live OpenFreeMap vector tiles, fetch-gated
+  z13+, best-effort. Satellite = live Esri. Panes: basemap 200 → detail 250 →
+  state mask 300 → ACUB 340 → class 350 → site overlay/pins.
+- **Where the VERDICTS come from.** Default is the cached tilesets (HPMS z13
+  road tiles read via `protomapsL.PmtilesSource` + `acub.pmtiles`), running
+  the same `computeVerdict`/`classLabels` code as the live path; rows show a
+  "cached data" chip. A "Live verdicts" checkbox (svcpanel, localStorage)
+  restores per-point live DOT queries, and the page falls back to live
+  automatically on `file://`, missing tiles, errors, or out-of-region points.
+  TIGER road names stay live (non-fatal). Cached segments carry the state LRS
+  keys baked into the tiles (route id, mileposts, name), which feed the row's
+  "State route … · MP" chip and the exports.
+- **Exports live in ONE dialogue** behind the blue split pill (placed with the
+  INPUT, not under Auto-Detect): a tab per FORMAT (Excel / KMZ / GeoJSON /
+  PDF), each with its own actions, options and a live preview, over ONE
+  editable table of every site. Cell edits live in `rowEdits` keyed by
+  origin + `"lat,lon"` — NOT by point identity, because `currentPoints` is
   rebuilt on every keystroke in the coordinates box — and `exportRowFor()`
-  applies them, so CSV / clipboard / KMZ / GeoJSON all carry the edits (a
-  Note edit also writes back to a collected point's localStorage record).
-  `buildKml()` / `buildGeojson()` were split out of their click handlers so
-  the previews and the downloads share one builder. "Copy for Excel" split
-  into **Copy site + coordinates** and **Copy Auto-Detect results**, both
-  confirming with a bottom-screen toast (`navigator.clipboard` on the https
-  site, textarea+execCommand fallback, and an honest "select the preview and
-  press Ctrl+C" toast if both fail). The dialogue's buttons are the ORIGINAL
-  elements (same ids: dlCsv/copyTsv/dlKmz/dlGeojson/pdfBtn/firmZipBtn/
-  pdfZoom), so no export handler was rewired — only its home moved; the
-  verifiers now open the dialogue before clicking them.
-- **PDF map width — labels only, and REVISIT THIS.** The select's option
-  labels are now plain feet then miles (500 ft / 1,000 ft / 2,000 ft /
-  0.75 mi / 1.5 mi / 3 mi); the VALUES are the same metre half-widths
-  (76/152/300/600/1200/2400) `reportRadiusMeters()` feeds to
-  `reportFrame()`, so the figure geometry and the §7g-adjacent PDF layout
-  are untouched — deliberately, since changing the values changes every
-  figure's scale. **Open item (user, 2026-09-15): revisit what this control
-  is for at all** — whether a fixed scale, a per-site auto-fit to the roads
-  found, or a plain "zoom" is the right model; the odd 0.75 mi step is an
-  artifact of the metre values, not a choice.
+  applies them, so CSV / clipboard / KMZ / GeoJSON all carry the edits.
+  Site Name / Latitude / Longitude are identity, not decoration: editing one
+  **writes back** to the coordinates box (or the collected point's
+  localStorage record), re-parses, re-classifies at the new location and
+  moves the pin, so a verdict can never belong to different coordinates than
+  the ones printed beside it. The write-back is **row-scoped** — an edit is
+  validated and stashed in `pendingIdentity` on cell blur, but the rewrite +
+  re-check only fire when focus leaves the `<tr>`, on Enter, or when the
+  dialogue closes — so correcting a transposed pair is one re-check, not two.
+  While a re-check is in flight `setReclassifying()` disables the dialogue's
+  export buttons (a download must never silently omit the edited row).
+- **Traps that will bite again** (the round-by-round record is in
+  `docs/HISTORY.md` §7b):
+  - `protomapsL.leafletLayer` defaults `maxDataZoom` to 15 and never reads the
+    PMTiles header — past an archive's real maxzoom it fetches empty and
+    renders **blank**, masked by Leaflet's stale lower-zoom canvases. Every
+    layer passes an explicit `maxDataZoom` (class 13 / basemap 11 / detail 14).
+  - `levelDiff: 0` on the class tiles; the renderer default of 1 asks for z5
+    tiles from a `-Z6` tileset and draws nothing at the region view.
+  - A symbolizer attr function is per-feature only when it declares BOTH
+    `(zoom, feature)` params.
+  - Detach class layers for states outside the view — all six attached meant
+    ~150 tile canvases at street zoom, most of them empty.
+  - `createPane("browsePane")` yields CSS class `leaflet-browse-pane` (the
+    "Pane" suffix is stripped).
+  - Leaflet map is created `zoomAnimation: false` (an in-flight zoom animation
+    swallows the next `setView`); site-focus moves go through
+    `focusMapOnSite()` with `animate:false` so `moveend` stays synchronous and
+    the map-view filter can't collapse the list to the site just focused.
+  - The six-state cut is a mask polygon (`web/data/r5-states.geojson`, world
+    ring + state holes) — the basemap extract itself is still rectangles.
+  - `pmtiles extract` does not checksum (a proxy-truncated pull once shipped
+    ~2,700 corrupt tiles; `filter-basemap-layers.py` gunzip-verifies every
+    tile). tippecanoe 2.49 `tile-join` can't read some Protomaps tiles.
+  - The HPMS national layer 400s on attribute-filtered offset pages and
+    state-sized envelopes, and stopped accepting `resultRecordCount`
+    entirely — harvest by quadtree envelope, treat "Unable to perform query"
+    as a split signal, dedupe by OBJECTID.
+  - A test server that serves `.css` as `octet-stream` makes Chromium reject
+    `leaflet.css`, Leaflet panes lose `position:absolute`, and the map
+    "breaks" while the page itself is fine.
+- **Open items.** (a) The **PDF map width** select is labelled in plain feet
+  then miles (500 ft / 1,000 ft / 2,000 ft / 0.75 mi / 1.5 mi / 3 mi) over the
+  same metre half-widths (76/152/300/600/1200/2400) that `reportRadiusMeters()`
+  feeds to `reportFrame()` — geometry deliberately untouched. Caleb asked to
+  **revisit what this control is for at all** (fixed scale vs per-site auto-fit
+  vs a plain zoom); the odd 0.75 mi step is an artifact of the metre values,
+  not a choice. (b) A "Page Unresponsive" crash on zooming region↔street,
+  reported from the real laptop and **never reproduced headless** (max long
+  task ~0.5 s under 4× throttling at DPR 2); the canvas-count fix above is the
+  best candidate — re-check on the laptop. (c) Caleb's hand pass over the
+  export/edit work (`docs/web-manual-tests.md`, interactive copy at
+  <https://claude.ai/artifact/KMuEX8xpojeYZ36aBrvSnG>) is outstanding.
 
 ---
 
@@ -1613,6 +1531,52 @@ site point — `SnapShapesToPages` and `modPdf.PushpinOps` both rely on it.
 Google Maps (23), Bing (25), FEMA Viewer (27) stay hidden everywhere; Google
 Earth (26) lost its inspector-hidden split.
 
+## 7h. Cat C site-inspection filler (`web/inspection/`)
+
+A THIRD deliverable, separate from the two workbooks and from the Road
+Checker: a self-contained web app that fills FEMA's **"Cat C - Road-Low
+Water Crossing - Fillable.pdf"** Site Inspection Report in the browser. The
+output is the *genuine* FEMA PDF with its AcroForm fields still live — not a
+lookalike. No server, no install, no network at fill time (pdf-lib and the
+blank form are base64-inlined into the one HTML file).
+
+- **The deliverable is `web/inspection/index.html` (~1 MB)** and it is both
+  *hosted* (deployed with the rest of `web/` by `.github/workflows/pages.yml`,
+  reachable under `/inspection/`; https is what makes the GPS button work and
+  is the only usable iOS path — iPhone Safari can only Quick-Look a local HTML
+  file from Files) and *portable* (email it, drop it in Teams, carry it on a
+  USB stick, open it offline). The hosted copy adds a manifest + icons +
+  a stale-while-revalidate service worker, so "Add to Home Screen" installs a
+  standalone offline app; registration is guarded to https/localhost so the
+  email-around single-file mode is unaffected.
+- **What it fills:** every field of the 7-page form (mapped by name, typos
+  and all) grouped into phone-friendly sections; finger/stylus signature +
+  initials pads stamped onto the real signature lines; a sketch pad or image
+  upload into the page-2 sketch box; photos (first fills the page-4 grid,
+  extras append as captioned pages with continued page numbering); GPS from
+  geolocation with an EXIF-from-photo fallback and manual entry; drafts
+  autosaved to localStorage with JSON export/import.
+- **Survey123 companion (zero infrastructure).** `build/inspection-filler/
+  survey123/gen_xlsform.py` generates both the XLSForm (publish it with
+  Survey123 Connect) and `survey123_map.json` from one definition, validating
+  every mapped target against the template's real field names. Field crews
+  collect in the Survey123 app; the hosted feature layer's Data tab exports
+  CSV; **Import Survey123 CSV** in the filler rehydrates a draft (record
+  picker for multi-row exports, ISO/locale date normalization, select-one →
+  checkbox, select-multiple fan-out, geopoint x/y fallback for the GPS
+  fields), then the inspector re-attaches photos, signs and generates.
+- **Source and rebuild.** Everything lives in `build/inspection-filler/`:
+  `form_src.html` (the spec), `build.py` (the inliner), `make_template.py`,
+  `template/catc-road-lwc-fillable-clean.pdf` (the FEMA form with two
+  invisible fixes pdf-lib needs — rich-text flags cleared, a 10 pt `/DA` on
+  text fields so big notes fields don't auto-size comically) and
+  `vendor/pdf-lib.min.js`. Rebuild with `python3 build/inspection-filler/
+  build.py` and **commit the generated `web/inspection/index.html`** — editing
+  the generated file directly is lost on the next build.
+- **Verifier:** `build/web-tests/verify-inspection-filler.mjs` (§9.2b).
+
+---
+
 ## 8. Design decisions (resolved) and remaining open questions
 
 ### Resolved (do not relitigate)
@@ -1792,6 +1756,63 @@ Trace output from any verifier lands in
 `%TEMP%\RoadReviewer_classify_trace.txt` (or `_w3_trace.txt` for
 Workflow 3) when `SetTrace` is on — use it to see exactly which HTTP
 call was in flight if a workflow hangs.
+
+### 9.2b Web verifiers (Node, no Excel — these DO run in the cloud sandbox)
+
+The web deliverables are verified by Node scripts, which is what makes them
+editable from a session with no Windows and no Excel. `build/verify-web-core.mjs`
+is curl-only (it `eval`s the shipped `rr-core` block against the live
+services); everything in `build/web-tests/` drives a real Chromium through
+playwright-core, because canvas, PDFs and the clipboard can't be judged any
+other way.
+
+| Script | What it covers | Network? |
+|---|---|---|
+| `build/verify-web-core.mjs` | rr-core's classification against the §4.2-§4.2e test coords for all six states | live state DOTs + NTAD |
+| `web-tests/verify-review-ui.mjs` | the page's UI contract: Auto-Detect panel, Detection Buffer, row filter ↔ pin mirroring, site stepping, on-map layers + legend, the Export pill/menu/dialogue, the editable table and the identity write-back (incl. the tab-holds-the-recheck rule), sources.html, FIRMette ZIP | stubbed (fixtures) |
+| `web-tests/verify-pdf-report.mjs` | PDF report structure (page count, embedded images) + the pdfZoom option list | stubbed |
+| `web-tests/verify-map-render.mjs` | real tilesets: basemap pixels, class + ACUB pixels, the six-state mask, class visible at z15/z17, zero class pixels at the region view, zoom long-task budget | tiles only |
+| `web-tests/verify-hpms-tiles.mjs` | the cached-tile verdict path: HPMS legend section, painted pixels, and a known verdict with ZERO live point queries | tiles only |
+| `web-tests/verify-inspection-filler.mjs` | §7h end-to-end: fill, draw, attach a geotagged photo, generate, then assert the output PDF's fields/checkboxes/page count/EXIF GPS with pdf-lib | none (file://) |
+
+```bash
+cd build/web-tests && npm install          # once — playwright-core only
+node verify-review-ui.mjs
+node verify-pdf-report.mjs
+node verify-hpms-tiles.mjs
+node verify-map-render.mjs
+node verify-inspection-filler.mjs
+node ../verify-web-core.mjs                # from build/web-tests or build/
+```
+
+Two invocation traps:
+
+- **Never answer "npx playwright install".** Every script launches with an
+  explicit `executablePath`, defaulting to **`/opt/pw-browsers/chromium`** —
+  a stable symlink to whichever build the sandbox image installed. Leave that
+  default off (or pin a versioned path like
+  `chromium_headless_shell-1194/...`) and the script asks playwright-core for
+  its OWN bundled build instead; that version drifts from the image (1.61.1
+  wants 1228, the image ships 1194), and the failure reads as a missing
+  install rather than a version mismatch. Downloading a browser is the wrong
+  fix. Override with `PLAYWRIGHT_CHROMIUM_PATH` (or `CHROMIUM` for
+  `verify-inspection-filler.mjs`) if you need a different binary.
+  **Off the sandbox — e.g. running these from the Windows desktop — that
+  symlink doesn't exist:** run `npx playwright install chromium` once, then
+  point `PLAYWRIGHT_CHROMIUM_PATH` at the installed `chrome.exe`
+  (`%USERPROFILE%\AppData\Local\ms-playwright\chromium-*\chrome-win\chrome.exe`).
+- **The static server must send real MIME types.** PMTiles needs HTTP range
+  requests (python's `http.server` can't do them, which is why the tile
+  scripts start their own server), and a server that hands back `.css` as
+  `application/octet-stream` makes Chromium reject `leaflet.css` — Leaflet's
+  panes then lose `position:absolute` and the map looks broken while the page
+  is fine.
+
+`web/index.html` is one file with several inline `<script>` blocks; block 0 is
+`<script id="rr-core">`, which `verify-web-core.mjs` executes verbatim, so it
+must stay self-contained and headless-safe (no DOM, no optional globals
+required). Top-level `const`/`let`/`function` in the other classic blocks are
+cross-block globals at runtime — that is how the UI code reaches rr-core.
 
 ### 9.3 VBA gotchas that bit this codebase
 

@@ -31,7 +31,10 @@ import { dirname, join, normalize } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, "..", "..", "web");
-const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
+// /opt/pw-browsers/chromium is a stable symlink to the installed build; a
+// version-pinned path (or playwright's own bundled default) rots whenever the
+// sandbox image bumps, and fails with a misleading "npx playwright install".
+const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 for (const f of ["tiles/basemap.pmtiles", "tiles/acub.pmtiles", "tiles/mi.pmtiles", "data/r5-states.geojson"])
   if (!existsSync(join(webRoot, f))) { console.log(`SKIP: web/${f} missing`); process.exit(0); }
 
