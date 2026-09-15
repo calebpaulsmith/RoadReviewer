@@ -1217,11 +1217,18 @@ const DMS_HEM = "[NnSsEeWw]";
 // as EAST (it ate the "e" and could flip a sign). Written without lookbehind
 // on purpose — an unsupported regex feature would throw at load and take the
 // whole classifier with it.
-const DMS_ONE = `(?:(?:^|[\\s,;/(])(${DMS_HEM})\\s*)?(-?\\d{1,3})\\s*(?:[°ºd]\\s*|\\s+)(\\d{1,2}(?:\\.\\d+)?)\\s*(?:['′]\\s*|\\s+|(?=[,;/]|$))(?:(\\d{1,2}(?:\\.\\d+)?)\\s*(?:["″]|'')?\\s*)?(?:(${DMS_HEM})(?![A-Za-z]))?`;
+const dmsOne = lead => `${lead ? `(?:(?:^|[\\s,;/(])(${DMS_HEM})\\s*)?` : "()?"}(-?\\d{1,3})\\s*(?:[°ºd]\\s*|\\s+)(\\d{1,2}(?:\\.\\d+)?)\\s*(?:['′]\\s*|\\s+|(?=[,;/]|$))(?:(\\d{1,2}(?:\\.\\d+)?)\\s*(?:["″]|'')?\\s*)?(?:(${DMS_HEM})(?![A-Za-z]))?`;
 // The separator is zero-or-more because the second coordinate's own leading
 // hemisphere ("… W85°34'…") needs the space in front of the letter to prove
 // the letter stands alone; the engine backtracks the space over to it.
-const DMS_PAIR_RE = new RegExp(DMS_ONE + "[\\s,;/]*" + DMS_ONE, "d");
+// Two variants: a site name ending in a direction word ("Rose Drive W
+// 42°17'07.3\"N …") otherwise donates its last letter to the coordinate as a
+// hemisphere, which flips the latitude negative and loses the whole line. So
+// a leading hemisphere is tried, and dropped if what comes back is not a
+// Region V coordinate. The no-lead variant keeps an empty group in its place
+// so both patterns number their groups identically.
+const DMS_PAIR_RE = new RegExp(dmsOne(true) + "[\\s,;/]*" + dmsOne(true), "d");
+const DMS_PAIR_NOLEAD_RE = new RegExp(dmsOne(false) + "[\\s,;/]*" + dmsOne(false), "d");
 const DMS_NS = /^[NnSs]$/;
 
 function dmsDegrees(d, m, s, hemA, hemB) {
@@ -1238,7 +1245,9 @@ function dmsSpan(indices, groups) {
   return [st, en];
 }
 function parseDmsPair(line) {
-  const m = DMS_PAIR_RE.exec(line);
+  return dmsFromMatch(DMS_PAIR_RE.exec(line)) || dmsFromMatch(DMS_PAIR_NOLEAD_RE.exec(line));
+}
+function dmsFromMatch(m) {
   if (!m) return null;
   const a = dmsDegrees(m[2], m[3], m[4], m[1], m[5]);
   const b = dmsDegrees(m[7], m[8], m[9], m[6], m[10]);

@@ -78,6 +78,20 @@ console.log("parseCoordinates — degrees/minutes/seconds:");
   K(one(`42°17'07.3"N 85°34'12.9"W, washout`), "name after", "washout");
   K(one("Rowe Rd 42 17 07.3, -85 34 12.9"), "'e' in a name is not EAST", "Rowe Rd");
   K(one("42 17 07.3 N, 85 34 12.9 W Escanaba culvert"), "trailing word keeps its first letter", "Escanaba culvert");
+  // A site name ending in a direction word donates its last letter to the
+  // coordinate as a hemisphere, which flips the latitude negative and used to
+  // lose the whole line; the parser retries without a leading hemisphere.
+  K(one(`Rose Drive W 42\u00b017'07.3"N 85\u00b034'12.9"W`), "name ending in a direction word", "Rose Drive W");
+  K(one("Rose Drive S 42 17 07.3 N, 85 34 12.9 W"), "name ending in S", "Rose Drive S");
+  K(one(`E Rose Dr 42\u00b017'07.3"N 85\u00b034'12.9"W`), "name starting with a direction word", "E Rose Dr");
+  // The same names on DECIMAL lines (the common case) must be untouched.
+  for (const [line, name] of [["42.28536, -85.57025 E Rose Dr", "E Rose Dr"],
+                              ["Rose Drive W 42.28536, -85.57025", "Rose Drive W"],
+                              ["Rose Dr S, 42.28536, -85.57025", "Rose Dr S"],
+                              ["100 S Rose Dr 42.28536, -85.57025", "100 S Rose Dr"],
+                              ["42.28536, -85.57025 US 131", "US 131"],
+                              ["CR 42 N 42.28536, -85.57025", "CR 42 N"]])
+    K(one(line), `decimal + direction name: ${JSON.stringify(line)}`, name);
   // Addresses are NOT accepted (deferred: the Census geocoder sends no CORS
   // header, so it can't be called from the page). They must stay INVALID
   // rather than have a street number and a ZIP read as a coordinate.

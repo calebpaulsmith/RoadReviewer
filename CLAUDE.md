@@ -1127,7 +1127,10 @@ live services. Full design narrative + verification history:
   minutes/seconds ≤ 2 digits, and a hemisphere letter only counts standing
   alone (n/s/e/w also live inside words — "Culvert on Q Av**e**"). Written
   without regex lookbehind on purpose: an unsupported feature would throw at
-  load and take rr-core with it. **Street addresses are refused, deliberately**
+  load and take rr-core with it. A site name ENDING in a direction word
+  ("Rose Drive W 42°17'…") still donates that letter to the coordinate, so a
+  leading hemisphere is dropped and the line re-matched when the first read
+  isn't a Region V coordinate. **Street addresses are refused, deliberately**
   — the Census one-line geocoder the Excel tool uses (§8 resolved #2) sends NO
   `Access-Control-Allow-Origin` (verified 2026-09-15 against two controls:
   `services.arcgis.com` sends `*`, `tigerweb.geo.census.gov` reflects the

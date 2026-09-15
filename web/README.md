@@ -222,7 +222,10 @@ dangerous ones.
 Degrees must be whole and minutes/seconds at most two digits, and a
 hemisphere letter only counts when it stands alone — otherwise a street
 number, a ZIP, or the "e" in `Culvert on Q Ave` would pose as part of a
-coordinate. `build/verify-web-core.mjs` pins every form above (each one is
+coordinate. A name *ending* in a direction word (`Rose Drive W 42°17'07.3"N
+…`) still hands that letter to the coordinate and flips the latitude
+negative, so when the first read isn't a Region V coordinate the leading
+hemisphere is dropped and the line re-matched. `build/verify-web-core.mjs` pins every form above (each one is
 the §4.2 Kalamazoo test point written differently) plus the name cases.
 
 **Street addresses are NOT accepted** — a line that carries no coordinate is
@@ -235,6 +238,18 @@ origin and is why the Find box works. The endpoint does answer
 `format=jsonp&callback=…`, so addresses are technically reachable without a
 key or a backend, but only by injecting a remote `<script>` that executes in
 the page. That trade is the user's call, so addresses are deferred.
+
+There is a second reason to be careful, measured on 2026-09-15 and independent
+of CORS: the Census geocoder returns a **TIGER address-range interpolation**
+(the response carries `tigerLine.side`), i.e. a point on the street centerline,
+nudged to one side. Four Kalamazoo-area addresses geocoded and classified came
+back **19–22 ft from the nearest classified road** — and for
+`5201 Portage Rd`, the closest road was **Airview Blvd (20 ft), not Portage Rd
+(21 ft)**. The closest-road model exists to answer "which road is this damage
+actually on"; fed a geocoded address it can only restate the address, and a
+foot of interpolation noise decides which street wins. Any address support
+should mark the row as geocoded, show the coordinate for confirmation, and
+never overwrite a typed one (the rule the Excel tool already follows, F4).
 
 ## Cached-tile classification (2026-09-14) — verdicts from the hosted data
 
