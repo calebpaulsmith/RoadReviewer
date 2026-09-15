@@ -63,18 +63,19 @@ build time are recorded here; if a state ever crosses ~95 MB, split it
 
 Measured (2026-09-14, HPMS_National_Current):
 
-| state | features harvested | pmtiles |
+| state | features harvested | pmtiles (with state-linkage attrs) |
 |---|---|---|
-| MI | 349,233 | 19 MB |
-| IN | 529,343 | 6.4 MB |
-| OH | 487,331 | 26 MB |
-| IL | 445,757 | 22 MB |
-| MN | 509,570 | 22 MB |
-| WI | 902,580 | 36 MB |
+| MI | 349,233 | 41 MB |
+| IN | 529,343 | (rebuilding) |
+| OH | 487,331 | (rebuilding) |
+| IL | 445,757 | (rebuilding) |
+| MN | 509,570 | (rebuilding) |
+| WI | 902,580 | (rebuilding) |
 
-All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
-across files. (IN is an outlier at 6.4 MB despite its feature count —
-INDOT submits shorter, simpler segment geometry.)
+The state-linkage attributes (round 2, below) roughly double each
+tileset (MI 19→41 MB) — still well under the 100 MB/file limit. (IN was
+an outlier at 6.4 MB attribute-free — INDOT submits shorter, simpler
+segment geometry.)
 
 ## State-linkage attributes in the class tiles (2026-09-14, round 2)
 
