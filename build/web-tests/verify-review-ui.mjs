@@ -163,7 +163,20 @@ checks.push(["Public map link -> MI official app root (no coords)", await page.e
     && !x.href.includes("marker"));
 })]);
 
-// --- search-radius (sensitivity) control ---
+// --- Auto-Detect header: disclaimer + Detection Buffer control ---
+checks.push(["Auto-Detect heading, short disclaimer and Detection Buffer label with an info dot",
+  await page.evaluate(() => {
+    const h = [...document.querySelectorAll(".results h2")].map(x => x.textContent).join("|");
+    const d = document.querySelector(".results .disclaim");
+    const lbl = document.getElementById("bufferSel").closest("label").textContent;
+    const info = document.querySelector(".results .infodot");
+    return h.includes("Auto-Detect") && !h.includes("Results")
+      && !!d && /verify/i.test(d.textContent)
+      && lbl.includes("Detection Buffer") && !lbl.includes("Search buffer")
+      && !!info && (info.title || "").length > 60;   // the buffer-logic explainer
+  })]);
+
+// --- detection-buffer (sensitivity) control ---
 checks.push(["buffer select defaults to 250 ft", (await page.locator("#bufferSel").inputValue()) === "250"]);
 await page.selectOption("#bufferSel", "50");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
@@ -172,7 +185,49 @@ checks.push(["changing the radius re-classifies with the new buffer",
 await page.selectOption("#bufferSel", "250");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 
-// --- GeoJSON export (drag-drop file for the ArcGIS / public maps) ---
+// --- Export pill + dialogue (every export lives in here now) ---
+checks.push(["export pill sits with the input, not under Auto-Detect", await page.evaluate(() => {
+  const pill = document.getElementById("exportBtn");
+  const results = document.querySelector(".results");
+  return !!pill && !results.contains(pill) && !!document.getElementById("exportCaret")
+    && !document.querySelector(".sb-exports");
+})]);
+await page.click("#exportCaret");
+checks.push(["dropdown lists both copy actions + one entry per format", await page.evaluate(() => {
+  const t = [...document.querySelectorAll("#exportMenu button")].map(b => b.textContent).join("|");
+  return !document.getElementById("exportMenu").hidden
+    && t.includes("Copy site + coordinates") && t.includes("Copy Auto-Detect results")
+    && t.includes("CSV file") && t.includes("KMZ") && t.includes("GeoJSON") && t.includes("PDF report");
+})]);
+await page.click('#exportMenu button[data-act="tab-geojson"]');
+checks.push(["a menu format opens the dialogue on that tab, with a preview", await page.evaluate(() => {
+  const open = !document.getElementById("exportWrap").hidden;
+  const tab = document.querySelector('.extab[data-tab="geojson"]').classList.contains("active");
+  const pane = !document.querySelector('.ex-pane[data-pane="geojson"]').hidden;
+  return open && tab && pane && document.getElementById("prevGeojson").textContent.includes("FeatureCollection");
+})]);
+checks.push(["dialogue table is editable and carries a Note column", await page.evaluate(() => {
+  const ths = [...document.querySelectorAll("#exportTable th")].map(t => t.textContent);
+  const cells = document.querySelectorAll('#exportTable td[contenteditable="true"]');
+  return ths[0] === "Site Name" && ths[ths.length - 1] === "Note" && cells.length >= ths.length;
+})]);
+// an edit in the table flows into the exports
+await page.evaluate(() => {
+  const tr = document.querySelector("#exportTable tr[data-k]");
+  const td = tr.querySelectorAll("td")[EX.note];
+  td.focus();
+  td.textContent = "culvert undercut";
+  td.dispatchEvent(new Event("input", { bubbles: true }));
+});
+const editedRowOk = await page.evaluate(() => exportRows()[0][EX.note] === "culvert undercut");
+let editedPrevOk = false;   // the preview redraw is debounced ~250 ms
+try {
+  await page.waitForFunction(() =>
+    document.getElementById("prevExcel").textContent.includes("culvert undercut")
+    && document.getElementById("prevGeojson").textContent.includes("culvert undercut"), { timeout: 5000 });
+  editedPrevOk = true;
+} catch { /* reported as a failure below */ }
+checks.push(["an edited cell flows into the export rows and the preview", editedRowOk && editedPrevOk]);
 {
   const [gj] = await Promise.all([
     page.waitForEvent("download", { timeout: 15000 }),
@@ -184,6 +239,7 @@ await page.waitForFunction(() => (document.getElementById("statusCount").textCon
   checks.push(["geojson: FeatureCollection with 2 point features", gjData.type === "FeatureCollection"
     && gjData.features.length === 2 && f0.geometry.type === "Point"
     && f0.geometry.coordinates[0] === -85.57025 && f0.geometry.coordinates[1] === 42.28536]);
+  await page.click("#exportClose");   // the overlay would block the row clicks below
   checks.push(["geojson: verdict + color + reason properties (Excel WriteSitesGeoJson parity)",
     f0.properties.Name === "Kalamazoo culvert" && f0.properties.Verdict === "Federal aid"
     && /^#/.test(f0.properties.VerdictColor) && f1.properties.ReviewNote === "Second road close"]);
@@ -261,6 +317,11 @@ checks.push(["unchecking Live layers clears the mirror", await page.evaluate(asy
   return cleared;
 })]);
 
+// The results table mirrors the map view now (the "in map view" checkbox is
+// gone), and the legend checks above zoomed to one site — put every site back
+// in view before the row-level checks below.
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
+
 // --- full-page shell: sidebar pane + no page scrolling ---
 checks.push(["full-page shell: sidebar pane, map fills the rest, no page scroll", await page.evaluate(() => {
   const sb = document.getElementById("sidebar"), ma = document.getElementById("mapArea");
@@ -334,9 +395,20 @@ await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).cl
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
   const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
+checks.push(["'filter by map view' ships unchecked — the county view alone hides nothing",
+  await page.evaluate(() => {
+    const cb = document.getElementById("rowFilterView");
+    return cb && !cb.checked && cb.closest("label").textContent.includes("filter by map view")
+      && [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none");
+  })]);
 await page.check("#rowFilterView");
-checks.push(["'in map view' filter keeps only sites inside the county view", await page.evaluate(() =>
+checks.push(["ticking it keeps only sites inside the county view", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
+// A row click zooms to that site — which must NOT collapse the list to it.
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
+await page.evaluate(() => selectSite(0));
+checks.push(["zooming to one site under review keeps the other sites listed", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 2)]);
 await page.uncheck("#rowFilterView");
 await page.fill("#findText", "pitcher");
 await page.click("#findBtn");
@@ -385,13 +457,17 @@ await page.click("#tabBtnCoords");
 checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
 
 // --- results-row text filter ---
+await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
 await page.fill("#rowFilter", "Site B");
 checks.push(["row filter hides non-matching rows + counts", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1
   && document.getElementById("filterCount").textContent.includes("showing 1 of 2"))]);
+checks.push(["row filter hides the non-matching site's map pin too (table and map mirror)",
+  await page.evaluate(() => markerLayer.getLayers().length === 1)]);
 await page.fill("#rowFilter", "");
-checks.push(["clearing the filter restores all rows", await page.evaluate(() =>
-  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none"))]);
+checks.push(["clearing the filter restores all rows and pins", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none")
+  && markerLayer.getLayers().length === 2)]);
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");
@@ -414,7 +490,10 @@ checks.push(["plot-all legend combines class labels + ACUB", allLegend.includes(
 // --- per-row Source links ---
 checks.push(["rows link to sources.html#mi", await page.locator('#resultsBody a[href="sources.html#mi"]').count() >= 2]);
 
-// --- FIRMette ZIP ---
+// --- FIRMette ZIP (PDF tab of the export dialogue) ---
+await page.evaluate(() => { document.getElementById("exportWrap").hidden = true; });
+await page.click("#exportBtn");
+await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 60000 }),
   page.click("#firmZipBtn"),
@@ -435,6 +514,7 @@ checks.push(["zip contains 2 PDFs with site names", zr.names.length === 2
 checks.push(["zip CRCs valid (testzip clean)", zr.bad === null]);
 checks.push(["zip entries are PDFs", zr.allPdf === true]);
 checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "FIRMettes (ZIP)"]);
+await page.click("#exportClose");
 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });

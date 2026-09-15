@@ -98,6 +98,9 @@ await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025\nLong precisi
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 const verdictRowOk = (await page.locator("#resultsBody .row.v-fed").first().textContent())?.includes("Kalamazoo");
 
+// Exports now live in the export dialogue's PDF tab.
+await page.click("#exportBtn");
+await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 30000 }),
   page.click("#pdfBtn"),
@@ -151,7 +154,11 @@ const checks = [
   // the citation strip drawn on the figure carries the sources instead.
   ["Source-data link list removed from site pages", !text.includes("Source data")
     && !text.includes("google.com/maps?q=") && !text.includes("webmap=6a1702b9147243d1a5ee62cd614bc681")],
-  ["zoom select defaults to 500 ft (~0.1 mi; 76 m half-width)", (await page.locator("#pdfZoom").inputValue()) === "76"],
+  // Labels are feet then miles now (no "~0.1 mi" suffixes); the VALUES are
+  // untouched metre half-widths, so the figures render exactly as before.
+  ["map-width select defaults to 500 ft (76 m half-width, unchanged)",
+    (await page.locator("#pdfZoom").inputValue()) === "76"
+    && (await page.locator("#pdfZoom option").allTextContents()).join("|") === "500 ft|1,000 ft|2,000 ft|0.75 mi|1.5 mi|3 mi"],
   ["new disclaimer present", text.includes("subject to errors")],
   ["old disclaimer gone", !text.includes("classifies the road, not the project")],
   ["button label restored after run", (await page.locator("#pdfBtn").textContent()) === "PDF Report"],

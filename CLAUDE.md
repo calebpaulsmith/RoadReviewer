@@ -1229,6 +1229,55 @@ live services. Full design narrative + verification history:
   it; republished as HPMS_National_2024_FullJoin) — the harvester
   dropped the param; maxRecordCount still caps pages and
   exceededTransferLimit still drives the quadtree split.
+- Auto-Detect panel + table/map mirroring (2026-09-15, per user): the
+  results heading is **"Auto-Detect"**, carrying a one-line disclaimer
+  (same message as the Excel products' DisclaimerBodyText, compressed:
+  screening aid, results may be incorrect, verify with the responsible
+  governing agency) and, directly under it, the renamed **Detection
+  Buffer** select (moved out of the Coordinate Input panel, so it also
+  governs collected points) with an ⓘ hover explaining the buffer logic
+  (closest road decides; another federal-aid road inside the buffer can
+  only downgrade to yellow; ACUB never narrows below 250 ft). The text
+  row filter now hides the matching sites' PINS too, so table and map
+  never disagree. The map-view checkbox reads "filter by map view" and
+  ships UNCHECKED (it was briefly removed/always-on; the user asked for
+  it back as opt-in — don't re-remove it). TRAP that forced a design
+  detail: a row click / Prev-Next / add-point zooms to ONE site, which
+  with the box ticked would collapse the list to that site. Those moves
+  go through `focusMapOnSite()` (animate:false so moveend stays
+  synchronous and the flag can't leak) and re-apply the filter against
+  `filterBounds` — the last view the USER chose — instead of the new
+  one; ticking the box takes the current view as the baseline.
+- One Export pill + export dialogue (2026-09-15, per user): every export
+  moved off the results area into a single blue split pill (button opens
+  the dialogue, caret drops a per-format menu) placed with the INPUT, not
+  under Auto-Detect. The dialogue has a tab per FORMAT (Excel / KMZ /
+  GeoJSON / PDF), each with its own actions, options and a live preview of
+  what that format writes, over ONE editable table of every site
+  (`exportTable`, Notes column included). Cell edits live in `rowEdits`
+  keyed by "lat,lon" — NOT by point identity, because `currentPoints` is
+  rebuilt on every keystroke in the coordinates box — and `exportRowFor()`
+  applies them, so CSV / clipboard / KMZ / GeoJSON all carry the edits (a
+  Note edit also writes back to a collected point's localStorage record).
+  `buildKml()` / `buildGeojson()` were split out of their click handlers so
+  the previews and the downloads share one builder. "Copy for Excel" split
+  into **Copy site + coordinates** and **Copy Auto-Detect results**, both
+  confirming with a bottom-screen toast (`navigator.clipboard` on the https
+  site, textarea+execCommand fallback, and an honest "select the preview and
+  press Ctrl+C" toast if both fail). The dialogue's buttons are the ORIGINAL
+  elements (same ids: dlCsv/copyTsv/dlKmz/dlGeojson/pdfBtn/firmZipBtn/
+  pdfZoom), so no export handler was rewired — only its home moved; the
+  verifiers now open the dialogue before clicking them.
+- **PDF map width — labels only, and REVISIT THIS.** The select's option
+  labels are now plain feet then miles (500 ft / 1,000 ft / 2,000 ft /
+  0.75 mi / 1.5 mi / 3 mi); the VALUES are the same metre half-widths
+  (76/152/300/600/1200/2400) `reportRadiusMeters()` feeds to
+  `reportFrame()`, so the figure geometry and the §7g-adjacent PDF layout
+  are untouched — deliberately, since changing the values changes every
+  figure's scale. **Open item (user, 2026-09-15): revisit what this control
+  is for at all** — whether a fixed scale, a per-site auto-fit to the roads
+  found, or a plain "zoom" is the right model; the odd 0.75 mi step is an
+  artifact of the metre values, not a choice.
 
 ---
 

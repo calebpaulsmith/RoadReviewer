@@ -288,7 +288,6 @@ details.howcolors { margin-top: 8px; }
 .row .row-sub, .row .row-links { display: none; }
 .row.open .row-sub { display: flex; }
 .row.open .row-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
-.sb-exports { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
 .sb-foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line);
   font-size: 11.5px; color: var(--muted); }
 
@@ -364,6 +363,75 @@ details.howcolors { margin-top: 8px; }
   border: 1px solid rgba(0,0,0,.3); vertical-align: middle; margin-right: 4px; }
 #findResults .note { color: var(--muted); font-style: italic; font-size: 12px; margin: 3px 0; }
 
+/* ---- Export: one split pill + dropdown, under the input area ---- */
+.export-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 10px 0 2px; position: relative; }
+.btn-split { display: inline-flex; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.btn-split button { border-radius: 0; margin: 0; }
+.btn-split button:first-child { padding-right: 14px; }
+.btn-split button + button { border-left: 1px solid rgba(255,255,255,.35); padding: 6px 9px; }
+.menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 2500; min-width: 250px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 5px; }
+.menu[hidden] { display: none; }
+.menu .mgrp { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+  padding: 6px 9px 3px; }
+.menu button { display: block; width: 100%; text-align: left; border: none; background: none;
+  box-shadow: none; padding: 6px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; }
+.menu button:hover { background: #eef3f9; }
+
+/* ---- Export dialogue: tabs per export type, preview, editable table ---- */
+#exportWrap { position: fixed; inset: 0; z-index: 3000; background: rgba(15,25,35,.45);
+  display: flex; align-items: center; justify-content: center; padding: 24px; }
+#exportWrap[hidden] { display: none; }
+#exportCard { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+  width: min(1500px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.ex-tabs { display: flex; gap: 4px; padding: 8px 14px 0; border-bottom: 1px solid var(--line);
+  flex: none; flex-wrap: wrap; }
+.extab { background: none; border: 1px solid transparent; border-bottom: none; box-shadow: none;
+  border-radius: 8px 8px 0 0; padding: 7px 13px; font-size: 13px; color: var(--muted); margin-bottom: -1px; }
+.extab.active { background: #fff; border-color: var(--line); color: var(--navy); font-weight: 700; }
+.ex-pane { padding: 12px 16px; border-bottom: 1px solid var(--line); flex: none; }
+.ex-pane[hidden] { display: none; }
+.ex-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ex-note { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+.ex-prev { margin: 0; padding: 8px 10px; background: #f7f9fb; border: 1px solid var(--line);
+  border-radius: 8px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.5;
+  white-space: pre; overflow: auto; max-height: 132px; color: #33414e; }
+.ex-tablehint { display: flex; align-items: center; gap: 8px; padding: 8px 16px 0; font-size: 11.5px;
+  color: var(--muted); flex: none; }
+#exportTable { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+#exportTable th, #exportTable td { text-align: left; padding: 5px 8px; border: 1px solid var(--line);
+  vertical-align: top; }
+#exportTable th { position: sticky; top: 0; background: #f4f7fa; z-index: 1; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .4px; color: var(--muted); white-space: nowrap; }
+#exportTable td[contenteditable] { min-width: 70px; }
+#exportTable td[contenteditable]:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: #fffdf3; }
+#exportTable td.edited { background: #fff9e6; }
+#exportTable tr.v-fed td:first-child { border-left: 4px solid var(--fed-border); }
+#exportTable tr.v-nonfed td:first-child { border-left: 4px solid var(--nonfed-border); }
+#exportTable tr.v-review td:first-child { border-left: 4px solid var(--review-border); }
+#exportTable tr.v-failed td:first-child { border-left: 4px solid var(--failed-border); }
+
+/* ---- toast: "Copied to clipboard" ---- */
+#toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(6px);
+  z-index: 5000; background: rgba(20,30,40,.93); color: #fff; font-size: 13px; padding: 9px 16px;
+  border-radius: 999px; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Auto-Detect header: short disclaimer + the detection-buffer control.
+   The bar carrying the heading drops its rule so heading, disclaimer and
+   buffer read as one block. */
+.results-bar.nb { border-bottom: none; padding-bottom: 0; margin-bottom: 6px; }
+.disclaim { margin: 0 0 8px; padding: 5px 8px; font-size: 11px; line-height: 1.35;
+  color: #8a2f22; background: #fdf0ed; border: 1px solid #f0cec5;
+  border-left: 3px solid #c0392b; border-radius: 6px; }
+.infodot { display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 15px; height: 15px; border-radius: 50%; border: 1px solid #9bacbd; color: #5b6b7b;
+  font: italic 700 10.5px/1 Georgia, "Times New Roman", serif; cursor: help; user-select: none; }
+.infodot:hover, .infodot:focus { background: #eef3f9; border-color: #5b6b7b; color: var(--navy); outline: none; }
+
 /* Results-row filter */
 #rowFilter { font: inherit; font-size: 12.5px; padding: 5px 9px; width: 170px;
   border: 1px solid var(--line); border-radius: 8px; background: #fff; }
@@ -388,16 +456,6 @@ details.howcolors { margin-top: 8px; }
     </div>
     <div class="input-col" id="inputPanel">
       <div class="controls">
-        <label title="How far from each point to search for roads when no road passes exactly under it. Tighten it on dense urban grids for precision; widen it when GPS points sit off the road. The urban-boundary check never narrows below 250 ft. The state is always auto-detected from each point's location.">Search buffer:
-          <select id="bufferSel">
-            <option value="50">50 ft (strict)</option>
-            <option value="100">100 ft</option>
-            <option value="150">150 ft</option>
-            <option value="250" selected>250 ft (default)</option>
-            <option value="500">500 ft</option>
-            <option value="1000">1,000 ft (wide)</option>
-          </select>
-        </label>
         <span class="count" id="parseCount"></span>
       </div>
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
@@ -442,39 +500,59 @@ Site 12, 44.2700, -83.5200
       </div>
     </div>
 
+    <!-- Export lives with the INPUT, not under Auto-Detect (user direction):
+         one split pill — the button opens the dialogue, the caret drops the
+         per-format menu. Sits outside both tab panels so it is reachable
+         from Coordinate Input and Search & Collect alike. -->
+    <div class="export-row">
+      <span class="btn-split">
+        <button id="exportBtn" class="primary" title="Open the export dialogue — preview and edit every site's data, then download or copy it">Export</button>
+        <button id="exportCaret" class="primary" aria-haspopup="menu" aria-expanded="false" title="Pick an export format">▾</button>
+      </span>
+      <button id="clearBtn" title="Empty the coordinates box">Clear</button>
+      <span class="count" id="exportCount"></span>
+      <div id="exportMenu" class="menu" hidden role="menu">
+        <div class="mgrp">Excel / clipboard</div>
+        <button data-act="copy-coords" role="menuitem">Copy site + coordinates</button>
+        <button data-act="copy-results" role="menuitem">Copy Auto-Detect results</button>
+        <button data-act="tab-excel" role="menuitem">CSV file…</button>
+        <div class="mgrp">Maps</div>
+        <button data-act="tab-kmz" role="menuitem">KMZ for Google Earth…</button>
+        <button data-act="tab-geojson" role="menuitem">GeoJSON for GIS…</button>
+        <div class="mgrp">PDF</div>
+        <button data-act="tab-pdf" role="menuitem">PDF report…</button>
+        <button data-act="tab-pdf" role="menuitem">FIRMettes (ZIP)…</button>
+      </div>
+    </div>
+
     <div class="results">
-      <div class="results-bar">
-        <h2>Results</h2>
+      <div class="results-bar nb">
+        <h2>Auto-Detect</h2>
         <span class="count" id="statusCount"></span>
         <span style="flex:1"></span>
         <button id="popoutBtn" title="Open every site's full detail — verdict, class, urban area, roads — as one big table">⧉ Expand table</button>
       </div>
+      <p class="disclaim">Screening aid only — results may be incorrect. Verify every site with the responsible governing agency.</p>
+      <div class="results-bar">
+        <label title="How far from each point to look for roads. The state is always auto-detected from the point's location.">Detection Buffer:
+          <select id="bufferSel">
+            <option value="50">50 ft (strict)</option>
+            <option value="100">100 ft</option>
+            <option value="150">150 ft</option>
+            <option value="250" selected>250 ft (default)</option>
+            <option value="500">500 ft</option>
+            <option value="1000">1,000 ft (wide)</option>
+          </select>
+        </label>
+        <span class="infodot" tabindex="0" role="note" aria-label="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft." title="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft.">i</span>
+      </div>
       <div class="results-bar">
         <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
-          title="Show only result rows whose text matches — site name, road or street names, verdict, class, urban area">
-        <label class="count" title="Show only sites currently inside the visible map area — Find a state, county or township first, then tick this"><input type="checkbox" id="rowFilterView"> in map view</label>
+          title="Show only sites whose text matches — site name, road or street names, verdict, class, urban area. The matching sites' map pins filter with the table.">
+        <label class="count" title="Show only the sites inside the visible map area — Find a state, county or township first, then tick this. Zooming to one site (a row click, Prev/Next, adding a point) doesn't narrow the list."><input type="checkbox" id="rowFilterView"> filter by map view</label>
         <span class="count" id="filterCount"></span>
       </div>
       <div id="resultsBody" class="rowlist"></div>
-      <div class="sb-exports">
-        <button id="copyTsv" title="Copies rows in a layout that pastes cleanly into Excel">Copy for Excel</button>
-        <button id="dlCsv">CSV</button>
-        <button id="dlKmz" title="KMZ for Google Earth / ArcGIS — red, green and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">KMZ</button>
-        <button id="dlGeojson" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">GeoJSON</button>
-        <label class="count" title="How wide an area the report map for each site covers">PDF map width:
-          <select id="pdfZoom">
-            <option value="76" selected>500 ft (~0.1 mi)</option>
-            <option value="152">1,000 ft (~0.2 mi)</option>
-            <option value="300">2,000 ft (~0.4 mi)</option>
-            <option value="600">4,000 ft (~0.75 mi)</option>
-            <option value="1200">8,000 ft (~1.5 mi)</option>
-            <option value="2400">16,000 ft (~3 mi)</option>
-          </select>
-        </label>
-        <button id="pdfBtn" class="primary" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">PDF Report</button>
-        <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">FIRMettes (ZIP)</button>
-        <button id="clearBtn">Clear</button>
-      </div>
     </div>
 
   <details class="svcpanel" id="services">
@@ -520,6 +598,76 @@ Site 12, 44.2700, -83.5200
   <div id="map"></div>
   <div id="siteLegend"></div>
 </div>
+
+<!-- Export dialogue: one tab per export TYPE, each with its own options and
+     a live preview of exactly what that format will contain, over the shared
+     editable results table (Notes column included). The download/copy buttons
+     are the ORIGINAL elements (same ids) so every export handler is unchanged
+     — only their home moved. -->
+<div id="exportWrap" hidden>
+  <div id="exportCard">
+    <div class="po-head">
+      <b>Export</b>
+      <span class="count" id="exportDlgCount"></span>
+      <button id="exportClose">✕ Close</button>
+    </div>
+    <div class="ex-tabs" id="exportTabs">
+      <button class="extab active" data-tab="excel">Excel</button>
+      <button class="extab" data-tab="kmz">Google Earth (KMZ)</button>
+      <button class="extab" data-tab="geojson">GeoJSON</button>
+      <button class="extab" data-tab="pdf">PDF</button>
+    </div>
+
+    <div class="ex-pane" data-pane="excel">
+      <div class="ex-actions">
+        <button id="copyCoords" title="Copies just the site name and its coordinates — the layout the coordinates box itself accepts">Copy site + coordinates</button>
+        <button id="copyTsv" title="Copies every column below in a layout that pastes cleanly into Excel">Copy Auto-Detect results</button>
+        <button id="dlCsv" class="primary">Download CSV</button>
+      </div>
+      <pre class="ex-prev" id="prevExcel"></pre>
+    </div>
+
+    <div class="ex-pane" data-pane="kmz" hidden>
+      <div class="ex-actions">
+        <button id="dlKmz" class="primary" title="KMZ for Google Earth / ArcGIS — red, green and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">Download KMZ</button>
+      </div>
+      <pre class="ex-prev" id="prevKmz"></pre>
+    </div>
+
+    <div class="ex-pane" data-pane="geojson" hidden>
+      <div class="ex-actions">
+        <button id="dlGeojson" class="primary" title="GeoJSON of every classified site (name, verdict, color, class, roads). Drag the file onto the ArcGIS map or the state's public map — or any GIS — to review your sites over the authoritative layers">Download GeoJSON</button>
+      </div>
+      <pre class="ex-prev" id="prevGeojson"></pre>
+    </div>
+
+    <div class="ex-pane" data-pane="pdf" hidden>
+      <div class="ex-actions">
+        <label class="count" title="How wide an area the report map for each site covers, measured across the page">Map width:
+          <select id="pdfZoom">
+            <option value="76" selected>500 ft</option>
+            <option value="152">1,000 ft</option>
+            <option value="300">2,000 ft</option>
+            <option value="600">0.75 mi</option>
+            <option value="1200">1.5 mi</option>
+            <option value="2400">3 mi</option>
+          </select>
+        </label>
+        <button id="pdfBtn" class="primary" title="One page per site: a large map combining an Esri street basemap (road names), the state road-class layer and the 2020 ACUB urban boundary, drawn with each source's own published symbology, plus a legend, citations, and live links to the source layers centered on the site">PDF Report</button>
+        <button id="firmZipBtn" title="Generates a FEMA FIRMette (flood map extract PDF) for every site via FEMA's own print service and bundles them into one ZIP — capped because FEMA renders each PDF fresh">FIRMettes (ZIP)</button>
+      </div>
+      <pre class="ex-prev" id="prevPdf"></pre>
+      <p class="ex-note">The PDF pages are rendered from the live source layers, so edits in the table below don't change them.</p>
+    </div>
+
+    <div class="ex-tablehint">
+      <span>Every cell is editable — corrections and notes here go into the CSV, clipboard, KMZ and GeoJSON exports.</span>
+    </div>
+    <div class="po-body"><table id="exportTable"></table></div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
 
 <div id="popoutWrap" hidden>
   <div id="popoutCard">
@@ -1595,9 +1743,12 @@ function render() {
   });
 
   $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
+  $("exportCount").textContent = total ? `${total} site(s)` : "";
   if (bounds.length === 1) map.setView(bounds[0], 15);
   else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
-  if (window.applyRowFilter) window.applyRowFilter();
+  // The re-fit is the new baseline: every site is in view, so nothing is
+  // filtered out until the user moves the map again.
+  if (window.applyRowFilter) window.applyRowFilter(true);
 }
 
 /* ---- input handling: parse + classify automatically, debounced ---- */
@@ -1666,7 +1817,7 @@ function addCollectedPoint() {
   const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
   collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
   saveCollected(); rebuildPoints(); render();
-  map.setView([parsed.lat, parsed.lon], Math.max(map.getZoom(), 16));
+  focusMapOnSite(parsed.lat, parsed.lon, Math.max(map.getZoom(), 16));
   $("addName").value = ""; $("addCoords").value = ""; $("addNote").value = "";
 }
 $("addPointBtn").addEventListener("click", addCollectedPoint);
@@ -1699,16 +1850,35 @@ function closestStateSeg(res) {
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
                         "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason",
                         "State Route ID (closest segment)", "Milepost Range (closest segment)", "Note"];
-function exportRows() {
-  return currentPoints.filter(p => !p.invalid && p.result).map(p => {
-    const seg = closestStateSeg(p.result);
-    return [
-      p.name, p.lat, p.lon, p.result.state, p.result.classLabel, p.result.urbanRural,
-      p.result.acubName, p.result.roadName, p.result.streets, p.result.verdict, p.result.reviewReason,
-      seg ? seg.routeId : "", seg ? seg.mp : "", p.note || "",
-    ];
-  });
+// Column positions, by name, so the KMZ/GeoJSON builders can read an edited
+// row instead of the raw result object.
+const EXCOL = {};
+EXPORT_HEADERS.forEach((h, i) => { EXCOL[h] = i; });
+const EX = { name: 0, lat: 1, lon: 2, state: 3, cls: 4, urbanRural: 5, acub: 6, roads: 7,
+             streets: 8, verdict: 9, reason: 10, routeId: 11, mp: 12, note: 13 };
+
+// Cells edited in the export dialogue. Keyed by where the point came from
+// plus its coordinates (NOT by object identity): currentPoints is rebuilt
+// from the coordinates box on every keystroke and on every
+// re-classification, so edits have to outlive the point objects. The
+// pasted/collected prefix matters — a collected point often sits on exactly
+// the coordinates that were pasted earlier, and the two must not share
+// edits. A row whose coordinates are edited away loses its notes, which is
+// the same thing that happens to the site itself.
+const rowEdits = new Map();
+const editKey = p => (p.collected ? "c:" : "p:") + p.lat + "," + p.lon;
+function exportRowFor(p) {
+  const r = p.result || {}, seg = closestStateSeg(r);
+  const base = [
+    p.name, p.lat, p.lon, r.state, r.classLabel, r.urbanRural,
+    r.acubName, r.roadName, r.streets, r.verdict, r.reviewReason,
+    seg ? seg.routeId : "", seg ? seg.mp : "", p.note || "",
+  ].map(v => v === undefined || v === null ? "" : v);
+  const ed = rowEdits.get(editKey(p));
+  return ed ? base.map((v, i) => (ed[i] !== undefined ? ed[i] : v)) : base;
 }
+function exportPoints() { return currentPoints.filter(p => !p.invalid && p.result); }
+function exportRows() { return exportPoints().map(exportRowFor); }
 $("dlCsv").addEventListener("click", () => {
   const q = v => '"' + String(v ?? "").replaceAll('"', '""') + '"';
   const csv = [EXPORT_HEADERS, ...exportRows()].map(r => r.map(q).join(",")).join("\r\n");
@@ -1718,44 +1888,81 @@ $("dlCsv").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
-$("copyTsv").addEventListener("click", async () => {
-  const tsv = [EXPORT_HEADERS, ...exportRows()].map(r => r.join("\t")).join("\n");
-  await navigator.clipboard.writeText(tsv);
-  $("copyTsv").textContent = "Copied ✓";
-  setTimeout(() => { $("copyTsv").textContent = "Copy for Excel"; }, 1500);
-});
+// Brief bottom-of-screen confirmation. Used by the copy actions, which
+// otherwise give the user no sign anything happened.
+let toastTimer = null;
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1900);
+}
+// navigator.clipboard needs a secure context (the live site is https, so it
+// is the normal path); the textarea + execCommand fallback covers file://
+// opens and older browsers. Both run inside the click, as browsers require.
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(what + " copied to clipboard");
+    return true;
+  } catch { /* fall through */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:-2000px;left:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    toast(ok ? what + " copied to clipboard" : "Couldn't copy — select the preview and press Ctrl+C");
+    return ok;
+  } catch {
+    toast("Couldn't copy — select the preview and press Ctrl+C");
+    return false;
+  }
+}
+function tsvAll() { return [EXPORT_HEADERS, ...exportRows()].map(r => r.join("\t")).join("\n"); }
+function tsvCoords() {
+  return [["Site Name", "Latitude", "Longitude"],
+    ...exportPoints().map(p => { const r = exportRowFor(p); return [r[EX.name], r[EX.lat], r[EX.lon]]; })]
+    .map(r => r.join("\t")).join("\n");
+}
+$("copyTsv").addEventListener("click", () => copyText(tsvAll(), "Auto-Detect results"));
+$("copyCoords").addEventListener("click", () => copyText(tsvCoords(), "Site names + coordinates"));
 
 // GeoJSON export — the same FeatureCollection shape the Excel tool's
 // "Export GeoJSON" produces (modMaps.WriteSitesGeoJson), so either file
 // drags onto an ArcGIS map / Experience Add-Data widget interchangeably.
 // Blank properties are omitted to keep the attribute table clean.
 const BUCKET_GEO_LABEL = { fed: "Federal aid", nonfed: "Non-federal aid", review: "Review", failed: "Review" };
-$("dlGeojson").addEventListener("click", () => {
-  const pts = currentPoints.filter(p => !p.invalid && p.result);
-  if (!pts.length) { alert("Paste and classify at least one point first."); return; }
-  const features = pts.map(p => {
-    const r = p.result, bucket = verdictBucket(r.verdict);
-    const props = { Name: p.name };
+function buildGeojson() {
+  const features = exportPoints().map(p => {
+    const row = exportRowFor(p), bucket = verdictBucket(row[EX.verdict]);
+    const props = { Name: row[EX.name] };
     const add = (k, v) => { if (v !== undefined && v !== null && String(v).trim() !== "") props[k] = v; };
-    add("FedAidStatus", r.verdict);
+    add("FedAidStatus", row[EX.verdict]);
     add("Verdict", BUCKET_GEO_LABEL[bucket]);
     add("VerdictColor", BUCKET_COLOR[bucket]);
-    add("FHWAClass", r.classLabel);
-    add("UrbanRural", r.urbanRural);
-    add("ACUBName", r.acubName);
-    add("RoadName", r.roadName);
-    add("StreetName", r.streets);
-    add("ReviewNote", r.reviewReason);
-    const seg = closestStateSeg(r);
-    if (seg) { add("StateRouteID", seg.routeId); add("MilepostRange", seg.mp); }
-    add("Note", p.note);
+    add("FHWAClass", row[EX.cls]);
+    add("UrbanRural", row[EX.urbanRural]);
+    add("ACUBName", row[EX.acub]);
+    add("RoadName", row[EX.roads]);
+    add("StreetName", row[EX.streets]);
+    add("ReviewNote", row[EX.reason]);
+    add("StateRouteID", row[EX.routeId]);
+    add("MilepostRange", row[EX.mp]);
+    add("Note", row[EX.note]);
     props.Latitude = p.lat; props.Longitude = p.lon;
     return { type: "Feature", properties: props,
       geometry: { type: "Point", coordinates: [p.lon, p.lat] } };
   });
+  return JSON.stringify({ type: "FeatureCollection", features }, null, 1);
+}
+$("dlGeojson").addEventListener("click", () => {
+  if (!exportPoints().length) { alert("Paste and classify at least one point first."); return; }
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify({ type: "FeatureCollection", features }, null, 1)],
-    { type: "application/geo+json" }));
+  a.href = URL.createObjectURL(new Blob([buildGeojson()], { type: "application/geo+json" }));
   a.download = "road-checker-sites.geojson";
   a.click();
   URL.revokeObjectURL(a.href);
@@ -1765,29 +1972,31 @@ $("dlGeojson").addEventListener("click", () => {
 // yellow pushpin convention as the Excel tool's KML export; the site name,
 // verdict, class, urban area, roads and the collected note all go into the
 // placemark. Reuses makeZip (the FIRMette bundler, defined in a later block).
-$("dlKmz").addEventListener("click", () => {
-  const pts = currentPoints.filter(p => !p.invalid && p.result);
-  if (!pts.length) { alert("Add or paste at least one classified point first."); return; }
+function buildKml() {
   const ICO = { fed: "red", nonfed: "grn", review: "ylw", failed: "wht" };
   const ex = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const styles = Object.entries(ICO).map(([b, c]) =>
     `<Style id="rr-${b}"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/${c}-pushpin.png</href></Icon></IconStyle></Style>`).join("");
-  const marks = pts.map(p => {
-    const r = p.result, b = verdictBucket(r.verdict);
-    const rows = [["Federal Aid Status", r.verdict], ["Review Reason", r.reviewReason],
-      ["FHWA Class", r.classLabel], ["Urban/Rural", r.urbanRural], ["Urban Area (ACUB)", r.acubName],
-      ["Road Name(s)", r.roadName], ["Street(s)", r.streets],
-      ["State Route ID (closest segment)", (closestStateSeg(r) || {}).routeId],
-      ["Milepost Range", (closestStateSeg(r) || {}).mp],
-      ["Note", p.note], ["Coordinates", p.lat + ", " + p.lon]]
+  const marks = exportPoints().map(p => {
+    const row = exportRowFor(p), b = verdictBucket(row[EX.verdict]);
+    const rows = [["Federal Aid Status", row[EX.verdict]], ["Review Reason", row[EX.reason]],
+      ["FHWA Class", row[EX.cls]], ["Urban/Rural", row[EX.urbanRural]], ["Urban Area (ACUB)", row[EX.acub]],
+      ["Road Name(s)", row[EX.roads]], ["Street(s)", row[EX.streets]],
+      ["State Route ID (closest segment)", row[EX.routeId]],
+      ["Milepost Range", row[EX.mp]],
+      ["Note", row[EX.note]], ["Coordinates", p.lat + ", " + p.lon]]
       .filter(([, v]) => v != null && String(v).trim() !== "")
       .map(([k, v]) => `<b>${ex(k)}:</b> ${ex(v)}`).join("<br/>");
-    return `<Placemark><name>${ex(p.name)}</name><styleUrl>#rr-${b}</styleUrl>` +
+    return `<Placemark><name>${ex(row[EX.name])}</name><styleUrl>#rr-${b}</styleUrl>` +
       `<description><![CDATA[${rows}]]></description>` +
       `<Point><coordinates>${p.lon},${p.lat},0</coordinates></Point></Placemark>`;
   }).join("");
-  const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2">` +
+  return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2">` +
     `<Document><name>Federal-Aid Road Checker sites</name>${styles}${marks}</Document></kml>`;
+}
+$("dlKmz").addEventListener("click", () => {
+  if (!exportPoints().length) { alert("Add or paste at least one classified point first."); return; }
+  const kml = buildKml();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(makeZip([{ name: "doc.kml", data: new TextEncoder().encode(kml) }]));
   a.download = "road-checker-sites.kmz";
@@ -2622,7 +2831,8 @@ async function selectSite(i) {
     p._tr.classList.add("selected", "open");
     p._tr.scrollIntoView({ block: "nearest" });
   }
-  map.setView([p.lat, p.lon], 17);
+  focusMapOnSite(p.lat, p.lon, 17);
+  if (p._tr) p._tr.style.display = "";   // the site under review always shows
   if (p._marker) p._marker.openPopup();
   $("reviewInfo").textContent = `${reviewIdx + 1} / ${pts.length} — ${p.name}`;
   if ($("showLayers").checked) await showSiteLayers(p);
@@ -3265,6 +3475,109 @@ refreshBrowseLayers();
   box.addEventListener("blur", () => { if (!box.value) box.setAttribute("placeholder", examples); });
 }
 
+/* ---------------- export: split pill, format menu, dialogue ----------------
+   The dialogue is the one place exports live now: a tab per FORMAT (each
+   with its own options and a preview of exactly what that format writes),
+   over one editable table of every site. Cell edits are stored by
+   coordinates in `rowEdits` and applied by exportRowFor(), so the CSV,
+   clipboard, KMZ and GeoJSON all carry them. The PDF report re-queries the
+   live layers to draw its figures and is deliberately NOT edit-driven. */
+const EX_MENU_TAB = { "tab-excel": "excel", "tab-kmz": "kmz", "tab-geojson": "geojson", "tab-pdf": "pdf" };
+let exPrevTimer = null;
+
+function setExportTab(id) {
+  for (const b of document.querySelectorAll(".extab")) b.classList.toggle("active", b.dataset.tab === id);
+  for (const pane of document.querySelectorAll(".ex-pane")) pane.hidden = pane.dataset.pane !== id;
+}
+function capLines(txt, n) {
+  const lines = txt.split("\n");
+  return lines.length <= n ? txt : lines.slice(0, n).join("\n") + `\n… ${lines.length - n} more line(s)`;
+}
+function refreshExportPreviews() {
+  const pts = exportPoints();
+  if (!pts.length) {
+    for (const id of ["prevExcel", "prevKmz", "prevGeojson", "prevPdf"])
+      $(id).textContent = "No classified sites yet — paste or add coordinates first.";
+    return;
+  }
+  // The preview boxes scroll, so cap generously — 12 lines cut off mid-way
+  // through the first GeoJSON feature, hiding the columns people edit most.
+  $("prevExcel").textContent = capLines(tsvAll(), 40);
+  $("prevKmz").textContent = capLines(buildKml().replace(/></g, ">\n<"), 40);
+  $("prevGeojson").textContent = capLines(buildGeojson(), 40);
+  const width = $("pdfZoom").selectedOptions[0] ? $("pdfZoom").selectedOptions[0].textContent : "";
+  $("prevPdf").textContent =
+    `PDF report: ${pts.length + 1} page(s) — a cover table plus one map page per site.\n` +
+    `Map width: ${width} across each page's map.\n` +
+    `FIRMettes: one FEMA flood-map PDF per site, bundled into a ZIP.`;
+}
+function buildExportTable() {
+  const pts = exportPoints();
+  const head = "<tr>" + EXPORT_HEADERS.map(h => `<th>${esc(h)}</th>`).join("") + "</tr>";
+  const rows = pts.map(p => {
+    const row = exportRowFor(p), ed = rowEdits.get(editKey(p)) || {};
+    return `<tr class="v-${verdictBucket(row[EX.verdict])}" data-k="${esc(editKey(p))}">` +
+      row.map((v, c) => `<td contenteditable="true" data-c="${c}"${ed[c] !== undefined ? ' class="edited"' : ""}>${esc(v)}</td>`).join("") +
+      "</tr>";
+  });
+  $("exportTable").innerHTML = head + rows.join("");
+  $("exportDlgCount").textContent = pts.length ? `${pts.length} site(s)` : "no classified sites yet";
+}
+function openExport(tab) {
+  buildExportTable();
+  if (tab) setExportTab(tab);
+  refreshExportPreviews();
+  $("exportWrap").hidden = false;
+}
+function closeExportMenu() { $("exportMenu").hidden = true; $("exportCaret").setAttribute("aria-expanded", "false"); }
+
+$("exportBtn").addEventListener("click", () => { closeExportMenu(); openExport(); });
+$("exportCaret").addEventListener("click", e => {
+  e.stopPropagation();
+  const open = $("exportMenu").hidden;
+  $("exportMenu").hidden = !open;
+  $("exportCaret").setAttribute("aria-expanded", open ? "true" : "false");
+});
+$("exportMenu").addEventListener("click", e => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  closeExportMenu();
+  const act = b.dataset.act;
+  if (act === "copy-coords") { copyText(tsvCoords(), "Site names + coordinates"); return; }
+  if (act === "copy-results") { copyText(tsvAll(), "Auto-Detect results"); return; }
+  openExport(EX_MENU_TAB[act]);
+});
+document.addEventListener("click", e => { if (!e.target.closest("#exportMenu, #exportCaret")) closeExportMenu(); });
+$("exportTabs").addEventListener("click", e => {
+  const b = e.target.closest(".extab");
+  if (b) { setExportTab(b.dataset.tab); refreshExportPreviews(); }
+});
+$("pdfZoom").addEventListener("change", refreshExportPreviews);
+$("exportClose").addEventListener("click", () => { $("exportWrap").hidden = true; });
+$("exportWrap").addEventListener("click", e => { if (e.target === $("exportWrap")) $("exportWrap").hidden = true; });
+
+// Every cell is editable. Edits land in rowEdits (keyed by the site's
+// coordinates, so they survive the re-render that every keystroke in the
+// coordinates box triggers); a Note edit also goes back onto the point so a
+// collected site keeps it in this browser.
+$("exportTable").addEventListener("input", e => {
+  const td = e.target.closest("td[contenteditable]");
+  if (!td) return;
+  const key = td.parentElement.dataset.k;
+  const pt = exportPoints().find(q => editKey(q) === key);
+  if (!pt) return;
+  const c = Number(td.dataset.c), ed = rowEdits.get(key) || {};
+  ed[c] = td.textContent.trim();
+  rowEdits.set(key, ed);
+  td.classList.add("edited");
+  if (c === EX.note) {
+    pt.note = ed[c];
+    if (pt.collected && collectedPoints[pt.cIdx]) { collectedPoints[pt.cIdx].note = ed[c]; saveCollected(); }
+  }
+  clearTimeout(exPrevTimer);
+  exPrevTimer = setTimeout(refreshExportPreviews, 250);
+});
+
 /* ---------------- pop-out: every site's full detail as one table ---------------- */
 function buildPopoutTable() {
   const pts = validPoints();
@@ -3292,7 +3605,12 @@ function buildPopoutTable() {
 $("popoutBtn").addEventListener("click", () => { buildPopoutTable(); $("popoutWrap").hidden = false; });
 $("popoutClose").addEventListener("click", () => { $("popoutWrap").hidden = true; });
 $("popoutWrap").addEventListener("click", e => { if (e.target === $("popoutWrap")) $("popoutWrap").hidden = true; });
-document.addEventListener("keydown", e => { if (e.key === "Escape") $("popoutWrap").hidden = true; });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  $("popoutWrap").hidden = true;
+  $("exportWrap").hidden = true;
+  closeExportMenu();
+});
 
 /* ---------------- find on map: state / county / township / road ----------------
    Search-and-zoom over Census TIGERweb (free, no auth, already this tool's
@@ -3527,27 +3845,50 @@ $("findText").addEventListener("input", () => {
 
 /* ---------------- results-row filter ---------------- */
 // Text filter matches anything visible on the card (site name, road/street
-// names, verdict, class, urban area); "in map view" keeps only sites inside
-// the current map bounds — Find a county/township first and the list
-// filters to it. Purely visual: exports and Prev/Next still cover all sites.
-function applyRowFilter() {
+// names, verdict, class, urban area) and hides those sites' PINS with them,
+// so the map and the table never show different sets. "filter by map view"
+// (off by default) additionally keeps only the sites inside the visible map
+// area — Find a county/township first and the list follows it as you pan.
+// Purely visual: exports, the pop-out and Prev/Next cover every site.
+//
+// `filterBounds` is the last view the USER chose. Zooming to one site (a row
+// click, Prev/Next, adding a collected point) must NOT collapse the list to
+// that site, so those moves go through focusMapOnSite() and re-apply the
+// filter against the remembered bounds instead of the new ones.
+let filterBounds = null;
+let siteFocusMove = false;
+
+function focusMapOnSite(lat, lon, zoom) {
+  siteFocusMove = true;
+  // animate:false keeps moveend synchronous, so the flag can't leak into the
+  // user's next pan (zoom animation is already off globally).
+  try { map.setView([lat, lon], zoom, { animate: false }); } finally { siteFocusMove = false; }
+}
+
+function applyRowFilter(updateBounds) {
+  if (updateBounds || !filterBounds) filterBounds = map.getBounds();
   const term = $("rowFilter").value.trim().toLowerCase();
   const inView = $("rowFilterView").checked;
-  const b = inView ? map.getBounds() : null;
   let shown = 0, total = 0;
   for (const p of currentPoints) {
     if (!p._tr) continue;
     total++;
-    let ok = !term || p._tr.textContent.toLowerCase().includes(term);
-    if (ok && b) ok = b.contains([p.lat, p.lon]);
+    const matches = !term || p._tr.textContent.toLowerCase().includes(term);
+    const ok = matches && (!inView || filterBounds.contains([p.lat, p.lon]));
     p._tr.style.display = ok ? "" : "none";
+    if (p._marker) {                       // pins mirror the text filter
+      if (matches && !markerLayer.hasLayer(p._marker)) p._marker.addTo(markerLayer);
+      else if (!matches && markerLayer.hasLayer(p._marker)) markerLayer.removeLayer(p._marker);
+    }
     if (ok) shown++;
   }
-  $("filterCount").textContent = (term || inView) && total ? `showing ${shown} of ${total}` : "";
+  $("filterCount").textContent = (term || inView) && total && shown < total ? `showing ${shown} of ${total}` : "";
 }
-$("rowFilter").addEventListener("input", applyRowFilter);
-$("rowFilterView").addEventListener("change", applyRowFilter);
-map.on("moveend", () => { if ($("rowFilterView").checked) applyRowFilter(); });
+$("rowFilter").addEventListener("input", () => applyRowFilter(false));
+// Ticking the box takes the CURRENT view as the baseline; map moves keep it
+// current (a site-focus zoom deliberately doesn't).
+$("rowFilterView").addEventListener("change", () => applyRowFilter(true));
+map.on("moveend", () => applyRowFilter(!siteFocusMove));
 
 /* ---------------- FIRMette batch -> ZIP ---------------- */
 const FIRMETTE_BASE = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette";

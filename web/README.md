@@ -6,8 +6,8 @@ is parsed, classified, and pinned on the map automatically — no submit
 button, no server, nothing stored. The page is a direct JavaScript port of
 `src/modClassify.bas` + `src/modConstants.bas` + `src/modHttp.bas`'s
 distance math: same layer URLs, same retired-segment filters, same
-exact-intersect-then-buffer fallback (radius adjustable in the UI,
-default 250 ft, matching the Excel Search buffer), same per-road
+exact-intersect-then-buffer fallback (the **Detection Buffer** control,
+default 250 ft, matching the Excel search buffer), same per-road
 distances, and the same PR #24 verdict model — the **closest** road
 segment decides red vs green, yellow only downgrades green with an
 explicit Review Reason ("Second road close" / "Nearby FHWA road" /
@@ -291,11 +291,44 @@ the verdict reads clearly over the class-colored live road lines.
 
 The results list gets a matching **row filter**: a text box that hides
 result cards whose text doesn't match (site name, road/street names,
-verdict, class, urban area), and an **"in map view"** checkbox that
-keeps only sites inside the current map bounds — Find a county or
-township first and the list filters to it, live as you pan. Both are
-purely visual: exports, Prev/Next stepping, and classification always
-cover every site.
+verdict, class, urban area) **and hides those sites' map pins with
+them**, so the table and the map never show different sets. Beside it,
+a **"filter by map view"** checkbox (off by default) additionally keeps
+only the sites inside the current map bounds — Find a county or
+township first and the list follows it, live as you pan. Zooming to a
+single site (a row click, Prev/Next, or adding a collected point) is
+deliberately exempt from that: it would otherwise collapse the list to
+the one site you just clicked, so those moves re-apply the filter
+against the last view the user chose. All of it is purely visual —
+exports, the pop-out table, Prev/Next stepping and classification
+always cover every site.
+
+## Export (2026-09-15)
+
+Every export sits behind one blue **Export** split pill, placed with the
+coordinate input rather than under Auto-Detect. The button opens the
+export dialogue; the caret drops a menu of formats.
+
+- **Tabs per format** — Excel, Google Earth (KMZ), GeoJSON, PDF — each
+  with its own actions, its own options, and a **live preview** of what
+  that format will actually write.
+- **One editable table** under the tabs, showing every column the exports
+  carry, **Note included**. Every cell is editable; edits are keyed by the
+  site's coordinates (so they survive the re-render each keystroke in the
+  coordinates box triggers) and flow into the CSV, the clipboard copies,
+  the KMZ and the GeoJSON. A Note edit also sticks to a collected point in
+  this browser. The PDF report re-queries the live layers to draw its
+  figures, so it is deliberately not edit-driven.
+- **Two clipboard actions** — *Copy site + coordinates* (just the name and
+  lat/lon, in the layout the coordinates box itself accepts) and *Copy
+  Auto-Detect results* (every column). Both confirm with a short toast;
+  the page uses `navigator.clipboard` where the browser allows it (the
+  live https site) and falls back to a hidden textarea, telling you to
+  copy the preview by hand if a locked-down browser blocks both.
+- **PDF map width** moved into the PDF tab. Its labels are plain feet then
+  miles; the underlying values are unchanged metre half-widths, so the
+  figures render exactly as before. *Open item: what this control should
+  be is up for review — see CLAUDE.md §7b.*
 
 ## Data sources page
 
