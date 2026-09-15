@@ -1797,6 +1797,10 @@ Two invocation traps:
   install rather than a version mismatch. Downloading a browser is the wrong
   fix. Override with `PLAYWRIGHT_CHROMIUM_PATH` (or `CHROMIUM` for
   `verify-inspection-filler.mjs`) if you need a different binary.
+  **Off the sandbox — e.g. running these from the Windows desktop — that
+  symlink doesn't exist:** run `npx playwright install chromium` once, then
+  point `PLAYWRIGHT_CHROMIUM_PATH` at the installed `chrome.exe`
+  (`%USERPROFILE%\AppData\Local\ms-playwright\chromium-*\chrome-win\chrome.exe`).
 - **The static server must send real MIME types.** PMTiles needs HTTP range
   requests (python's `http.server` can't do them, which is why the tile
   scripts start their own server), and a server that hands back `.css` as
