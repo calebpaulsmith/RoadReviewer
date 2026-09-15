@@ -1237,16 +1237,17 @@ live services. Full design narrative + verification history:
   Buffer** select (moved out of the Coordinate Input panel, so it also
   governs collected points) with an ⓘ hover explaining the buffer logic
   (closest road decides; another federal-aid road inside the buffer can
-  only downgrade to yellow; ACUB never narrows below 250 ft). The "in
-  map view" checkbox is GONE — the table always shows only the sites in
-  the visible map area, and the text filter now hides the matching
-  sites' PINS too, so table and map never disagree. TRAP that forced a
-  design detail: a row click / Prev-Next / add-point zooms to ONE site,
-  which with a naive always-on view filter collapses the list to that
-  site. Those moves go through `focusMapOnSite()` (animate:false so
-  moveend stays synchronous and the flag can't leak) and re-apply the
-  filter against `filterBounds` — the last view the USER chose — instead
-  of the new one.
+  only downgrade to yellow; ACUB never narrows below 250 ft). The text
+  row filter now hides the matching sites' PINS too, so table and map
+  never disagree. The map-view checkbox reads "filter by map view" and
+  ships UNCHECKED (it was briefly removed/always-on; the user asked for
+  it back as opt-in — don't re-remove it). TRAP that forced a design
+  detail: a row click / Prev-Next / add-point zooms to ONE site, which
+  with the box ticked would collapse the list to that site. Those moves
+  go through `focusMapOnSite()` (animate:false so moveend stays
+  synchronous and the flag can't leak) and re-apply the filter against
+  `filterBounds` — the last view the USER chose — instead of the new
+  one; ticking the box takes the current view as the baseline.
 
 ---
 

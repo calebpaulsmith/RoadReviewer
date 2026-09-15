@@ -467,7 +467,8 @@ Site 12, 44.2700, -83.5200
       </div>
       <div class="results-bar">
         <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
-          title="Show only sites whose text matches — site name, road or street names, verdict, class, urban area. The map pins filter with the table, and the table always shows the sites inside the visible map area.">
+          title="Show only sites whose text matches — site name, road or street names, verdict, class, urban area. The matching sites' map pins filter with the table.">
+        <label class="count" title="Show only the sites inside the visible map area — Find a state, county or township first, then tick this. Zooming to one site (a row click, Prev/Next, adding a point) doesn't narrow the list."><input type="checkbox" id="rowFilterView"> filter by map view</label>
         <span class="count" id="filterCount"></span>
       </div>
       <div id="resultsBody" class="rowlist"></div>
@@ -3544,10 +3545,12 @@ $("findText").addEventListener("input", () => {
 });
 
 /* ---------------- results-row filter ---------------- */
-// The table always mirrors the map: only sites inside the visible area are
-// listed (no checkbox — Find a county and the list follows), and the text
-// filter hides the matching sites' PINS too, so map and table never disagree.
-// Still purely visual: exports, the pop-out and Prev/Next cover every site.
+// Text filter matches anything visible on the card (site name, road/street
+// names, verdict, class, urban area) and hides those sites' PINS with them,
+// so the map and the table never show different sets. "filter by map view"
+// (off by default) additionally keeps only the sites inside the visible map
+// area — Find a county/township first and the list follows it as you pan.
+// Purely visual: exports, the pop-out and Prev/Next cover every site.
 //
 // `filterBounds` is the last view the USER chose. Zooming to one site (a row
 // click, Prev/Next, adding a collected point) must NOT collapse the list to
@@ -3566,12 +3569,13 @@ function focusMapOnSite(lat, lon, zoom) {
 function applyRowFilter(updateBounds) {
   if (updateBounds || !filterBounds) filterBounds = map.getBounds();
   const term = $("rowFilter").value.trim().toLowerCase();
+  const inView = $("rowFilterView").checked;
   let shown = 0, total = 0;
   for (const p of currentPoints) {
     if (!p._tr) continue;
     total++;
     const matches = !term || p._tr.textContent.toLowerCase().includes(term);
-    const ok = matches && filterBounds.contains([p.lat, p.lon]);
+    const ok = matches && (!inView || filterBounds.contains([p.lat, p.lon]));
     p._tr.style.display = ok ? "" : "none";
     if (p._marker) {                       // pins mirror the text filter
       if (matches && !markerLayer.hasLayer(p._marker)) p._marker.addTo(markerLayer);
@@ -3579,9 +3583,12 @@ function applyRowFilter(updateBounds) {
     }
     if (ok) shown++;
   }
-  $("filterCount").textContent = total && shown < total ? `showing ${shown} of ${total}` : "";
+  $("filterCount").textContent = (term || inView) && total && shown < total ? `showing ${shown} of ${total}` : "";
 }
 $("rowFilter").addEventListener("input", () => applyRowFilter(false));
+// Ticking the box takes the CURRENT view as the baseline; map moves keep it
+// current (a site-focus zoom deliberately doesn't).
+$("rowFilterView").addEventListener("change", () => applyRowFilter(true));
 map.on("moveend", () => applyRowFilter(!siteFocusMove));
 
 /* ---------------- FIRMette batch -> ZIP ---------------- */

@@ -292,15 +292,16 @@ the verdict reads clearly over the class-colored live road lines.
 The results list gets a matching **row filter**: a text box that hides
 result cards whose text doesn't match (site name, road/street names,
 verdict, class, urban area) **and hides those sites' map pins with
-them**, so the table and the map never show different sets. The
-map-view filter has no checkbox — the list **always** shows just the
-sites inside the current map bounds, live as you pan, so finding a
-county or township filters the list to it by itself. Zooming to a
+them**, so the table and the map never show different sets. Beside it,
+a **"filter by map view"** checkbox (off by default) additionally keeps
+only the sites inside the current map bounds — Find a county or
+township first and the list follows it, live as you pan. Zooming to a
 single site (a row click, Prev/Next, or adding a collected point) is
-deliberately exempt: it would otherwise collapse the list to that one
-site, so those moves re-apply the filter against the last view the user
-chose. All of it is purely visual — exports, the pop-out table,
-Prev/Next stepping and classification always cover every site.
+deliberately exempt from that: it would otherwise collapse the list to
+the one site you just clicked, so those moves re-apply the filter
+against the last view the user chose. All of it is purely visual —
+exports, the pop-out table, Prev/Next stepping and classification
+always cover every site.
 
 ## Data sources page
 

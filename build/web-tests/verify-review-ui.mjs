@@ -352,14 +352,21 @@ await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).cl
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
   const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
-checks.push(["table mirrors the map view with no checkbox to tick", await page.evaluate(() =>
-  !document.getElementById("rowFilterView")
-  && [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
+checks.push(["'filter by map view' ships unchecked — the county view alone hides nothing",
+  await page.evaluate(() => {
+    const cb = document.getElementById("rowFilterView");
+    return cb && !cb.checked && cb.closest("label").textContent.includes("filter by map view")
+      && [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none");
+  })]);
+await page.check("#rowFilterView");
+checks.push(["ticking it keeps only sites inside the county view", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1)]);
 // A row click zooms to that site — which must NOT collapse the list to it.
 await page.evaluate(() => map.fitBounds(validPoints().map(p => [p.lat, p.lon]), { padding: [30, 30] }));
 await page.evaluate(() => selectSite(0));
 checks.push(["zooming to one site under review keeps the other sites listed", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 2)]);
+await page.uncheck("#rowFilterView");
 await page.fill("#findText", "pitcher");
 await page.click("#findBtn");
 await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("S Pitcher St")), { timeout: 15000 });
