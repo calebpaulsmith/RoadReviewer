@@ -168,6 +168,27 @@ main { max-width: 1680px; padding: 22px 26px; }
 #map { height: 445px; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 
 .controls { gap: 14px; margin-bottom: 12px; }
+/* Address / road lines highlighted IN the box: a mirror div behind a
+   transparent textarea, same font, padding, border box and wrapping, so
+   each highlighted line sits exactly under the typed one. Both reserve a
+   scrollbar gutter so wrap widths never differ. */
+.coords-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.coords-wrap textarea, .coords-mirror { overflow-y: auto; scrollbar-gutter: stable; }
+.coords-wrap textarea { position: relative; z-index: 1; background: transparent; }
+.coords-mirror { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow-x: hidden;
+  white-space: pre-wrap; overflow-wrap: break-word; color: transparent; background: #fff;
+  border: 1px solid transparent; border-radius: var(--radius); padding: 14px;
+  font: 13.5px/1.6 ui-monospace, Consolas, monospace; scrollbar-color: transparent transparent; }
+.coords-mirror div { min-height: 1.6em; }
+.coords-mirror mark { color: transparent; border-radius: 3px; background: #fde68a; box-shadow: 0 0 0 2px #fde68a; }
+.coords-mirror mark.road { background: #ddd6fe; box-shadow: 0 0 0 2px #ddd6fe; }
+.coords-mirror mark.geo-ok { background: #d1fae5; box-shadow: 0 0 0 2px #d1fae5; }
+.coords-mirror mark.geo-pending { background: #e5e7eb; box-shadow: 0 0 0 2px #e5e7eb; }
+.coords-mirror mark.geo-bad { background: #fecaca; box-shadow: 0 0 0 2px #fecaca; }
+.geo-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; flex-wrap: wrap; }
+.geo-bar .hint { margin: 0; flex: 1 1 200px; }
+.row.v-address { border-left-color: #d9a400; background: #fffbea; }
+.row.v-address .rstatus { color: #6b5300; }
 .controls label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
 select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px; background: #fff; box-shadow: var(--shadow-sm); }
 select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31,111,235,.16); }
@@ -458,10 +479,20 @@ details.howcolors { margin-top: 8px; }
       <div class="controls">
         <span class="count" id="parseCount"></span>
       </div>
+      <div class="geo-bar" id="geoBar" hidden>
+        <button id="geocodeBtn" class="primary" title="Sends ONLY the highlighted address lines to the Census Bureau geocoder, once, when you click. Nothing is sent as you type.">Geocode addresses</button>
+        <span class="hint">Highlighted lines are addresses. They stay on this page until you click — then each is geocoded, snapped to its named street and classified.</span>
+      </div>
+      <div class="coords-wrap">
+        <div class="coords-mirror" id="coordsMirror" aria-hidden="true"></div>
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
 Culvert on Q Ave	42.6911	-84.5360
 Site 12, 44.2700, -83.5200
-39.9876	-86.0128	CR 550 N"></textarea>
+39.9876	-86.0128	CR 550 N
+Bridge 7	42°41'28&quot;N	84°32'10&quot;W
+5201 Portage Rd, Portage MI 49002
+Portage Rd, Portage MI"></textarea>
+      </div>
       <div class="legend">
         <span class="l-fed">Federal aid — closest road</span>
         <span class="l-nonfed">Non-federal aid — closest road</span>
@@ -489,7 +520,7 @@ Site 12, 44.2700, -83.5200
       </div>
       <div class="addbox">
         <div class="addrow"><input id="addName" type="text" spellcheck="false" placeholder="Site name (e.g. Culvert on Q Ave)"></div>
-        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025"></div>
+        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025 or 42°17'07.3&quot;N 85°34'12.9&quot;W"></div>
         <div class="addrow"><input id="addNote" type="text" spellcheck="false" placeholder="Note (optional — goes into the export)"></div>
         <div class="addrow">
           <button id="addPointBtn" class="primary" title="Adds the point to the results table below, classifies it, and zooms the map to it. Points are kept in this browser until removed.">＋ Add point</button>
@@ -1201,6 +1232,299 @@ function detectState(lat, lon) {
 // Parse pasted text: one point per line, "lat lon" or "lat, lon" with an
 // optional free-text name before/after. Uses the last adjacent number pair
 // that looks like a CONUS lat/lon (also accepts lon,lat swapped).
+/* ---- degrees / minutes / seconds ---------------------------------------
+   Field GPS units and FEMA paperwork often carry DMS (42°17'07.3"N) or
+   degrees-decimal-minutes (42 17.122'). The decimal scan in
+   parseCoordinates takes the last in-range NUMBER pair on the line, which
+   read "42 17 07.3, -85 34 12.9" as 34, -85 — a confident verdict three
+   states from the real site — so DMS is tried FIRST and accepted only when
+   it lands in region. Degrees must be whole and minutes/seconds at most two
+   digits; that is what stops a street number, a ZIP or a line ending
+   "CR 550 N" from posing as a coordinate. */
+const DMS_HEM = "[NnSsEeWw]";
+// A hemisphere letter only counts when it stands alone: n/s/e/w also live
+// inside ordinary words, and "Culvert on Q Ave 42°…" must not read its "e"
+// as EAST (it ate the "e" and could flip a sign). Written without lookbehind
+// on purpose — an unsupported regex feature would throw at load and take the
+// whole classifier with it.
+const dmsOne = lead => `${lead ? `(?:(?:^|[\\s,;/(])(${DMS_HEM})\\s*)?` : "()?"}(-?\\d{1,3})\\s*(?:[°ºd]\\s*|\\s+)(\\d{1,2}(?:\\.\\d+)?)\\s*(?:['′]\\s*|\\s+|(?=[,;/]|$))(?:(\\d{1,2}(?:\\.\\d+)?)\\s*(?:["″]|'')?\\s*)?(?:(${DMS_HEM})(?![A-Za-z]))?`;
+// The separator is zero-or-more because the second coordinate's own leading
+// hemisphere ("… W85°34'…") needs the space in front of the letter to prove
+// the letter stands alone; the engine backtracks the space over to it.
+// Two variants: a site name ending in a direction word ("Rose Drive W
+// 42°17'07.3\"N …") otherwise donates its last letter to the coordinate as a
+// hemisphere, which flips the latitude negative and loses the whole line. So
+// a leading hemisphere is tried, and dropped if what comes back is not a
+// Region V coordinate. The no-lead variant keeps an empty group in its place
+// so both patterns number their groups identically.
+const DMS_PAIR_RE = new RegExp(dmsOne(true) + "[\\s,;/]*" + dmsOne(true), "d");
+const DMS_PAIR_NOLEAD_RE = new RegExp(dmsOne(false) + "[\\s,;/]*" + dmsOne(false), "d");
+const DMS_NS = /^[NnSs]$/;
+
+function dmsDegrees(d, m, s, hemA, hemB) {
+  const hem = (hemA || hemB || "").toUpperCase();
+  const v = Math.abs(parseFloat(d)) + (parseFloat(m) || 0) / 60 + (parseFloat(s) || 0) / 3600;
+  return (String(d).startsWith("-") || hem === "S" || hem === "W") ? -v : v;
+}
+// Span of the whole coordinate token, so an edit in the export dialogue
+// replaces the DMS text with the decimal the user typed (same contract the
+// decimal path gives rewritePastedLine: one [start,end) per coordinate).
+function dmsSpan(indices, groups) {
+  let st = Infinity, en = -1;
+  for (const g of groups) if (indices[g]) { st = Math.min(st, indices[g][0]); en = Math.max(en, indices[g][1]); }
+  return [st, en];
+}
+function parseDmsPair(line) {
+  return dmsFromMatch(DMS_PAIR_RE.exec(line)) || dmsFromMatch(DMS_PAIR_NOLEAD_RE.exec(line));
+}
+function dmsFromMatch(m) {
+  if (!m) return null;
+  const a = dmsDegrees(m[2], m[3], m[4], m[1], m[5]);
+  const b = dmsDegrees(m[7], m[8], m[9], m[6], m[10]);
+  let lat = a, lon = b, latFirst = true;
+  if (DMS_NS.test(m[6] || m[10] || "") && !DMS_NS.test(m[1] || m[5] || "")) { lat = b; lon = a; latFirst = false; }
+  // An unsigned, unlettered longitude over a Region V latitude is a western one.
+  if (lon > 0 && lat >= 17 && lat <= 72) lon = -lon;
+  if (!(lat >= 17 && lat <= 72 && lon >= -180 && lon <= -64)) return null;
+  const [aStart, aEnd] = dmsSpan(m.indices, [1, 2, 3, 4, 5]);
+  const [bStart, bEnd] = dmsSpan(m.indices, [6, 7, 8, 9, 10]);
+  return { lat, lon, i0: m.index, i1: m.index + m[0].length,
+           span: { aStart, aEnd, bStart, bEnd, latFirst } };
+}
+
+/* ---- addresses and road names (detected locally; nothing is sent) --------
+   A line that carries no coordinate is sorted into one of three kinds so the
+   page can say what it will do with it:
+     address  "5201 Portage Rd, Portage, MI 49002"  house number + street
+              (+ optional city / state / ZIP). Geocoded ONLY on the explicit
+              "Geocode N addresses" click — never on keystroke or paste.
+     road     "Portage Rd, Portage MI" / "M-43, Kalamazoo County" — a street
+              or route plus a place to look it up in. Resolved automatically
+              through Census TIGERweb (CORS-clean, the Find box's service).
+     unknown  everything else — shown as unreadable, as before.
+   Street parts are canonicalized the same way the geocoder and TIGERweb
+   publish them (BASENAME / PREDIRABRV / SUFTYPEABRV), so a match between
+   what was typed, what the geocoder matched and what TIGER draws is a
+   component comparison, not a fuzzy string one. */
+const ADDR_SUFFIX_EXTRA = ["RUN","ROW","PASS","PATH","LOOP","XING","CROSSING","BND","BEND","HTS","HEIGHTS",
+  "EXPY","EXPRESSWAY","FWY","FREEWAY","TPKE","TURNPIKE","PIKE","ALY","ALLEY","ANX","ANNEX","ARC","BCH","BEACH",
+  "BLF","BLUFF","BR","BRANCH","BRG","BRIDGE","BYP","BYPASS","CSWY","CAUSEWAY","CTR","CENTER","CRK","CREEK",
+  "CRES","CRESCENT","XRD","DL","DALE","DV","DIVIDE","EST","ESTATES","EXT","EXTENSION","FLD","FIELD","FLDS",
+  "FRD","FORD","FRST","FOREST","GDN","GARDEN","GDNS","GLN","GLEN","GRN","GREEN","GRV","GROVE","HBR","HARBOR",
+  "HL","HILL","HLS","HILLS","HOLW","HOLLOW","IS","ISLAND","JCT","JUNCTION","KNL","KNOLL","LK","LAKE","LNDG",
+  "LANDING","MDW","MEADOW","MDWS","ML","MILL","MNR","MANOR","MT","MOUNT","MTN","MOUNTAIN","ORCH","OVAL","PARK",
+  "PSGE","PASSAGE","PLZ","PLAZA","PNE","PINE","PNES","PR","PRAIRIE","RDG","RIDGE","RIV","RIVER","RNCH","RANCH",
+  "RTE","ROUTE","SHR","SHORE","SPG","SPRING","SPUR","STA","STATION","STRA","TRCE","TRACE","TRAK","TRACK",
+  "TRFY","TUNL","TUNNEL","VLY","VALLEY","VIA","VW","VIEW","VLG","VILLAGE","VIS","VISTA","WALK","WALL","WY","XRDS"];
+const ADDR_SUFFIX = new Set(Object.keys(STREET_TYPE_CANON).concat(ADDR_SUFFIX_EXTRA));
+const ADDR_DIR = { N:"N", NORTH:"N", S:"S", SOUTH:"S", E:"E", EAST:"E", W:"W", WEST:"W",
+  NE:"NE", NORTHEAST:"NE", NW:"NW", NORTHWEST:"NW", SE:"SE", SOUTHEAST:"SE", SW:"SW", SOUTHWEST:"SW" };
+const US_STATES = new Set(("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ " +
+  "NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC").split(" "));
+// Numbered routes: "US 131", "US-131", "M-43", "SR 161", "CR 550 N", "STH 32",
+// "County Road 12", "State Route 161", "Hwy 12", "I-94".
+const ROUTE_RE = /^(?:(?:US|SR|SH|ST|CR|CTH|STH|USH|M|I|IN|IL|OH|MN|WI|MI|HWY|HIGHWAY|RT|RTE|ROUTE|FM)-?\s*\d{1,4}[A-Z]?|(?:COUNTY|STATE|TOWNSHIP|TWP|CO)\s+(?:ROAD|RD|HWY|HIGHWAY|ROUTE|RTE|LINE)\s+\d{1,4}[A-Z]?)$/i;
+const canonSuffix = t => STREET_TYPE_CANON[t] || (ADDR_SUFFIX.has(t) ? t : "");
+
+// "W Main St", "Portage Rd", "CR 550 N", "N 32nd St" -> parts. Null when the
+// text has no street shape at all (no suffix type and no route pattern).
+function parseStreetParts(text) {
+  const raw = String(text).replace(/[.]/g, "").replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const up = raw.toUpperCase();
+  if (ROUTE_RE.test(up.replace(/\s+([NSEW])$/, ""))) {
+    const m = /\s+([NSEW])$/.exec(up);
+    return { base: up.replace(/\s+([NSEW])$/, "").replace(/-/g, " ").replace(/\s+/g, " "), preDir: "", sufType: "", sufDir: m ? m[1] : "", route: true, display: raw };
+  }
+  let toks = up.split(" ");
+  let preDir = "", sufDir = "", sufType = "";
+  if (toks.length > 1 && ADDR_DIR[toks[0]]) { preDir = ADDR_DIR[toks[0]]; toks = toks.slice(1); }
+  if (toks.length > 1 && ADDR_DIR[toks[toks.length - 1]]) { sufDir = ADDR_DIR[toks[toks.length - 1]]; toks = toks.slice(0, -1); }
+  if (toks.length > 1 && ADDR_SUFFIX.has(toks[toks.length - 1])) { sufType = canonSuffix(toks[toks.length - 1]); toks = toks.slice(0, -1); }
+  if (!sufType) return null;
+  return { base: toks.join(" "), preDir, sufType, sufDir, route: false, display: raw };
+}
+
+// Trailing "MI 49002" / "MI" / "49002" off a place string.
+function splitStateZip(text) {
+  let s = String(text).replace(/\s+/g, " ").trim(), state = "", zip = "";
+  let m = /\s*(\d{5})(?:-\d{4})?$/.exec(s);
+  if (m) { zip = m[1]; s = s.slice(0, m.index).trim(); }
+  m = /(?:^|[\s,])([A-Za-z]{2})\.?$/.exec(s);
+  if (m && US_STATES.has(m[1].toUpperCase())) { state = m[1].toUpperCase(); s = s.slice(0, m.index).trim(); }
+  return { place: s.replace(/,$/, "").trim(), state, zip };
+}
+
+// null unless the line starts with a house number and carries a street.
+function parseAddressLine(line) {
+  const s = String(line).trim();
+  const m = /^(\d{1,6}[A-Za-z]?)\s+(.+)$/.exec(s);
+  if (!m) return null;
+  const parts = m[2].split(",").map(x => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  let streetTxt = parts[0], rest = parts.slice(1);
+  let street = parseStreetParts(streetTxt);
+  if (!street && rest.length === 0) {
+    // No commas: "5201 Portage Rd Portage MI 49002" — the street ends at its
+    // suffix type (+ optional direction), the city is what follows.
+    const toks = streetTxt.split(/\s+/);
+    for (let i = 1; i < toks.length && !street; i++) {
+      const cand = toks.slice(0, i + 1).join(" ");
+      const p = parseStreetParts(cand);
+      if (!p || p.route) continue;
+      let j = i + 1;
+      if (j < toks.length && ADDR_DIR[toks[j].toUpperCase()] && !p.sufDir) { p.sufDir = ADDR_DIR[toks[j].toUpperCase()]; p.display = toks.slice(0, j + 1).join(" "); j++; }
+      street = p; rest = [toks.slice(j).join(" ")].filter(Boolean);
+    }
+  }
+  if (!street && rest.length) {
+    // "2200 S 1700 W, Salt Lake City UT": a street with no type at all, but
+    // a place after the comma still makes it an address.
+    let toks = streetTxt.toUpperCase().replace(/[.]/g, "").split(/\s+/).filter(Boolean);
+    let preDir = "", sufDir = "";
+    if (toks.length > 1 && ADDR_DIR[toks[0]]) { preDir = ADDR_DIR[toks[0]]; toks = toks.slice(1); }
+    if (toks.length > 1 && ADDR_DIR[toks[toks.length - 1]]) { sufDir = ADDR_DIR[toks[toks.length - 1]]; toks = toks.slice(0, -1); }
+    if (toks.length) street = { base: toks.join(" "), preDir, sufType: "", sufDir, route: false, display: streetTxt };
+  }
+  if (!street || street.route) return null;
+  const tail = splitStateZip(rest.join(", "));
+  // A house number + street with neither a suffix, a city, a state nor a
+  // ZIP is too little to call an address ("100 Q" is a name, not a place).
+  if (!street.sufType && !tail.place && !tail.state && !tail.zip) return null;
+  return { house: m[1], street, city: tail.place, state: tail.state, zip: tail.zip,
+           text: s, query: s };
+}
+
+// "Portage Rd, Portage MI" -> a road plus somewhere to look for it. A road
+// with no place is deliberately NOT a road line: "Q Ave" alone would mean a
+// six-state search.
+function parseRoadLine(line) {
+  const s = String(line).trim();
+  if (/^\d/.test(s)) return null;                       // house numbers are addresses
+  const parts = s.split(",").map(x => x.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const street = parseStreetParts(parts[0]);
+  if (!street) return null;
+  const tail = splitStateZip(parts.slice(1).join(", "));
+  if (!tail.place && !tail.state) return null;
+  return { street, place: tail.place, state: tail.state, text: s };
+}
+
+function classifyInputLine(line) {
+  const addr = parseAddressLine(line);
+  if (addr) return { kind: "address", addr };
+  const road = parseRoadLine(line);
+  if (road) return { kind: "road", road };
+  return { kind: "unknown" };
+}
+
+/* ---- polyline geometry for snapping (WGS84 paths as [[lon,lat],...]) ---- */
+function localFrame(lat) { return { mPerLat: 111320, mPerLon: 111320 * Math.cos(lat * Math.PI / 180) }; }
+// Closest point on any path to (lat,lon): where it is, which segment, how far.
+function closestPointOnPaths(paths, lat, lon) {
+  const { mPerLat, mPerLon } = localFrame(lat);
+  let best = null;
+  (paths || []).forEach((path, pi) => {
+    for (let i = 0; i < path.length - 1; i++) {
+      const ax = (path[i][0] - lon) * mPerLon, ay = (path[i][1] - lat) * mPerLat;
+      const bx = (path[i + 1][0] - lon) * mPerLon, by = (path[i + 1][1] - lat) * mPerLat;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      let t = l2 ? -(ax * dx + ay * dy) / l2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const px = ax + t * dx, py = ay + t * dy, d = Math.hypot(px, py);
+      if (!best || d < best.distM) best = { distM: d, pathIdx: pi, segIdx: i, t,
+        lat: lat + py / mPerLat, lon: lon + px / mPerLon };
+    }
+  });
+  if (best) best.distFt = best.distM * 3.28084;
+  return best;
+}
+function segLenM(path, i, frame) {
+  return Math.hypot((path[i + 1][0] - path[i][0]) * frame.mPerLon, (path[i + 1][1] - path[i][1]) * frame.mPerLat);
+}
+function pathLengthM(path) {
+  if (!path || path.length < 2) return 0;
+  const f = localFrame(path[0][1]);
+  let L = 0; for (let i = 0; i < path.length - 1; i++) L += segLenM(path, i, f);
+  return L;
+}
+// Walk `offsetM` metres along the path from (segIdx, t); negative walks back.
+// Clamped to the path's ends, so a short edge still yields a usable point.
+function pointAlongPath(path, segIdx, t, offsetM) {
+  const f = localFrame(path[0][1]);
+  let i = segIdx, pos = t * segLenM(path, i, f), left = offsetM;
+  if (left >= 0) {
+    while (i < path.length - 1) {
+      const L = segLenM(path, i, f);
+      if (pos + left <= L) { const u = L ? (pos + left) / L : 0; return [path[i][1] + (path[i + 1][1] - path[i][1]) * u, path[i][0] + (path[i + 1][0] - path[i][0]) * u]; }
+      left -= L - pos; pos = 0; i++;
+    }
+    return [path[path.length - 1][1], path[path.length - 1][0]];
+  }
+  left = -left;
+  while (i >= 0) {
+    const L = segLenM(path, i, f);
+    if (pos - left >= 0) { const u = L ? (pos - left) / L : 0; return [path[i][1] + (path[i + 1][1] - path[i][1]) * u, path[i][0] + (path[i + 1][0] - path[i][0]) * u]; }
+    left -= pos; i--; if (i >= 0) pos = segLenM(path, i, f);
+  }
+  return [path[0][1], path[0][0]];
+}
+
+/* ---- matching a street to TIGER attributes ----
+   Scores a parsed street (from the typed line or the geocoder's parsed
+   components) against one TIGER feature's BASENAME/PREDIRABRV/SUFTYPEABRV/
+   SUFDIRABRV. Base name must agree; type and directions add confidence and a
+   contradiction subtracts. >= 2 is a match. */
+function streetFromTiger(a) {
+  return { base: String(a.BASENAME || "").toUpperCase().replace(/[.]/g, "").replace(/\s+/g, " ").trim(),
+           preDir: String(a.PREDIRABRV || "").toUpperCase(), sufType: canonSuffix(String(a.SUFTYPEABRV || "").toUpperCase()),
+           sufDir: String(a.SUFDIRABRV || "").toUpperCase(), display: String(a.NAME || "") };
+}
+function streetFromGeocoder(c) {
+  const pre = String(c.preType || "").toUpperCase().trim();
+  return { base: (pre ? pre + " " : "") + String(c.streetName || "").toUpperCase().replace(/[.]/g, "").replace(/\s+/g, " ").trim(),
+           preDir: ADDR_DIR[String(c.preDirection || "").toUpperCase()] || "",
+           sufType: canonSuffix(String(c.suffixType || "").toUpperCase()),
+           sufDir: ADDR_DIR[String(c.suffixDirection || "").toUpperCase()] || "" };
+}
+function streetMatchScore(want, have) {
+  if (!want || !have || !want.base || !have.base) return 0;
+  const wb = want.base.replace(/^(N|S|E|W)\s+/, ""), hb = have.base.replace(/^(N|S|E|W)\s+/, "");
+  if (wb !== hb) {
+    // "32ND" vs "32nd" handled by upper-casing; "PORTAGE" vs "PORTAGE RD" when
+    // one side kept its type in the base is still the same road.
+    const w = wb.split(" "), h = hb.split(" ");
+    if (!(w[0] === h[0] && (w.length === 1 || h.length === 1))) return 0;
+  }
+  let s = 2;
+  if (want.sufType && have.sufType) s += want.sufType === have.sufType ? 1 : -1.5;
+  if (want.preDir && have.preDir) s += want.preDir === have.preDir ? 0.5 : -1;
+  if (want.sufDir && have.sufDir) s += want.sufDir === have.sufDir ? 0.5 : -1;
+  return s;
+}
+
+/* ---- the geocoder's reply, reduced to the fields used ----
+   The response arrives from a sandboxed frame as a plain message; nothing in
+   it is trusted until it has this exact shape. Numbers must be finite and in
+   range; strings are copied, never passed through. */
+function sanitizeGeocodeResponse(data) {
+  const out = [];
+  const matches = data && data.result && Array.isArray(data.result.addressMatches) ? data.result.addressMatches : null;
+  if (!matches) throw new Error("unexpected geocoder response");
+  for (const m of matches.slice(0, 10)) {
+    const c = m && m.coordinates, a = (m && m.addressComponents) || {};
+    const lat = Number(c && c.y), lon = Number(c && c.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
+    const str = k => typeof a[k] === "string" ? a[k].slice(0, 80) : "";
+    out.push({ lat, lon, matchedAddress: typeof m.matchedAddress === "string" ? m.matchedAddress.slice(0, 160) : "",
+      components: { streetName: str("streetName"), preType: str("preType"), preDirection: str("preDirection"),
+        suffixType: str("suffixType"), suffixDirection: str("suffixDirection"), city: str("city"),
+        state: str("state"), zip: str("zip") },
+      tigerLineId: m.tigerLine && typeof m.tigerLine.tigerLineId === "string" ? m.tigerLine.tigerLineId.slice(0, 20) : "" });
+  }
+  return out;
+}
+
 function parseCoordinates(text) {
   const points = [];
   const lines = text.split(/\r?\n/);
@@ -1208,8 +1532,8 @@ function parseCoordinates(text) {
     const line = lines[i].trim();
     if (!line) continue;
     const nums = [...line.matchAll(/-?\d+(?:\.\d+)?/g)];
-    let pair = null;
-    for (let j = nums.length - 2; j >= 0; j--) {
+    let pair = parseDmsPair(line);
+    for (let j = nums.length - 2; !pair && j >= 0; j--) {
       const a = parseFloat(nums[j][0]), b = parseFloat(nums[j + 1][0]);
       // Keep each number's own span (and which one is the latitude) so an
       // edit in the export dialogue can splice that one value back into this
@@ -1219,7 +1543,13 @@ function parseCoordinates(text) {
       if (a >= 17 && a <= 72 && b >= -180 && b <= -64) { pair = { lat: a, lon: b, i0: span.aStart, i1: span.bEnd, span: { ...span, latFirst: true } }; break; }
       if (b >= 17 && b <= 72 && a >= -180 && a <= -64) { pair = { lat: b, lon: a, i0: span.aStart, i1: span.bEnd, span: { ...span, latFirst: false } }; break; }
     }
-    if (!pair) { points.push({ line: i + 1, raw: line, invalid: true }); continue; }
+    if (!pair) {
+      // No coordinate on the line: say what it is instead, so the page can
+      // offer the right next step (geocode / look the road up / unreadable).
+      const k = classifyInputLine(line);
+      points.push({ line: i + 1, raw: line, invalid: true, kind: k.kind, addr: k.addr || null, road: k.road || null });
+      continue;
+    }
     const name = (line.slice(0, pair.i0) + " " + line.slice(pair.i1))
       .replace(/[,;\t]+/g, " ").replace(/\s+/g, " ").trim();
     points.push({ line: i + 1, name: name || "Point " + points.filter(p => !p.invalid).length + 1 + "",
@@ -1669,16 +1999,19 @@ function render() {
   currentPoints.forEach((p, idx) => {
     const tr = document.createElement("div");
     if (p.invalid) {
-      tr.className = "row v-failed";
-      tr.innerHTML = `<div class="row-main"><span class="site-name">line ${p.line}</span>` +
-        `<span>Could not read a lat/lon from: <code>${esc(p.raw)}</code></span></div>`;
+      // Addresses and road names get their own status text (defined in a
+      // later script block; guarded for the load-time render).
+      const [cls, html] = window.invalidRowHtml ? invalidRowHtml(p)
+        : ["v-failed", `<div class="row-main"><span class="site-name">line ${p.line}</span><span>Could not read a lat/lon from: <code>${esc(p.raw)}</code></span></div>`];
+      tr.className = "row " + cls;
+      tr.innerHTML = html;
       body.appendChild(tr);
       return;
     }
     total++;
     const state = detectState(p.lat, p.lon) || "??";   // always auto-detected (the State dropdown is gone)
     const buffer = bufferFeet();
-    const key = p.lat + "," + p.lon + "," + state + "," + buffer;
+    const key = (p.geo ? "a:" : p.roadInfo ? "r:" : "") + p.lat + "," + p.lon + "," + state + "," + buffer;
     p._state = state;   // shown again in the pop-out table
     const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
       `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
@@ -1710,8 +2043,13 @@ function render() {
     if (!cache.has(key)) {
       // Cached-tile classification when the hosted tilesets are usable
       // (the default); live services otherwise. Same verdict logic.
-      const cls = window.classifyPointSmart || classifyPoint;
-      cache.set(key, cls(p.lat, p.lon, state === "??" ? "XX" : state, buffer));
+      const st = state === "??" ? "XX" : state;
+      // A geocoded address classifies at its snapped point ±150 ft along the
+      // street; a road-name line classifies the whole road (later block).
+      const run = (p.geo && window.classifySnapped) ? () => classifySnapped(p, st, buffer)
+                : (p.roadInfo && window.classifyRoadLine) ? () => classifyRoadLine(p, st, buffer)
+                : () => (window.classifyPointSmart || classifyPoint)(p.lat, p.lon, st, buffer);
+      cache.set(key, run());
     }
     cache.get(key).then(res => {
       if (res.failed) cache.delete(key);   // transient service errors (F12): don't cache, allow retry
@@ -1727,7 +2065,8 @@ function render() {
       const srcChip = res.srcNote
         ? `<span class="chip" title="Classified from the tilesets hosted with this site — FHWA HPMS ${HPMS_TILE_YEAR} classes + the 2020 Adjusted Urban Boundaries — with no live state-DOT queries. Tick 'Live verdicts' under Data service URLs to query the live layers instead."><i class="cw" style="background:#9fb6cc"></i>cached data</span>`
         : "";
-      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, extrasHtml(res)].filter(Boolean).join(" ");
+      const provChip = window.provenanceChipHtml ? provenanceChipHtml(p, res) : "";
+      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, provChip, extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
         `<span class="caret">▶</span></div>` +
         (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
@@ -1772,7 +2111,9 @@ function updateCollectCount() {
     ? `${collectedPoints.length} point(s) — saved in this browser` : "";
 }
 function rebuildPoints() {
-  currentPoints = parseCoordinates($("coordsIn").value).concat(
+  const pasted = parseCoordinates($("coordsIn").value);
+  // Geocoded addresses and looked-up roads become points here (later block).
+  currentPoints = (window.materializeResolved ? materializeResolved(pasted) : pasted).concat(
     collectedPoints.map((c, i) => ({ name: c.name, lat: c.lat, lon: c.lon,
       note: c.note || "", collected: true, cIdx: i })));
   updateCollectCount();
@@ -1784,11 +2125,17 @@ function onInput() {
   debounceTimer = setTimeout(() => {
     const pasted = parseCoordinates($("coordsIn").value);
     const ok = pasted.filter(p => !p.invalid).length;
-    const bad = pasted.length - ok;
+    const na = pasted.filter(p => p.invalid && p.kind === "address").length;
+    const nr = pasted.filter(p => p.invalid && p.kind === "road").length;
+    const bad = pasted.length - ok - na - nr;
     $("parseCount").textContent = pasted.length
-      ? `${ok} point(s) parsed${bad ? ", " + bad + " line(s) unreadable" : ""}` : "";
+      ? `${ok} point(s) parsed` + (na ? `, ${na} address${na === 1 ? "" : "es"}` : "") + (nr ? `, ${nr} road${nr === 1 ? "" : "s"}` : "")
+        + (bad ? `, ${bad} line(s) unreadable` : "") : "";
     rebuildPoints();
     render();
+    // Roads resolve on their own (TIGERweb); addresses wait for the button.
+    if (window.updateAddressUi) updateAddressUi();
+    if (window.resolveRoadLines) resolveRoadLines();
   }, 500);
 }
 $("coordsIn").addEventListener("input", onInput);
@@ -1820,7 +2167,7 @@ setTab("coords");
 function addCollectedPoint() {
   const coordsTxt = $("addCoords").value.trim();
   const parsed = coordsTxt ? parseCoordinates(coordsTxt)[0] : null;
-  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025"); return; }
+  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025 — or degrees/minutes/seconds, e.g. 42\u00b017'07.3\"N 85\u00b034'12.9\"W.\n\nStreet addresses aren't accepted yet."); return; }
   const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
   collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
   saveCollected(); rebuildPoints(); render();
@@ -4189,6 +4536,424 @@ $("firmZipBtn").addEventListener("click", async () => {
     btn.textContent = orig;
   }
 });
+</script>
+<script>
+/* ==================== addresses and road names ====================
+   Three kinds of line come out of the coordinates box (rr-core
+   classifyInputLine): coordinates classify as always; a ROAD line
+   ("Portage Rd, Portage MI") is looked up automatically through Census
+   TIGERweb — a CORS-clean service the Find box already talks to — and the
+   whole road is classified; a full ADDRESS is geocoded ONLY when the user
+   clicks the one "Geocode N addresses" button, because the Census geocoder
+   sends no CORS header and has to be reached by JSONP, which means a remote
+   script executing — so it runs inside a throwaway sandboxed iframe (opaque
+   origin, allow-scripts only, fixed https host, per-request id, the reply
+   shape-checked before a byte of it is used, frame destroyed on any
+   outcome). Nothing is sent on keystroke, paste, blur or parse.
+
+   Why the road name is the anchor and the point only a hint: the geocoder
+   returns a TIGER address-range INTERPOLATION — a point on the centerline
+   nudged to one side — and measured 2026-09-15 that put "5201 Portage Rd"
+   20 ft from Airview Blvd and 21 ft from Portage Rd, so the closest-road
+   model picked the wrong street by one foot. Here the geocoder's parsed
+   street components are matched to the TIGER edge, the point is SNAPPED to
+   that edge, and the classification runs at the snap and ±150 ft along the
+   same edge: agree → verdict; disagree → Review. Typed coordinates are
+   never rewritten by any of this. */
+const GEOCODER_BASE = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
+const GEOCODE_TIMEOUT_MS = 20000, GEOCODE_CONCURRENCY = 3;
+const SNAP_SEARCH_M = 120;         // how far from the geocoded point to look for the named street
+const SNAP_MIN_SCORE = 2;          // streetMatchScore threshold (base name must agree)
+const ALONG_EDGE_M = 45.72;        // 150 ft each way along the matched edge
+const ROAD_SAMPLE_MAX = 12;        // edges sampled per road-name line (longest first)
+const TIGER_ROAD_FIELDS = "NAME,BASENAME,PREDIRABRV,SUFTYPEABRV,SUFDIRABRV,MTFCC";
+const geocodeStore = new Map();    // line key -> { status: "pending"|"ok"|"nomatch"|"ambiguous"|"failed", ... }
+const roadStore = new Map();       // line key -> { status: "pending"|"ok"|"noplace"|"noroad"|"ambiguous"|"failed", ... }
+const lineKey = s => String(s).replace(/\s+/g, " ").trim().toUpperCase();
+const ABBR_FIPS = Object.fromEntries(Object.entries(FIPS_ABBR).map(([f, a]) => [a, f]));
+const roadLayer = L.layerGroup().addTo(map);
+Object.assign(REASON_EXPLAIN, {
+  "Class change nearby": "The address geocodes to an interpolated spot on its street, and the functional class changes within 150 ft of it along that street. Which side of the change the site is on decides the verdict — check it on the map.",
+  "Street not matched": "The geocoder returned a location, but no Census road within 120 ft of it carries the street name in the address, so the point could not be snapped to the named street. Its classification is for whatever road is nearest — confirm on the map.",
+  "Mixed classes on road": "This road carries more than one functional class (or crosses the urban boundary) along the stretch sampled, so a single verdict would be wrong for part of it. Give a coordinate or a house number to classify one spot.",
+});
+
+/* ---- the sandboxed JSONP geocoder ---- */
+function geocodeSandboxed(address) {
+  return new Promise(resolve => {
+    const id = "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts");   // opaque origin: no DOM, storage or cookies of this page
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.display = "none";
+    let settled = false;
+    const finish = out => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      window.removeEventListener("message", onMsg);
+      frame.remove();
+      resolve(out);
+    };
+    const onMsg = e => {
+      // Only this frame, only this request, only the sandbox's null origin.
+      if (e.source !== frame.contentWindow || e.origin !== "null") return;
+      const d = e.data;
+      if (!d || typeof d !== "object" || d.id !== id) return;
+      if (d.ok !== true) return finish({ ok: false, error: typeof d.error === "string" ? d.error.slice(0, 120) : "geocoder error" });
+      try { finish({ ok: true, matches: sanitizeGeocodeResponse(d.data) }); }
+      catch (err) { finish({ ok: false, error: err.message }); }
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: "timed out" }), GEOCODE_TIMEOUT_MS);
+    window.addEventListener("message", onMsg);
+    // The frame knows only the fixed host, the address and its id. The
+    // callback name is derived from the id, so a stale or foreign script
+    // can't complete this request.
+    frame.srcdoc = `<!doctype html><meta charset="utf-8"><script>
+(function () {
+  var ID = ${JSON.stringify(id)}, ADDR = ${JSON.stringify(address)};
+  var BASE = ${JSON.stringify(GEOCODER_BASE)};
+  var cb = "cb_" + ID;
+  function send(m) { parent.postMessage(m, "*"); }
+  window[cb] = function (data) { send({ id: ID, ok: true, data: data }); };
+  var s = document.createElement("script");
+  s.src = BASE + "?address=" + encodeURIComponent(ADDR) + "&benchmark=Public_AR_Current&format=jsonp&callback=" + cb;
+  s.onerror = function () { send({ id: ID, ok: false, error: "geocoder unreachable" }); };
+  document.head.appendChild(s);
+})();
+<\/script>`;
+    document.body.appendChild(frame);
+  });
+}
+
+/* ---- TIGERweb: roads near a point, a place's extent, a road by name ---- */
+async function tigerRoadsNear(lat, lon, meters) {
+  const q = u => httpGetJson(u + "/query?geometry=" + lon.toFixed(6) + "," + lat.toFixed(6) +
+    "&geometryType=esriGeometryPoint&inSR=4326&distance=" + meters + "&units=esriSRUnit_Meter" +
+    "&outFields=" + encodeURIComponent(TIGER_ROAD_FIELDS) + "&returnGeometry=true&outSR=4326&f=json");
+  const settled = await Promise.allSettled(TIGER_FIND.roads.map(q));
+  if (settled.every(s => s.status === "rejected")) throw settled[0].reason;
+  const feats = [];
+  for (const s of settled) if (s.status === "fulfilled" && s.value && !s.value.error) feats.push(...(s.value.features || []));
+  return feats;
+}
+async function tigerExtent(url, where) {
+  const j = await httpGetJson(url + "/query?where=" + encodeURIComponent(where) + "&returnExtentOnly=true&outSR=4326&f=json");
+  if (j.error) throw new Error(j.error.message || "service error");
+  const e = j.extent;
+  return e && Number.isFinite(e.xmin) && e.xmin <= e.xmax ? e : null;
+}
+async function tigerCount(url, where) {
+  const j = await httpGetJson(url + "/query?where=" + encodeURIComponent(where) + "&returnCountOnly=true&f=json");
+  return j && Number.isFinite(j.count) ? j.count : 0;
+}
+// Counties, townships / county subdivisions, incorporated places and CDPs,
+// in that order; the state (typed or all six) scopes the name.
+const TIGER_PLACES = [
+  { url: TIGER_FIND.counties, kind: "county" },
+  { url: TIGER_FIND.cousubs, kind: "township" },
+  { url: "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/4", kind: "city" },
+  { url: "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/5", kind: "place" },
+];
+async function tigerPlaceExtent(place, stateAbbr) {
+  const nm = sqlSafe(place.toUpperCase().replace(/\s+(COUNTY|TOWNSHIP|TWP|CITY|VILLAGE|CHARTER TOWNSHIP)$/, ""));
+  const st = stateAbbr && ABBR_FIPS[stateAbbr] ? "STATE='" + ABBR_FIPS[stateAbbr] + "'" : R5_FIPS_CLAUSE;
+  const wantCounty = /\bCOUNTY$/i.test(place.trim());
+  for (const layer of TIGER_PLACES) {
+    if (wantCounty && layer.kind !== "county") continue;
+    const where = st + " AND UPPER(BASENAME)='" + nm + "'";
+    const n = await tigerCount(layer.url, where).catch(() => 0);
+    if (!n) continue;
+    if (n > 1 && !stateAbbr) return { ambiguous: n, kind: layer.kind };
+    const ext = await tigerExtent(layer.url, where);
+    if (ext) return { extent: ext, kind: layer.kind, label: place };
+  }
+  return null;
+}
+async function tigerRoadByName(street, ext) {
+  const env = [ext.xmin, ext.ymin, ext.xmax, ext.ymax].map(v => v.toFixed(6)).join(",");
+  const where = street.route
+    ? "UPPER(NAME) LIKE '%" + sqlSafe(street.base.replace(/\s+/g, "%")) + "%'"
+    : "UPPER(BASENAME)='" + sqlSafe(street.base) + "'" +
+      (street.sufType ? " AND UPPER(SUFTYPEABRV)='" + sqlSafe(street.sufType) + "'" : "") +
+      (street.preDir ? " AND UPPER(PREDIRABRV)='" + sqlSafe(street.preDir) + "'" : "");
+  const q = u => httpGetJson(u + "/query?where=" + encodeURIComponent(where) + "&geometry=" + env +
+    "&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects" +
+    "&outFields=" + encodeURIComponent(TIGER_ROAD_FIELDS) + "&returnGeometry=true&outSR=4326&f=json");
+  const settled = await Promise.allSettled(TIGER_FIND.roads.map(q));
+  if (settled.every(s => s.status === "rejected")) throw settled[0].reason;
+  const paths = [], names = new Set();
+  for (const s of settled) {
+    if (s.status !== "fulfilled" || !s.value || s.value.error) continue;
+    for (const f of (s.value.features || [])) {
+      // Route searches are LIKE matches — keep only features whose street
+      // parts actually agree with what was typed.
+      if (street.route && streetMatchScore(street, streetFromTiger(f.attributes || {})) < 1 &&
+          !String((f.attributes || {}).NAME || "").toUpperCase().includes(street.base.split(" ").pop())) continue;
+      if (f.attributes && f.attributes.NAME) names.add(f.attributes.NAME);
+      for (const p of ((f.geometry && f.geometry.paths) || [])) if (p.length > 1) paths.push(p);
+    }
+  }
+  return { paths, names: [...names] };
+}
+
+/* ---- resolution ---- */
+async function snapToStreet(match) {
+  const want = streetFromGeocoder(match.components);
+  const feats = await tigerRoadsNear(match.lat, match.lon, SNAP_SEARCH_M);
+  let best = null;
+  for (const f of feats) {
+    const a = f.attributes || {};
+    const score = streetMatchScore(want, streetFromTiger(a));
+    if (score < SNAP_MIN_SCORE) continue;
+    const cp = closestPointOnPaths((f.geometry && f.geometry.paths) || [], match.lat, match.lon);
+    if (!cp) continue;
+    if (!best || score > best.score || (score === best.score && cp.distFt < best.cp.distFt)) best = { score, cp, f, a };
+  }
+  if (!best) return { snapped: false, lat: match.lat, lon: match.lon };
+  const path = best.f.geometry.paths[best.cp.pathIdx];
+  return { snapped: true, lat: +best.cp.lat.toFixed(6), lon: +best.cp.lon.toFixed(6), distFt: Math.round(best.cp.distFt),
+           tigerName: best.a.NAME || "", path, segIdx: best.cp.segIdx, t: best.cp.t };
+}
+async function resolveAddressLine(raw) {
+  const key = lineKey(raw);
+  geocodeStore.set(key, { status: "pending" });
+  const r = await geocodeSandboxed(raw);
+  if (!r.ok) { geocodeStore.set(key, { status: "failed", error: r.error }); return; }
+  if (!r.matches.length) { geocodeStore.set(key, { status: "nomatch" }); return; }
+  // Several matches that all sit within ~60 m are one place (an address
+  // range straddling two TIGER edges); several far apart are a real
+  // ambiguity the user has to resolve with a city, state or ZIP.
+  const m0 = r.matches[0];
+  const spread = r.matches.some(m => minDistanceFt({ x: m.lon, y: m.lat }, m0.lat, m0.lon) > 200);
+  if (spread) { geocodeStore.set(key, { status: "ambiguous", count: r.matches.length, matches: r.matches }); return; }
+  let snap;
+  try { snap = await snapToStreet(m0); }
+  catch { snap = { snapped: false, lat: m0.lat, lon: m0.lon, error: "street lookup failed" }; }
+  geocodeStore.set(key, { status: "ok", match: m0, ...snap });
+}
+async function resolveRoadLine(raw, road) {
+  const key = lineKey(raw);
+  roadStore.set(key, { status: "pending" });
+  try {
+    const place = await tigerPlaceExtent(road.place, road.state);
+    if (!place) { roadStore.set(key, { status: "noplace" }); return; }
+    if (place.ambiguous) { roadStore.set(key, { status: "ambiguous", count: place.ambiguous }); return; }
+    const found = await tigerRoadByName(road.street, place.extent);
+    if (!found.paths.length) { roadStore.set(key, { status: "noroad", place: place.label, kind: place.kind }); return; }
+    // The pin sits at the midpoint of the longest matched edge.
+    let longest = null, lenM = 0;
+    for (const p of found.paths) { const L = pathLengthM(p); if (L > lenM) { lenM = L; longest = p; } }
+    const mid = pointAlongPath(longest, 0, 0, lenM / 2);
+    roadStore.set(key, { status: "ok", lat: +mid[0].toFixed(6), lon: +mid[1].toFixed(6), paths: found.paths,
+      name: found.names[0] || road.street.display, names: found.names, place: place.label, kind: place.kind });
+  } catch (e) {
+    roadStore.set(key, { status: "failed", error: e.message });
+  }
+}
+
+/* ---- turning resolved lines into points (rebuildPoints hook) ---- */
+function materializeResolved(pasted) {
+  roadLayer.clearLayers();
+  return pasted.map(p => {
+    if (!p.invalid) return p;
+    if (p.kind === "address") {
+      const g = geocodeStore.get(lineKey(p.raw));
+      if (!g || g.status !== "ok") return { ...p, geoState: g || null };
+      return { line: p.line, name: (g.match.matchedAddress || p.addr.text).replace(/,\s*(\d{5})$/, " $1"),
+               lat: g.lat, lon: g.lon, src: p.raw, kind: "address", geo: g };
+    }
+    if (p.kind === "road") {
+      const r = roadStore.get(lineKey(p.raw));
+      if (!r || r.status !== "ok") return { ...p, roadState: r || null };
+      for (const path of r.paths)
+        L.polyline(path.map(([x, y]) => [y, x]), { color: "#7c3aed", weight: 5, opacity: 0.35, interactive: false }).addTo(roadLayer);
+      return { line: p.line, name: r.name + (r.place ? " (" + r.place + ")" : ""), lat: r.lat, lon: r.lon,
+               src: p.raw, kind: "road", roadInfo: r };
+    }
+    return p;
+  });
+}
+window.materializeResolved = materializeResolved;
+
+/* ---- classification for the two new kinds ---- */
+async function classifySnapped(p, st, buffer) {
+  const g = p.geo, cls = window.classifyPointSmart || classifyPoint;
+  const pts = [[p.lat, p.lon]];
+  if (g.snapped) pts.push(pointAlongPath(g.path, g.segIdx, g.t, ALONG_EDGE_M), pointAlongPath(g.path, g.segIdx, g.t, -ALONG_EDGE_M));
+  const results = await Promise.all(pts.map(([la, lo]) => cls(la, lo, st, buffer)));
+  const main = results[0];
+  if (main.failed) return main;
+  if (!g.snapped) { main.verdict = "Review - Street not matched"; main.reviewReason = "Street not matched"; return main; }
+  const codes = new Set(results.map(r => r.segments && r.segments[0] ? r.segments[0].code : null).filter(c => c != null));
+  const buckets = new Set(results.map(r => verdictBucket(r.verdict)));
+  if (codes.size > 1 || buckets.size > 1) {
+    main.verdict = "Review - Class change nearby"; main.reviewReason = "Class change nearby";
+    main.nearbyClasses = [...codes].map(functionalSystemLabel);
+  }
+  return main;
+}
+window.classifySnapped = classifySnapped;
+
+async function classifyRoadLine(p, st, buffer) {
+  const info = p.roadInfo, cls = window.classifyPointSmart || classifyPoint;
+  const edges = info.paths.map(path => ({ path, len: pathLengthM(path) })).filter(e => e.len > 0).sort((a, b) => b.len - a.len);
+  const sample = edges.slice(0, ROAD_SAMPLE_MAX);
+  const results = await Promise.all(sample.map(async e => {
+    const mid = pointAlongPath(e.path, 0, 0, e.len / 2);
+    return { e, r: await cls(mid[0], mid[1], st, buffer) };
+  }));
+  const main = results[0].r;
+  if (main.failed) return main;
+  const byCode = new Map();
+  let unclassified = 0;
+  for (const { e, r } of results) {
+    const s0 = r.segments && r.segments[0];
+    if (!s0) { unclassified += e.len; continue; }
+    byCode.set(s0.code, (byCode.get(s0.code) || 0) + e.len);
+  }
+  const mi = m => (m / 1609.34).toFixed(m < 800 ? 2 : 1) + " mi";
+  main.roadSummary = [...byCode.entries()].sort((a, b) => b[1] - a[1]).map(([c, m]) => functionalSystemLabel(c) + " " + mi(m)).join(" · ")
+    + (unclassified ? (byCode.size ? " · " : "") + "unclassified " + mi(unclassified) : "");
+  main.roadSampled = sample.length; main.roadEdges = edges.length;
+  main.roadName = [info.name].concat((main.roadList || []).map(x => x.name + " (" + x.distFt + " ft)").filter(x => !x.startsWith(info.name))).join(" | ");
+  const buckets = new Set(results.map(x => verdictBucket(x.r.verdict)));
+  if (byCode.size > 1 || (unclassified && byCode.size) || buckets.size > 1) {
+    main.verdict = "Review - Mixed classes on road"; main.reviewReason = "Mixed classes on road";
+  }
+  return main;
+}
+window.classifyRoadLine = classifyRoadLine;
+
+/* ---- row text for lines that are not points (yet) ---- */
+function invalidRowHtml(p) {
+  const code = `<code>${esc(p.raw)}</code>`;
+  if (p.kind === "address") {
+    const g = p.geoState;
+    let msg, cls = "v-address";
+    if (!g) msg = `Address — not sent anywhere yet. Click <b>Geocode</b> above the box to look it up.`;
+    else if (g.status === "pending") msg = `geocoding…`;
+    else if (g.status === "nomatch") { cls = "v-failed"; msg = `No match from the Census geocoder — check the spelling, or add the city and ZIP, then Geocode again.`; }
+    else if (g.status === "ambiguous") { cls = "v-failed"; msg = `${g.count} possible matches — add the city, state or ZIP to pick one, then Geocode again.`; }
+    else { cls = "v-failed"; msg = `Geocoder ${esc(g.error || "failed")} — Geocode again to retry.`; }
+    return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div><div class="row-links">${code}</div>`];
+  }
+  if (p.kind === "road") {
+    const r = p.roadState;
+    let msg, cls = "v-pending";
+    if (!r || r.status === "pending") msg = `looking the road up in Census TIGER…`;
+    else if (r.status === "noplace") { cls = "v-failed"; msg = `Place “${esc(p.road.place)}” not found — use a county, township, city or village name${p.road.state ? "" : ", and add the state"}.`; }
+    else if (r.status === "ambiguous") { cls = "v-failed"; msg = `“${esc(p.road.place)}” matches ${r.count} places — add the state (e.g. “, MI”).`; }
+    else if (r.status === "noroad") { cls = "v-failed"; msg = `No road named “${esc(p.road.street.display)}” in ${esc(r.place)} (Census TIGER).`; }
+    else { cls = "v-failed"; msg = `Road lookup failed (${esc(r.error || "service unreachable")}) — edit the line to retry.`; }
+    return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div><div class="row-links">${code}</div>`];
+  }
+  return ["v-failed", `<div class="row-main"><span class="site-name">line ${p.line}</span><span>Could not read a lat/lon, address or road from: ${code}</span></div>`];
+}
+window.invalidRowHtml = invalidRowHtml;
+
+function provenanceChipHtml(p, res) {
+  if (p.geo) {
+    const g = p.geo;
+    const t = g.snapped
+      ? `Geocoded from the typed address by the Census Bureau, then snapped ${g.distFt} ft onto the Census road that matches the address's street name, and classified there and 150 ft either way along it. The coordinates shown and exported are the snapped ones.`
+      : `Geocoded from the typed address by the Census Bureau. No Census road within 120 ft carried the address's street name, so the raw geocoded location was classified as-is — verify on the map.`;
+    return `<span class="chip" title="${esc(t)}"><i class="cw" style="background:#f2c94c"></i>from address` +
+      (g.snapped ? ` · snapped to ${esc(g.tigerName)}` : " · street not matched") + `</span>`;
+  }
+  if (p.roadInfo && res) {
+    const t = `Looked up by name in Census TIGER (${p.roadInfo.kind}: ${p.roadInfo.place}); ${res.roadSampled} of ${p.roadInfo.paths.length} segment(s) classified at their midpoints. The pin marks the midpoint of the longest segment.`;
+    return `<span class="chip" title="${esc(t)}"><i class="cw" style="background:#c4b5fd"></i>whole road · ${res.roadSampled}/${p.roadInfo.paths.length} segments</span>` +
+      (res.roadSummary ? `<span class="chip" title="Functional class by length along the sampled segments">${esc(res.roadSummary)}</span>` : "");
+  }
+  return "";
+}
+window.provenanceChipHtml = provenanceChipHtml;
+
+/* ---- the box: highlights + the one explicit button ---- */
+const coordsBox = $("coordsIn"), mirror = $("coordsMirror");
+function lineStatusClass(p) {
+  if (p.kind === "address") {
+    const g = geocodeStore.get(lineKey(p.raw));
+    return "addr" + (!g ? "" : g.status === "ok" ? " geo-ok" : g.status === "pending" ? " geo-pending" : " geo-bad");
+  }
+  if (p.kind === "road") {
+    const r = roadStore.get(lineKey(p.raw));
+    return "road" + (!r || r.status === "pending" ? "" : r.status === "ok" ? " geo-ok" : " geo-bad");
+  }
+  return "";
+}
+function updateAddressUi() {
+  const text = coordsBox.value, pasted = parseCoordinates(text);
+  const byLine = new Map(pasted.map(p => [p.line, p]));
+  // The mirror repeats the box's text line for line (same font, padding
+  // and wrapping), transparent except for the marks — that is how a
+  // textarea gets highlighted lines.
+  mirror.innerHTML = text.split(/\r?\n/).map((ln, i) => {
+    const p = byLine.get(i + 1), c = p && p.invalid ? lineStatusClass(p) : "";
+    return `<div>${c ? `<mark class="${c}">${esc(ln)}</mark>` : esc(ln)}</div>`;
+  }).join("");
+  mirror.scrollTop = coordsBox.scrollTop;
+  const unresolved = new Set();
+  for (const p of pasted) if (p.invalid && p.kind === "address") { const g = geocodeStore.get(lineKey(p.raw)); if (!g || g.status !== "ok") unresolved.add(lineKey(p.raw)); }
+  const n = unresolved.size, bar = $("geoBar"), btn = $("geocodeBtn");
+  bar.hidden = n === 0;
+  if (n && !geocodeRunning) btn.textContent = `Geocode ${n} address${n === 1 ? "" : "es"}`;
+  return n;
+}
+window.updateAddressUi = updateAddressUi;
+coordsBox.addEventListener("scroll", () => { mirror.scrollTop = coordsBox.scrollTop; mirror.scrollLeft = coordsBox.scrollLeft; });
+
+let geocodeRunning = false;
+async function geocodeUnresolved() {
+  if (geocodeRunning) return;
+  const pasted = parseCoordinates(coordsBox.value);
+  const queue = [], seen = new Set();
+  for (const p of pasted) {
+    if (!p.invalid || p.kind !== "address") continue;
+    const k = lineKey(p.raw), g = geocodeStore.get(k);
+    if ((g && g.status === "ok") || seen.has(k)) continue;
+    seen.add(k); queue.push(p.raw);
+  }
+  if (!queue.length) return;
+  const btn = $("geocodeBtn"), total = queue.length;
+  geocodeRunning = true; btn.disabled = true;
+  let done = 0;
+  const worker = async () => {
+    while (queue.length) {
+      const raw = queue.shift();
+      await resolveAddressLine(raw);
+      done++;
+      btn.textContent = `Geocoding ${done} of ${total}…`;
+      updateAddressUi();
+    }
+  };
+  try { await Promise.all(Array.from({ length: Math.min(GEOCODE_CONCURRENCY, total) }, worker)); }
+  finally { geocodeRunning = false; btn.disabled = false; }
+  rebuildPoints(); render(); updateAddressUi();
+  const okCount = [...seen].filter(k => (geocodeStore.get(k) || {}).status === "ok").length;
+  toast(`${okCount} of ${total} address${total === 1 ? "" : "es"} located` + (okCount < total ? " — the rest are marked in the list" : ""));
+}
+$("geocodeBtn").addEventListener("click", geocodeUnresolved);
+
+// Road lines resolve on their own (TIGERweb, no geocoder involved); one
+// re-render once the batch lands.
+let roadResolveTimer = null;
+function resolveRoadLines() {
+  const pasted = parseCoordinates(coordsBox.value), jobs = [];
+  for (const p of pasted) {
+    if (!p.invalid || p.kind !== "road") continue;
+    const k = lineKey(p.raw);
+    if (roadStore.has(k)) continue;
+    jobs.push(resolveRoadLine(p.raw, p.road));
+  }
+  if (!jobs.length) return;
+  Promise.allSettled(jobs).then(() => {
+    clearTimeout(roadResolveTimer);
+    roadResolveTimer = setTimeout(() => { rebuildPoints(); render(); updateAddressUi(); }, 50);
+  });
+}
+window.resolveRoadLines = resolveRoadLines;
 </script>
 </body>
 </html>

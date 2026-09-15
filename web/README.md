@@ -197,6 +197,95 @@ Per user direction the left pane's input area is two tabs:
   status, class, urban area, roads and note in each placemark — the
   same conventions as the Excel tool's KML.
 
+## Accepted coordinate formats (2026-09-15)
+
+Both input paths — the paste box and Search & Collect's add-a-point field —
+run the same `parseCoordinates`, so they accept the same things:
+
+- **Decimal degrees**, in either order, with or without a site name, in any
+  mix of commas, tabs and spaces: `42.28536, -85.57025` ·
+  `Culvert on Q Ave⇥42.6911⇥-84.5360` · `39.9876⇥-86.0128⇥CR 550 N`.
+- **Degrees / minutes / seconds and degrees / decimal-minutes**, which is what
+  handheld GPS units and FEMA paperwork usually carry:
+  `42°17'07.3"N 85°34'12.9"W` · `N42°17'07.3" W85°34'12.9"` ·
+  `42 17 07.3 N, 85 34 12.9 W` · `42 17 07.3, -85 34 12.9` ·
+  `42° 17.122' N, 85° 34.215' W`. Hemisphere letters, a leading minus, or
+  neither (an unsigned longitude over a Region V latitude is read as west).
+
+DMS is parsed **before** the decimal scan, and that ordering is the point: the
+decimal scan takes the last in-range number PAIR on the line, so
+`42 17 07.3, -85 34 12.9` used to come back as 34, -85 — a confident
+federal-aid verdict for a point in Alabama, with nothing on screen to say it
+was wrong. Symbol-bearing DMS was merely rejected; the signed forms were the
+dangerous ones.
+
+Degrees must be whole and minutes/seconds at most two digits, and a
+hemisphere letter only counts when it stands alone — otherwise a street
+number, a ZIP, or the "e" in `Culvert on Q Ave` would pose as part of a
+coordinate. A name *ending* in a direction word (`Rose Drive W 42°17'07.3"N
+…`) still hands that letter to the coordinate and flips the latitude
+negative, so when the first read isn't a Region V coordinate the leading
+hemisphere is dropped and the line re-matched. `build/verify-web-core.mjs` pins every form above (each one is
+the §4.2 Kalamazoo test point written differently) plus the name cases.
+
+## Addresses and road names in the same box (2026-09-15)
+
+A line with no coordinate is sorted **locally** — nothing is sent to sort it —
+into one of three kinds, and the box highlights the ones that need a decision:
+
+| you type | kind | what happens |
+|---|---|---|
+| `42.28536, -85.57025` | coordinate | classifies as always |
+| `Portage Rd, Portage MI` · `CR 550 N, Hamilton County IN` | road | looked up **automatically** in Census TIGERweb and the **whole road** classified |
+| `5201 Portage Rd, Portage MI 49002` | address | highlighted; **waits for the one `Geocode N addresses` button** |
+| `Q Ave` (a road with no place) · anything else | unknown | shown as unreadable — a road with no place would mean a six-state search |
+
+**Road lines.** The place resolves to a county, township, incorporated place
+or CDP (by `BASENAME`, scoped to the typed state or to the six states — more
+than one hit with no state is reported as ambiguous), then the road's edges
+are fetched by street *components* inside that extent. Up to 12 edges
+(longest first) are classified at their midpoints: one class and one verdict
+bucket → that verdict; otherwise `Review – Mixed classes on road`, with a
+class-by-length chip (`Local 2.1 mi · Major Collector 0.4 mi`). The pin is
+the longest edge's midpoint and the edges draw on the map. TIGERweb sends
+CORS headers, so this is an ordinary `fetch()` — no geocoder involved.
+
+**Address lines.** The Census one-line geocoder sends **no
+`Access-Control-Allow-Origin` header** (verified 2026-09-15 against two
+controls: `services.arcgis.com` sends `*`, `tigerweb.geo.census.gov` reflects
+the origin, the geocoder sends only `Vary: Origin`), so the page can't
+`fetch()` it. It does answer `format=jsonp`, which means a remote script
+executing — so each request runs inside a **throwaway sandboxed iframe**:
+`sandbox="allow-scripts"` only (opaque origin: no access to this page's DOM,
+localStorage or cookies), the https host fixed in the frame's own source, a
+per-request id that is also the callback name, `postMessage` accepted only
+from that frame's window with origin `"null"` and that id, the reply reduced
+to whitelisted, range-checked fields before any of it is used, and the frame
+removed on success, error or a 20 s timeout. **Nothing is sent on keystroke,
+paste, blur or parse.** The button is the network action; it geocodes every
+unresolved address (three at a time) and disappears when none are left.
+
+**Why the street name is the anchor and the geocoded point only a hint.** The
+geocoder returns a TIGER address-range *interpolation* — a point on the
+centerline, nudged to one side. Measured 2026-09-15, `5201 Portage Rd` landed
+**20 ft from Airview Blvd and 21 ft from Portage Rd**, so the closest-road
+model would have picked the wrong street by one foot. Instead the geocoder's
+parsed street components (`streetName` / `suffixType` / directions) are
+matched against the Census roads within 120 m — base name must agree, type
+and directions add or subtract — the point is **snapped onto the matching
+edge**, and the classification runs at the snap **and 150 ft each way along
+that edge**: all agree → verdict; a class change inside that window →
+`Review – Class change nearby`. No matching street → the raw point classifies
+with `Review – Street not matched`. No geocoder match, several matches more
+than 200 ft apart, or an unreachable geocoder → the line stays an unresolved
+row with the reason, and the button offers it again.
+
+**Typed coordinates are authoritative.** Geocoding never rewrites the box.
+Exports carry the snapped coordinates under the geocoder's matched address;
+the row shows a `from address · snapped to Portage Rd` chip (or `street not
+matched`). Results are held in memory only, keyed by the line's text: edit a
+line and it is unresolved again; reload and it takes another click.
+
 ## Cached-tile classification (2026-09-14) — verdicts from the hosted data
 
 Per user direction ("couldn't we just check every single point with the
@@ -443,8 +532,15 @@ that some segments were not drawn.
   queries the public MDOT / INDOT / WisDOT / NTAD / TIGER services
   directly — the identical network path the Excel tool already uses from
   an inspector's laptop. The site operator never sees a coordinate.
-- **No damage data.** Input is name + lat/lon only. WO/DI, applicants,
-  descriptions, categories stay in the Excel workbook.
+- **No damage data.** Input is name + lat/lon — or, since 2026-09-15, a
+  road name or street address. WO/DI, applicants, descriptions, categories
+  stay in the Excel workbook.
+- **Addresses leave the page only on an explicit click.** A typed address
+  is sent to the Census Bureau's geocoder (a federal service, over https)
+  when — and only when — the `Geocode N addresses` button is pressed; road
+  names go to Census TIGERweb automatically, like the Find box. The
+  geocoder's JSONP reply executes inside a sandboxed, throwaway iframe that
+  cannot reach this page (see "Addresses and road names").
 - **Transparency affordances**: a network log at the bottom of the page
   lists every request the page makes; Leaflet is vendored locally
   (`vendor/leaflet/`) so there are no CDN calls; exports (CSV /

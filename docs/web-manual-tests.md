@@ -112,3 +112,37 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
   Each matches the sheet.
 - [ ] **6.5** "⧉ Expand table". → Every site with full detail incl. the State
   route chip.
+
+## 7. Addresses and road names (~8 min) — newest work
+
+Paste, on their own lines under the three coordinates:
+
+```
+5201 Portage Rd, Portage MI 49002
+Portage Rd, Portage MI
+1 Nowhere Ln, Nowhere MI
+```
+
+- [ ] **7.1** Watch the box as you paste. → The two Portage lines highlight
+  (yellow = address, purple → green = road once it resolves); nothing is sent
+  until you click (network log shows no `geocoding.geo.census.gov`).
+- [ ] **7.2** The count line. → "3 point(s) parsed, 2 addresses, 1 road".
+- [ ] **7.3** `Portage Rd, Portage MI` without any click. → A row appears with a
+  **whole road** chip and a class-by-length chip; the road draws on the map.
+- [ ] **7.4** Click **Geocode 2 addresses**. → Button counts down, then a toast
+  "1 of 2 addresses located"; `5201 Portage Rd` becomes a row with **from
+  address · snapped to Portage Rd**; `1 Nowhere Ln` shows "No match" and the
+  button now reads **Geocode 1 address**.
+- [ ] **7.5** Zoom to the 5201 pin. → It sits **on** Portage Rd's centerline,
+  not on the cross street; the verdict is Portage Rd's class.
+- [ ] **7.6** The coordinates box after geocoding. → Every line exactly as you
+  typed it — no coordinates were written into it.
+- [ ] **7.7** Edit the ZIP on the 5201 line. → The line turns yellow again and
+  the button offers it again (edits make a line unresolved).
+- [ ] **7.8** Export → Excel preview. → The 5201 row's Latitude/Longitude are the
+  snapped coordinates and its Site Name is the geocoder's matched address.
+- [ ] **7.9** Try a road with no place, e.g. `Q Ave`. → Marked unreadable, with
+  no lookup.
+- [ ] **7.10** Reload the page and re-paste. → Addresses are unresolved again
+  (results are not stored) until you click.
+

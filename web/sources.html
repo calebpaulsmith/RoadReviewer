@@ -174,6 +174,20 @@
     these layers are generalized Census cartography for navigation, not authoritative jurisdiction lines.</p>
 </section>
 
+<section id="geocoder">
+  <h2>Addresses — Census Bureau geocoder (explicit click only)</h2>
+  <p>A typed street address is located with the U.S. Census Bureau's one-line geocoder
+    (<code>https://geocoding.geo.census.gov/geocoder/locations/onelineaddress</code>, benchmark
+    <code>Public_AR_Current</code>) — the same free, keyless service the RoadReviewer Excel tool uses.
+    It is called <b>only when the "Geocode N addresses" button is pressed</b>; never on typing or pasting.
+    The service sends no CORS header, so it is reached by JSONP from a throwaway sandboxed iframe that cannot
+    touch this page. Its reply is a TIGER <em>address-range interpolation</em> (a point on the street centerline,
+    nudged to one side), so the returned street components are matched to a Census road within 120 m, the point is
+    snapped onto that road, and the classification runs there and 150 ft either way along it — a class change inside
+    that window is reported for review rather than decided. Road-name lines (a street plus a place) do not use the
+    geocoder at all: they are looked up in TIGERweb (above) and the whole road is classified.</p>
+</section>
+
 <section id="hpms">
   <h2>Pre-built class tiles — FHWA HPMS</h2>
   <div class="org">Organization: <b>FHWA / USDOT BTS</b> — Highway Performance Monitoring System (full extent)</div>
