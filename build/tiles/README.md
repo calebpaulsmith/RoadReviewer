@@ -70,12 +70,11 @@ Measured (2026-09-14, HPMS_National_Current):
 | OH | 487,331 | 57 MB |
 | IL | 445,757 | 46 MB |
 | MN | 509,570 | 53 MB |
-| WI | 902,580 | (rebuilding) |
+| WI | 902,580 | 70 MB |
 
-The state-linkage attributes (round 2, below) roughly double each
-tileset (MI 19→41 MB) — still well under the 100 MB/file limit. (IN was
-an outlier at 6.4 MB attribute-free — INDOT submits shorter, simpler
-segment geometry.)
+The state-linkage attributes (round 2, below) roughly double-to-triple
+each tileset — every file still under the 100 MB limit; ≈ 317 MB total
+across the six states (+ 50 MB basemap + 3 MB ACUB).
 
 ## State-linkage attributes in the class tiles (2026-09-14, round 2)
 

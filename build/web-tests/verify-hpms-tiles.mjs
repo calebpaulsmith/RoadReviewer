@@ -143,7 +143,8 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
   await page.fill("#coordsIn", `Cached check,${tLat},${tLon}`);
   await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("1 point(s) classified"), { timeout: 30000 });
   const rowText = await page.evaluate(() => document.querySelector("#resultsBody .row").textContent);
-  const cachedOk = /federal aid/i.test(rowText) && rowText.includes("cached data") && !rowText.includes("Failed");
+  const cachedOk = /federal aid/i.test(rowText) && rowText.includes("cached data")
+    && rowText.includes("State route") && !rowText.includes("Failed");   // linkage chip from the R/B/E attrs
   if (!cachedOk) console.log("  row text was:", rowText.slice(0, 300));
   checks.push(["cached classification returns the known Federal-aid verdict from the tiles", cachedOk]);
   checks.push(["no live class/ACUB point query fired for the cached verdict",
