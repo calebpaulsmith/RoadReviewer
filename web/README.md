@@ -197,6 +197,45 @@ Per user direction the left pane's input area is two tabs:
   status, class, urban area, roads and note in each placemark — the
   same conventions as the Excel tool's KML.
 
+## Accepted coordinate formats (2026-09-15)
+
+Both input paths — the paste box and Search & Collect's add-a-point field —
+run the same `parseCoordinates`, so they accept the same things:
+
+- **Decimal degrees**, in either order, with or without a site name, in any
+  mix of commas, tabs and spaces: `42.28536, -85.57025` ·
+  `Culvert on Q Ave⇥42.6911⇥-84.5360` · `39.9876⇥-86.0128⇥CR 550 N`.
+- **Degrees / minutes / seconds and degrees / decimal-minutes**, which is what
+  handheld GPS units and FEMA paperwork usually carry:
+  `42°17'07.3"N 85°34'12.9"W` · `N42°17'07.3" W85°34'12.9"` ·
+  `42 17 07.3 N, 85 34 12.9 W` · `42 17 07.3, -85 34 12.9` ·
+  `42° 17.122' N, 85° 34.215' W`. Hemisphere letters, a leading minus, or
+  neither (an unsigned longitude over a Region V latitude is read as west).
+
+DMS is parsed **before** the decimal scan, and that ordering is the point: the
+decimal scan takes the last in-range number PAIR on the line, so
+`42 17 07.3, -85 34 12.9` used to come back as 34, -85 — a confident
+federal-aid verdict for a point in Alabama, with nothing on screen to say it
+was wrong. Symbol-bearing DMS was merely rejected; the signed forms were the
+dangerous ones.
+
+Degrees must be whole and minutes/seconds at most two digits, and a
+hemisphere letter only counts when it stands alone — otherwise a street
+number, a ZIP, or the "e" in `Culvert on Q Ave` would pose as part of a
+coordinate. `build/verify-web-core.mjs` pins every form above (each one is
+the §4.2 Kalamazoo test point written differently) plus the name cases.
+
+**Street addresses are NOT accepted** — a line that carries no coordinate is
+flagged invalid rather than guessed at. Geocoding one would mean calling the
+Census Bureau one-line geocoder, which the Excel tool already uses (free, no
+key), but `geocoding.geo.census.gov` returns **no
+`Access-Control-Allow-Origin` header**, so a browser `fetch()` from the Pages
+origin is blocked — unlike `tigerweb.geo.census.gov`, which reflects the
+origin and is why the Find box works. The endpoint does answer
+`format=jsonp&callback=…`, so addresses are technically reachable without a
+key or a backend, but only by injecting a remote `<script>` that executes in
+the page. That trade is the user's call, so addresses are deferred.
+
 ## Cached-tile classification (2026-09-14) — verdicts from the hosted data
 
 Per user direction ("couldn't we just check every single point with the

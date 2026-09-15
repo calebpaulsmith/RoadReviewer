@@ -53,6 +53,39 @@ console.log("parseCoordinates:");
   check("swapped lon,lat accepted", pts[3].lat === 42.3 && pts[3].lon === -85.5);
 }
 
+/* DMS / degrees-decimal-minutes. Every line below is the §4.2 Kalamazoo
+   federal-aid test point written a different way. The signed forms are
+   regressions: before DMS was parsed, "42 17 07.3, -85 34 12.9" read as the
+   last in-range NUMBER pair — 34, -85 — and classified a point in Alabama
+   without a word of warning. The name cases guard the hemisphere letters,
+   which also live inside ordinary words ("Ave", "Rowe", "Escanaba"). */
+console.log("parseCoordinates — degrees/minutes/seconds:");
+{
+  const K = (p, label, name) => {
+    const okC = p && !p.invalid && Math.abs(p.lat - 42.28536) < 0.002 && Math.abs(p.lon + 85.57025) < 0.002;
+    check(label, okC && (name === undefined || p.name === name),
+      p ? `${p.invalid ? "INVALID" : p.lat + "," + p.lon} name=${JSON.stringify(p && p.name)}` : "no point");
+  };
+  const one = t => core.parseCoordinates(t)[0];
+  K(one(`42°17'07.3"N 85°34'12.9"W`), "symbols + NSEW");
+  K(one(`42°17'07.3"N, 85°34'12.9"W`), "symbols, comma-separated");
+  K(one(`N42°17'07.3" W85°34'12.9"`), "hemisphere first");
+  K(one("42 17 07.3 N, 85 34 12.9 W"), "spaces + NSEW, no symbols");
+  K(one("42 17 07.3, -85 34 12.9"), "spaces + signed degrees (was 34,-85)");
+  K(one(`42° 17.122' N, 85° 34.215' W`), "degrees + decimal minutes");
+  K(one("42 17.122, -85 34.215"), "decimal minutes, signed (was 34.215,-85)");
+  K(one(`Culvert on Q Ave 42°17'07.3"N 85°34'12.9"W`), "name before", "Culvert on Q Ave");
+  K(one(`42°17'07.3"N 85°34'12.9"W, washout`), "name after", "washout");
+  K(one("Rowe Rd 42 17 07.3, -85 34 12.9"), "'e' in a name is not EAST", "Rowe Rd");
+  K(one("42 17 07.3 N, 85 34 12.9 W Escanaba culvert"), "trailing word keeps its first letter", "Escanaba culvert");
+  // Addresses are NOT accepted (deferred: the Census geocoder sends no CORS
+  // header, so it can't be called from the page). They must stay INVALID
+  // rather than have a street number and a ZIP read as a coordinate.
+  for (const a of ["123 W Main St, Kalamazoo, MI 49007", "5201 Portage Rd, Portage MI 49002",
+                   "8500 N 32nd St, Richland, MI", "2200 S 1700 W, Salt Lake City UT"])
+    check(`address rejected: ${a}`, (one(a) || { invalid: true }).invalid === true);
+}
+
 console.log("detectState (all six states, PR #36):");
 for (const [lat, lon, want] of [
   [42.28536, -85.57025, "MI"], [44.27, -83.52, "MI"], [46.5, -87.4, "MI"],   // Kalamazoo, Iosco, Marquette (UP)

@@ -1116,6 +1116,25 @@ live services. Full design narrative + verification history:
   Buffer** select with an ⓘ explainer, text row filter, opt-in "filter by
   map view" checkbox, compact one-line rows, "⧉ Expand table"). The map is
   locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
+- **Accepted input formats (2026-09-15).** Both input paths share
+  `parseCoordinates`: decimal degrees in either order, and **DMS /
+  degrees-decimal-minutes** (`42°17'07.3"N 85°34'12.9"W`, `N42°…`,
+  `42 17 07.3 N, 85 34 12.9 W`, `42 17 07.3, -85 34 12.9`,
+  `42° 17.122' N …`). DMS is matched BEFORE the decimal scan and that order is
+  load-bearing: the decimal scan takes the last in-range number PAIR on the
+  line, so a signed DMS line read as 34, -85 — a confident federal-aid verdict
+  three states away, with nothing on screen to flag it. Degrees must be whole,
+  minutes/seconds ≤ 2 digits, and a hemisphere letter only counts standing
+  alone (n/s/e/w also live inside words — "Culvert on Q Av**e**"). Written
+  without regex lookbehind on purpose: an unsupported feature would throw at
+  load and take rr-core with it. **Street addresses are refused, deliberately**
+  — the Census one-line geocoder the Excel tool uses (§8 resolved #2) sends NO
+  `Access-Control-Allow-Origin` (verified 2026-09-15 against two controls:
+  `services.arcgis.com` sends `*`, `tigerweb.geo.census.gov` reflects the
+  origin, the geocoder sends neither), so the page cannot `fetch()` it. It does
+  serve `format=jsonp`, so addresses need no key and no backend — but they do
+  need a remote `<script>` executing in the page, which is a call for the user,
+  not a default.
 - **Where the map's pixels come from.** Basemap = `web/tiles/basemap.pmtiles`
   (50 MB Protomaps/OSM z0-11 extract) rendered by protomaps-leaflet 5.1.0
   through a custom `ATLAS_FLAVOR` paint/label rule set (ivory paper, muted

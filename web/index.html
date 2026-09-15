@@ -461,7 +461,8 @@ details.howcolors { margin-top: 8px; }
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
 Culvert on Q Ave	42.6911	-84.5360
 Site 12, 44.2700, -83.5200
-39.9876	-86.0128	CR 550 N"></textarea>
+39.9876	-86.0128	CR 550 N
+Bridge 7	42°41'28&quot;N	84°32'10&quot;W"></textarea>
       <div class="legend">
         <span class="l-fed">Federal aid — closest road</span>
         <span class="l-nonfed">Non-federal aid — closest road</span>
@@ -489,7 +490,7 @@ Site 12, 44.2700, -83.5200
       </div>
       <div class="addbox">
         <div class="addrow"><input id="addName" type="text" spellcheck="false" placeholder="Site name (e.g. Culvert on Q Ave)"></div>
-        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025"></div>
+        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025 or 42°17'07.3&quot;N 85°34'12.9&quot;W"></div>
         <div class="addrow"><input id="addNote" type="text" spellcheck="false" placeholder="Note (optional — goes into the export)"></div>
         <div class="addrow">
           <button id="addPointBtn" class="primary" title="Adds the point to the results table below, classifies it, and zooms the map to it. Points are kept in this browser until removed.">＋ Add point</button>
@@ -1201,6 +1202,57 @@ function detectState(lat, lon) {
 // Parse pasted text: one point per line, "lat lon" or "lat, lon" with an
 // optional free-text name before/after. Uses the last adjacent number pair
 // that looks like a CONUS lat/lon (also accepts lon,lat swapped).
+/* ---- degrees / minutes / seconds ---------------------------------------
+   Field GPS units and FEMA paperwork often carry DMS (42°17'07.3"N) or
+   degrees-decimal-minutes (42 17.122'). The decimal scan in
+   parseCoordinates takes the last in-range NUMBER pair on the line, which
+   read "42 17 07.3, -85 34 12.9" as 34, -85 — a confident verdict three
+   states from the real site — so DMS is tried FIRST and accepted only when
+   it lands in region. Degrees must be whole and minutes/seconds at most two
+   digits; that is what stops a street number, a ZIP or a line ending
+   "CR 550 N" from posing as a coordinate. */
+const DMS_HEM = "[NnSsEeWw]";
+// A hemisphere letter only counts when it stands alone: n/s/e/w also live
+// inside ordinary words, and "Culvert on Q Ave 42°…" must not read its "e"
+// as EAST (it ate the "e" and could flip a sign). Written without lookbehind
+// on purpose — an unsupported regex feature would throw at load and take the
+// whole classifier with it.
+const DMS_ONE = `(?:(?:^|[\\s,;/(])(${DMS_HEM})\\s*)?(-?\\d{1,3})\\s*(?:[°ºd]\\s*|\\s+)(\\d{1,2}(?:\\.\\d+)?)\\s*(?:['′]\\s*|\\s+|(?=[,;/]|$))(?:(\\d{1,2}(?:\\.\\d+)?)\\s*(?:["″]|'')?\\s*)?(?:(${DMS_HEM})(?![A-Za-z]))?`;
+// The separator is zero-or-more because the second coordinate's own leading
+// hemisphere ("… W85°34'…") needs the space in front of the letter to prove
+// the letter stands alone; the engine backtracks the space over to it.
+const DMS_PAIR_RE = new RegExp(DMS_ONE + "[\\s,;/]*" + DMS_ONE, "d");
+const DMS_NS = /^[NnSs]$/;
+
+function dmsDegrees(d, m, s, hemA, hemB) {
+  const hem = (hemA || hemB || "").toUpperCase();
+  const v = Math.abs(parseFloat(d)) + (parseFloat(m) || 0) / 60 + (parseFloat(s) || 0) / 3600;
+  return (String(d).startsWith("-") || hem === "S" || hem === "W") ? -v : v;
+}
+// Span of the whole coordinate token, so an edit in the export dialogue
+// replaces the DMS text with the decimal the user typed (same contract the
+// decimal path gives rewritePastedLine: one [start,end) per coordinate).
+function dmsSpan(indices, groups) {
+  let st = Infinity, en = -1;
+  for (const g of groups) if (indices[g]) { st = Math.min(st, indices[g][0]); en = Math.max(en, indices[g][1]); }
+  return [st, en];
+}
+function parseDmsPair(line) {
+  const m = DMS_PAIR_RE.exec(line);
+  if (!m) return null;
+  const a = dmsDegrees(m[2], m[3], m[4], m[1], m[5]);
+  const b = dmsDegrees(m[7], m[8], m[9], m[6], m[10]);
+  let lat = a, lon = b, latFirst = true;
+  if (DMS_NS.test(m[6] || m[10] || "") && !DMS_NS.test(m[1] || m[5] || "")) { lat = b; lon = a; latFirst = false; }
+  // An unsigned, unlettered longitude over a Region V latitude is a western one.
+  if (lon > 0 && lat >= 17 && lat <= 72) lon = -lon;
+  if (!(lat >= 17 && lat <= 72 && lon >= -180 && lon <= -64)) return null;
+  const [aStart, aEnd] = dmsSpan(m.indices, [1, 2, 3, 4, 5]);
+  const [bStart, bEnd] = dmsSpan(m.indices, [6, 7, 8, 9, 10]);
+  return { lat, lon, i0: m.index, i1: m.index + m[0].length,
+           span: { aStart, aEnd, bStart, bEnd, latFirst } };
+}
+
 function parseCoordinates(text) {
   const points = [];
   const lines = text.split(/\r?\n/);
@@ -1208,8 +1260,8 @@ function parseCoordinates(text) {
     const line = lines[i].trim();
     if (!line) continue;
     const nums = [...line.matchAll(/-?\d+(?:\.\d+)?/g)];
-    let pair = null;
-    for (let j = nums.length - 2; j >= 0; j--) {
+    let pair = parseDmsPair(line);
+    for (let j = nums.length - 2; !pair && j >= 0; j--) {
       const a = parseFloat(nums[j][0]), b = parseFloat(nums[j + 1][0]);
       // Keep each number's own span (and which one is the latitude) so an
       // edit in the export dialogue can splice that one value back into this
@@ -1820,7 +1872,7 @@ setTab("coords");
 function addCollectedPoint() {
   const coordsTxt = $("addCoords").value.trim();
   const parsed = coordsTxt ? parseCoordinates(coordsTxt)[0] : null;
-  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025"); return; }
+  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025 — or degrees/minutes/seconds, e.g. 42\u00b017'07.3\"N 85\u00b034'12.9\"W.\n\nStreet addresses aren't accepted yet."); return; }
   const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
   collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
   saveCollected(); rebuildPoints(); render();
