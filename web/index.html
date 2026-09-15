@@ -661,7 +661,7 @@ Site 12, 44.2700, -83.5200
     </div>
 
     <div class="ex-tablehint">
-      <span>Every cell is editable — corrections and notes here go into the CSV, clipboard, KMZ and GeoJSON exports.</span>
+      <span>Every cell is editable — corrections and notes go into the CSV, clipboard, KMZ and GeoJSON exports. Editing <b>Site Name</b>, <b>Latitude</b> or <b>Longitude</b> writes back to the coordinates box and re-runs the check for that site.</span>
     </div>
     <div class="po-body"><table id="exportTable"></table></div>
   </div>
@@ -1210,14 +1210,19 @@ function parseCoordinates(text) {
     let pair = null;
     for (let j = nums.length - 2; j >= 0; j--) {
       const a = parseFloat(nums[j][0]), b = parseFloat(nums[j + 1][0]);
-      if (a >= 17 && a <= 72 && b >= -180 && b <= -64) { pair = { lat: a, lon: b, i0: nums[j].index, i1: nums[j + 1].index + nums[j + 1][0].length }; break; }
-      if (b >= 17 && b <= 72 && a >= -180 && a <= -64) { pair = { lat: b, lon: a, i0: nums[j].index, i1: nums[j + 1].index + nums[j + 1][0].length }; break; }
+      // Keep each number's own span (and which one is the latitude) so an
+      // edit in the export dialogue can splice that one value back into this
+      // line without reformatting anything else the user typed.
+      const span = { aStart: nums[j].index, aEnd: nums[j].index + nums[j][0].length,
+                     bStart: nums[j + 1].index, bEnd: nums[j + 1].index + nums[j + 1][0].length };
+      if (a >= 17 && a <= 72 && b >= -180 && b <= -64) { pair = { lat: a, lon: b, i0: span.aStart, i1: span.bEnd, span: { ...span, latFirst: true } }; break; }
+      if (b >= 17 && b <= 72 && a >= -180 && a <= -64) { pair = { lat: b, lon: a, i0: span.aStart, i1: span.bEnd, span: { ...span, latFirst: false } }; break; }
     }
     if (!pair) { points.push({ line: i + 1, raw: line, invalid: true }); continue; }
     const name = (line.slice(0, pair.i0) + " " + line.slice(pair.i1))
       .replace(/[,;\t]+/g, " ").replace(/\s+/g, " ").trim();
     points.push({ line: i + 1, name: name || "Point " + points.filter(p => !p.invalid).length + 1 + "",
-                  lat: pair.lat, lon: pair.lon });
+                  lat: pair.lat, lon: pair.lon, src: line, span: pair.span });
   }
   return points;
 }
@@ -1739,6 +1744,7 @@ function render() {
       // active row filter so text matches stay current. Defined in a later
       // script block, so guard the call during initial load.
       if (window.applyRowFilter) window.applyRowFilter();
+      if (window.refreshExportDialog) window.refreshExportDialog();
     }).catch(() => { /* classifyPoint never rejects; belt and braces */ });
   });
 
@@ -3560,11 +3566,16 @@ $("exportWrap").addEventListener("click", e => { if (e.target === $("exportWrap"
 // coordinates, so they survive the re-render that every keystroke in the
 // coordinates box triggers); a Note edit also goes back onto the point so a
 // collected site keeps it in this browser.
+// Look points up in currentPoints, not exportPoints: right after a
+// coordinate edit the site is mid-re-classification (no result yet), and a
+// second edit on the same row must still find it.
+function pointByKey(key) { return currentPoints.find(q => !q.invalid && editKey(q) === key); }
+
 $("exportTable").addEventListener("input", e => {
   const td = e.target.closest("td[contenteditable]");
   if (!td) return;
   const key = td.parentElement.dataset.k;
-  const pt = exportPoints().find(q => editKey(q) === key);
+  const pt = pointByKey(key);
   if (!pt) return;
   const c = Number(td.dataset.c), ed = rowEdits.get(key) || {};
   ed[c] = td.textContent.trim();
@@ -3577,6 +3588,112 @@ $("exportTable").addEventListener("input", e => {
   clearTimeout(exPrevTimer);
   exPrevTimer = setTimeout(refreshExportPreviews, 250);
 });
+
+/* ---- Site name / Latitude / Longitude WRITE BACK to the input ----
+   Those three columns are the site's identity, not export decoration: an
+   edit there rewrites the site's line in the coordinates box (or its
+   collected record), which re-parses, re-classifies at the new location and
+   moves the pin — so the verdict always belongs to the coordinates beside
+   it. Committed on blur/Enter, never per keystroke (a coordinate would
+   otherwise re-query on every digit). Every other column stays export-only. */
+const LAT_MIN = 17, LAT_MAX = 72, LON_MIN = -180, LON_MAX = -64;
+
+// Splice ONE of the two numbers back into the user's own line, leaving their
+// separators and the other number exactly as typed (the parser recorded each
+// number's span). Falls back to a canonical rewrite if the line has drifted.
+function rewritePastedLine(pt, field, text) {
+  const box = $("coordsIn"), lines = box.value.split(/\r?\n/), idx = pt.line - 1;
+  if (!(idx >= 0 && idx < lines.length)) return false;
+  const cur = lines[idx].trim(), sp = pt.span, intact = !!sp && cur === pt.src;
+  let out;
+  if (intact && field !== "name") {
+    const isA = (field === "lat") === sp.latFirst;
+    const st = isA ? sp.aStart : sp.bStart, en = isA ? sp.aEnd : sp.bEnd;
+    out = cur.slice(0, st) + text + cur.slice(en);
+  } else if (intact) {
+    // The name can sit on either side of the numbers, so it can't be spliced
+    // — rebuild the line, but keep both numbers exactly as they were typed.
+    out = (text ? text + ", " : "") + cur.slice(sp.aStart, sp.aEnd) + ", " + cur.slice(sp.bStart, sp.bEnd);
+  } else {
+    const name = field === "name" ? text : pt.name;
+    out = (name ? name + ", " : "") +
+      (field === "lat" ? text : pt.lat) + ", " + (field === "lon" ? text : pt.lon);
+  }
+  lines[idx] = out;
+  box.value = lines.join("\n");
+  return true;
+}
+
+function commitIdentityCell(td) {
+  const c = Number(td.dataset.c);
+  if (c !== EX.name && c !== EX.lat && c !== EX.lon) return;
+  const key = td.parentElement.dataset.k;
+  const pt = pointByKey(key);
+  if (!pt) return;
+  const field = c === EX.name ? "name" : c === EX.lat ? "lat" : "lon";
+  const text = td.textContent.trim(), before = String(pt[field]);
+  const drop = () => {                       // the point itself carries it now
+    const ed = rowEdits.get(key);
+    if (ed) { delete ed[c]; if (!Object.keys(ed).length) rowEdits.delete(key); }
+    td.classList.remove("edited");
+  };
+  if (text === before) { drop(); return; }
+
+  if (field !== "name") {
+    const v = Number(text);
+    const lo = field === "lat" ? LAT_MIN : LON_MIN, hi = field === "lat" ? LAT_MAX : LON_MAX;
+    if (text === "" || !Number.isFinite(v) || v < lo || v > hi) {
+      td.textContent = before;               // refuse it rather than export a coordinate the verdict doesn't fit
+      drop();
+      toast(`${field === "lat" ? "Latitude" : "Longitude"} must be a number between ${lo} and ${hi}`);
+      return;
+    }
+  }
+
+  const ok = pt.collected
+    ? (() => {
+        const rec = collectedPoints[pt.cIdx];
+        if (!rec) return false;
+        rec[field] = field === "name" ? text : Number(text);
+        saveCollected();
+        return true;
+      })()
+    : rewritePastedLine(pt, field, text);
+  if (!ok) return;
+
+  const rest = rowEdits.get(key);
+  drop();
+  if (field !== "name") {
+    // The coordinates moved, so the site's edit key moved with them. Carry
+    // whatever else was edited (the Note) across, and re-stamp the row so a
+    // second edit on it — fixing a transposed pair, say — still resolves
+    // before the table is rebuilt.
+    const newKey = editKey({ ...pt, [field]: Number(text) });
+    if (rest && Object.keys(rest).length) rowEdits.set(newKey, rest);
+    td.parentElement.dataset.k = newKey;
+    toast(`Re-checking ${pt.name} at the new coordinates…`);
+  }
+  rebuildPoints();
+  render();        // re-classifies; the dialogue refreshes when the result lands
+}
+$("exportTable").addEventListener("focusout", e => {
+  const td = e.target.closest("td[contenteditable]");
+  if (td) commitIdentityCell(td);
+});
+$("exportTable").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.closest("td[contenteditable]")) { e.preventDefault(); e.target.blur(); }
+});
+
+// Refresh the open dialogue once a (re)classification lands so an edited site
+// shows its new verdict. Skipped while a cell has focus — rebuilding the
+// table would drop the caret mid-edit.
+function refreshExportDialog() {
+  if ($("exportWrap").hidden) return;
+  if (document.activeElement && document.activeElement.closest("#exportTable")) return;
+  buildExportTable();
+  refreshExportPreviews();
+}
+window.refreshExportDialog = refreshExportDialog;
 
 /* ---------------- pop-out: every site's full detail as one table ---------------- */
 function buildPopoutTable() {

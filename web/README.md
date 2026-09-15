@@ -319,6 +319,16 @@ export dialogue; the caret drops a menu of formats.
   the KMZ and the GeoJSON. A Note edit also sticks to a collected point in
   this browser. The PDF report re-queries the live layers to draw its
   figures, so it is deliberately not edit-driven.
+- **Site Name, Latitude and Longitude write back.** Those three are the
+  site's identity rather than export decoration, so editing one (committed
+  when you leave the cell) rewrites that site's line in the coordinates box
+  — splicing just the number you changed, leaving your own separators and
+  the other number as typed — or its collected record, and the site
+  re-classifies at the new location with its pin moving to match. So a
+  corrected coordinate gets you the verdict for the corrected spot, and the
+  CSV, KMZ and GeoJSON can't disagree about where a site is. A latitude or
+  longitude outside the range the coordinate parser itself accepts is
+  refused and the cell reverts.
 - **Two clipboard actions** — *Copy site + coordinates* (just the name and
   lat/lon, in the layout the coordinates box itself accepts) and *Copy
   Auto-Detect results* (every column). Both confirm with a short toast;

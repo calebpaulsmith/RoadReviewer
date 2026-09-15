@@ -1268,6 +1268,25 @@ live services. Full design narrative + verification history:
   elements (same ids: dlCsv/copyTsv/dlKmz/dlGeojson/pdfBtn/firmZipBtn/
   pdfZoom), so no export handler was rewired — only its home moved; the
   verifiers now open the dialogue before clicking them.
+- Identity columns WRITE BACK (2026-09-15, same pass, after the user asked
+  what a coordinate edit actually does): Site Name / Latitude / Longitude are
+  the site's identity, not export decoration, so editing one rewrites the
+  site's line in the coordinates box (or its `collectedPoints` record), which
+  re-parses, re-classifies at the new location and moves the pin — the verdict
+  can never belong to different coordinates than the ones printed beside it.
+  Before this, a lat edit changed the CSV only: the KMZ/GeoJSON geometry kept
+  reading `p.lat`/`p.lon`, so the two exports described different places.
+  Mechanics: `parseCoordinates` now records each number's own span + which one
+  is the latitude, so `rewritePastedLine()` splices just the edited number and
+  leaves the user's tabs/commas and the other number byte-identical (a NAME
+  edit can't be spliced — the name can sit on either side of the numbers — so
+  that one rebuilds the line keeping both numbers as typed). Commit is on
+  blur/Enter, NOT on input (a coordinate would re-query on every digit); a
+  value outside the parser's own lat 17..72 / lon -180..-64 window is refused
+  and the cell reverts; the row's remaining edits (the Note) are re-keyed to
+  the new coordinates; `refreshExportDialog()` rebuilds the dialogue when the
+  re-classification lands, and skips while a cell has focus (rebuilding would
+  drop the caret mid-edit).
 - **PDF map width — labels only, and REVISIT THIS.** The select's option
   labels are now plain feet then miles (500 ft / 1,000 ft / 2,000 ft /
   0.75 mi / 1.5 mi / 3 mi); the VALUES are the same metre half-widths
