@@ -994,6 +994,9 @@ docs/
   HISTORY.md                            historical narrative moved out of this file (prototype
                                           autopsy, increments 1-6, web design story, PR #21-#32)
   Region V Test Coordinates.xlsx        the 19 live-verified test points, all six states (§7f)
+  web-manual-tests.md                   hand-test pass for the web tool — clipboard, Excel, Google
+                                          Earth, PDF layout, the editable export table; the things
+                                          build/web-tests/ can't judge (ids are stable, quote them)
 notebooks/                              AGOL notebook port of rr-core (jupytext-paired .py/.ipynb)
 ```
 
