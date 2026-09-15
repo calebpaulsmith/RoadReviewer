@@ -66,7 +66,7 @@ Measured (2026-09-14, HPMS_National_Current):
 | state | features harvested | pmtiles (with state-linkage attrs) |
 |---|---|---|
 | MI | 349,233 | 41 MB |
-| IN | 529,343 | (rebuilding) |
+| IN | 529,343 | 50 MB |
 | OH | 487,331 | (rebuilding) |
 | IL | 445,757 | (rebuilding) |
 | MN | 509,570 | (rebuilding) |
