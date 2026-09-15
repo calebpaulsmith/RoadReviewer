@@ -67,7 +67,7 @@ Measured (2026-09-14, HPMS_National_Current):
 |---|---|---|
 | MI | 349,233 | 41 MB |
 | IN | 529,343 | 50 MB |
-| OH | 487,331 | (rebuilding) |
+| OH | 487,331 | 57 MB |
 | IL | 445,757 | (rebuilding) |
 | MN | 509,570 | (rebuilding) |
 | WI | 902,580 | (rebuilding) |
