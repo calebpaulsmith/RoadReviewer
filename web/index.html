@@ -661,7 +661,8 @@ Site 12, 44.2700, -83.5200
     </div>
 
     <div class="ex-tablehint">
-      <span>Every cell is editable — corrections and notes go into the CSV, clipboard, KMZ and GeoJSON exports. Editing <b>Site Name</b>, <b>Latitude</b> or <b>Longitude</b> writes back to the coordinates box and re-runs the check for that site.</span>
+      <span>Every cell is editable — corrections and notes go into the CSV, clipboard, KMZ and GeoJSON exports. Editing <b>Site Name</b>, <b>Latitude</b> or <b>Longitude</b> writes back to the coordinates box and re-runs the check for that site when you leave the row.</span>
+      <span class="count" id="exportBusy"></span>
     </div>
     <div class="po-body"><table id="exportTable"></table></div>
   </div>
@@ -3559,8 +3560,9 @@ $("exportTabs").addEventListener("click", e => {
   if (b) { setExportTab(b.dataset.tab); refreshExportPreviews(); }
 });
 $("pdfZoom").addEventListener("change", refreshExportPreviews);
-$("exportClose").addEventListener("click", () => { $("exportWrap").hidden = true; });
-$("exportWrap").addEventListener("click", e => { if (e.target === $("exportWrap")) $("exportWrap").hidden = true; });
+function closeExport() { flushAllIdentity(); $("exportWrap").hidden = true; }
+$("exportClose").addEventListener("click", closeExport);
+$("exportWrap").addEventListener("click", e => { if (e.target === $("exportWrap")) closeExport(); });
 
 // Every cell is editable. Edits land in rowEdits (keyed by the site's
 // coordinates, so they survive the re-render that every keystroke in the
@@ -3594,101 +3596,156 @@ $("exportTable").addEventListener("input", e => {
    edit there rewrites the site's line in the coordinates box (or its
    collected record), which re-parses, re-classifies at the new location and
    moves the pin — so the verdict always belongs to the coordinates beside
-   it. Committed on blur/Enter, never per keystroke (a coordinate would
-   otherwise re-query on every digit). Every other column stays export-only. */
-const LAT_MIN = 17, LAT_MAX = 72, LON_MIN = -180, LON_MAX = -64;
+   it. Every other column stays export-only.
 
-// Splice ONE of the two numbers back into the user's own line, leaving their
-// separators and the other number exactly as typed (the parser recorded each
-// number's span). Falls back to a canonical rewrite if the line has drifted.
-function rewritePastedLine(pt, field, text) {
+   WHEN it applies: an edit is stashed (and validated) as soon as you leave
+   the cell, but the write-back and the re-check wait until you leave the
+   ROW. Tabbing from Latitude to Longitude is one correction — a transposed
+   pair would otherwise re-check twice, the first time at a half-corrected
+   location. Enter, clicking anything outside the row, or closing the
+   dialogue applies immediately. */
+const LAT_MIN = 17, LAT_MAX = 72, LON_MIN = -180, LON_MAX = -64;
+const pendingIdentity = new Map();     // row key -> { name?, lat?, lon? } as typed
+const identityField = c => c === EX.name ? "name" : c === EX.lat ? "lat" : c === EX.lon ? "lon" : "";
+
+// Rewrite the site's line in the coordinates box, applying every pending
+// field at once. Splices just the numbers that changed so the user's own
+// separators — and any number they didn't touch — survive byte-identical.
+function rewritePastedLine(pt, edits) {
   const box = $("coordsIn"), lines = box.value.split(/\r?\n/), idx = pt.line - 1;
   if (!(idx >= 0 && idx < lines.length)) return false;
   const cur = lines[idx].trim(), sp = pt.span, intact = !!sp && cur === pt.src;
+  const latSpan = sp && (sp.latFirst ? [sp.aStart, sp.aEnd] : [sp.bStart, sp.bEnd]);
+  const lonSpan = sp && (sp.latFirst ? [sp.bStart, sp.bEnd] : [sp.aStart, sp.aEnd]);
   let out;
-  if (intact && field !== "name") {
-    const isA = (field === "lat") === sp.latFirst;
-    const st = isA ? sp.aStart : sp.bStart, en = isA ? sp.aEnd : sp.bEnd;
-    out = cur.slice(0, st) + text + cur.slice(en);
+  if (intact && edits.name === undefined) {
+    const parts = [];
+    if (edits.lat !== undefined) parts.push([latSpan, edits.lat]);
+    if (edits.lon !== undefined) parts.push([lonSpan, edits.lon]);
+    parts.sort((a, b) => b[0][0] - a[0][0]);   // later span first: offsets stay valid
+    out = cur;
+    for (const [[st, en], text] of parts) out = out.slice(0, st) + text + out.slice(en);
   } else if (intact) {
-    // The name can sit on either side of the numbers, so it can't be spliced
-    // — rebuild the line, but keep both numbers exactly as they were typed.
-    out = (text ? text + ", " : "") + cur.slice(sp.aStart, sp.aEnd) + ", " + cur.slice(sp.bStart, sp.bEnd);
-  } else {
-    const name = field === "name" ? text : pt.name;
-    out = (name ? name + ", " : "") +
-      (field === "lat" ? text : pt.lat) + ", " + (field === "lon" ? text : pt.lon);
+    // A name edit can't be spliced — the name can sit on either side of the
+    // numbers — so rebuild the line, keeping each number as typed unless it
+    // was edited too, and in its original order.
+    const latTxt = edits.lat !== undefined ? edits.lat : cur.slice(latSpan[0], latSpan[1]);
+    const lonTxt = edits.lon !== undefined ? edits.lon : cur.slice(lonSpan[0], lonSpan[1]);
+    const nm = edits.name !== undefined ? edits.name : pt.name;
+    out = (nm ? nm + ", " : "") + (sp.latFirst ? latTxt + ", " + lonTxt : lonTxt + ", " + latTxt);
+  } else {                                      // the line drifted since it parsed
+    const nm = edits.name !== undefined ? edits.name : pt.name;
+    out = (nm ? nm + ", " : "") +
+      (edits.lat !== undefined ? edits.lat : pt.lat) + ", " +
+      (edits.lon !== undefined ? edits.lon : pt.lon);
   }
   lines[idx] = out;
   box.value = lines.join("\n");
   return true;
 }
 
-function commitIdentityCell(td) {
-  const c = Number(td.dataset.c);
-  if (c !== EX.name && c !== EX.lat && c !== EX.lon) return;
-  const key = td.parentElement.dataset.k;
-  const pt = pointByKey(key);
+function writeCollectedIdentity(pt, edits) {
+  const rec = collectedPoints[pt.cIdx];
+  if (!rec) return false;
+  if (edits.name !== undefined) rec.name = edits.name;
+  if (edits.lat !== undefined) rec.lat = Number(edits.lat);
+  if (edits.lon !== undefined) rec.lon = Number(edits.lon);
+  saveCollected();
+  return true;
+}
+
+// Leaving a cell: validate now (a refusal should be instant) and stash.
+function stashIdentityEdit(td) {
+  const c = Number(td.dataset.c), field = identityField(c);
+  if (!field) return;
+  const key = td.parentElement.dataset.k, pt = pointByKey(key);
   if (!pt) return;
-  const field = c === EX.name ? "name" : c === EX.lat ? "lat" : "lon";
   const text = td.textContent.trim(), before = String(pt[field]);
-  const drop = () => {                       // the point itself carries it now
+  const pend = pendingIdentity.get(key) || {};
+  const forget = () => {
+    delete pend[field];
+    if (Object.keys(pend).length) pendingIdentity.set(key, pend); else pendingIdentity.delete(key);
     const ed = rowEdits.get(key);
     if (ed) { delete ed[c]; if (!Object.keys(ed).length) rowEdits.delete(key); }
     td.classList.remove("edited");
   };
-  if (text === before) { drop(); return; }
-
+  if (text === before) { forget(); return; }   // typed back to what it was
   if (field !== "name") {
-    const v = Number(text);
-    const lo = field === "lat" ? LAT_MIN : LON_MIN, hi = field === "lat" ? LAT_MAX : LON_MAX;
+    const v = Number(text), lo = field === "lat" ? LAT_MIN : LON_MIN, hi = field === "lat" ? LAT_MAX : LON_MAX;
     if (text === "" || !Number.isFinite(v) || v < lo || v > hi) {
-      td.textContent = before;               // refuse it rather than export a coordinate the verdict doesn't fit
-      drop();
+      td.textContent = before;                 // refuse it rather than export a coordinate the verdict doesn't fit
+      forget();
       toast(`${field === "lat" ? "Latitude" : "Longitude"} must be a number between ${lo} and ${hi}`);
       return;
     }
   }
-
-  const ok = pt.collected
-    ? (() => {
-        const rec = collectedPoints[pt.cIdx];
-        if (!rec) return false;
-        rec[field] = field === "name" ? text : Number(text);
-        saveCollected();
-        return true;
-      })()
-    : rewritePastedLine(pt, field, text);
-  if (!ok) return;
-
-  const rest = rowEdits.get(key);
-  drop();
-  if (field !== "name") {
-    // The coordinates moved, so the site's edit key moved with them. Carry
-    // whatever else was edited (the Note) across, and re-stamp the row so a
-    // second edit on it — fixing a transposed pair, say — still resolves
-    // before the table is rebuilt.
-    const newKey = editKey({ ...pt, [field]: Number(text) });
-    if (rest && Object.keys(rest).length) rowEdits.set(newKey, rest);
-    td.parentElement.dataset.k = newKey;
-    toast(`Re-checking ${pt.name} at the new coordinates…`);
-  }
-  rebuildPoints();
-  render();        // re-classifies; the dialogue refreshes when the result lands
+  pend[field] = text;
+  pendingIdentity.set(key, pend);
 }
+
+function applyIdentityEdits(key) {
+  const pend = pendingIdentity.get(key);
+  if (!pend) return false;
+  pendingIdentity.delete(key);
+  const pt = pointByKey(key);
+  if (!pt) return false;
+  if (!(pt.collected ? writeCollectedIdentity(pt, pend) : rewritePastedLine(pt, pend))) return false;
+  const ed = rowEdits.get(key);                // the point carries these now
+  if (ed) {
+    for (const c of [EX.name, EX.lat, EX.lon]) delete ed[c];
+    if (!Object.keys(ed).length) rowEdits.delete(key);
+  }
+  if (pend.lat !== undefined || pend.lon !== undefined) {
+    // The coordinates moved, so the site's edit key moves with them: carry
+    // whatever else was edited (the Note) across and re-stamp the row.
+    const moved = { ...pt };
+    if (pend.lat !== undefined) moved.lat = Number(pend.lat);
+    if (pend.lon !== undefined) moved.lon = Number(pend.lon);
+    const newKey = editKey(moved), rest = rowEdits.get(key);
+    if (rest) { rowEdits.delete(key); rowEdits.set(newKey, rest); }
+    const tr = $("exportTable").querySelector(`tr[data-k="${CSS.escape(key)}"]`);
+    if (tr) tr.dataset.k = newKey;
+    toast(`Re-checking ${pend.name || pt.name} at the new coordinates…`);
+  }
+  return true;
+}
+
+function flushIdentity(keys) {
+  let any = false;
+  for (const k of keys) any = applyIdentityEdits(k) || any;
+  if (!any) return;
+  setReclassifying(true);
+  rebuildPoints();
+  render();      // re-classifies; the dialogue refreshes when the result lands
+}
+function flushAllIdentity() { flushIdentity([...pendingIdentity.keys()]); }
+
+// While a re-check is in flight the edited site has no verdict yet, so the
+// exports would silently omit it — hold the buttons rather than write a file
+// that is missing a row.
+function setReclassifying(on) {
+  for (const b of document.querySelectorAll("#exportCard .ex-actions button")) b.disabled = on;
+  $("exportBusy").textContent = on ? "re-checking the edited site…" : "";
+}
+
 $("exportTable").addEventListener("focusout", e => {
   const td = e.target.closest("td[contenteditable]");
-  if (td) commitIdentityCell(td);
+  if (!td) return;
+  const tr = td.parentElement, key = tr.dataset.k;
+  stashIdentityEdit(td);
+  if (e.relatedTarget && tr.contains(e.relatedTarget)) return;   // still in this row
+  flushIdentity([key]);
 });
 $("exportTable").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.closest("td[contenteditable]")) { e.preventDefault(); e.target.blur(); }
 });
 
 // Refresh the open dialogue once a (re)classification lands so an edited site
-// shows its new verdict. Skipped while a cell has focus — rebuilding the
-// table would drop the caret mid-edit.
+// shows its new verdict. The table rebuild is skipped while a cell has focus
+// — it would drop the caret mid-edit — but the busy state still updates.
 function refreshExportDialog() {
   if ($("exportWrap").hidden) return;
+  setReclassifying(currentPoints.some(p => !p.invalid && !p.result));
   if (document.activeElement && document.activeElement.closest("#exportTable")) return;
   buildExportTable();
   refreshExportPreviews();
@@ -3725,7 +3782,7 @@ $("popoutWrap").addEventListener("click", e => { if (e.target === $("popoutWrap"
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   $("popoutWrap").hidden = true;
-  $("exportWrap").hidden = true;
+  if (!$("exportWrap").hidden) closeExport();
   closeExportMenu();
 });
 

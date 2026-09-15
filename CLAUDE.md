@@ -1287,6 +1287,18 @@ live services. Full design narrative + verification history:
   the new coordinates; `refreshExportDialog()` rebuilds the dialogue when the
   re-classification lands, and skips while a cell has focus (rebuilding would
   drop the caret mid-edit).
+  **Row-scoped, per user ("tabbing to the next cell shouldn't perform the
+  check yet, but should save the edit"):** an edit is validated and stashed in
+  `pendingIdentity` when the CELL loses focus, but the write-back + re-check
+  only run when focus leaves the ROW (`focusout` with `relatedTarget` outside
+  the `<tr>`), on Enter, or when the dialogue closes (`closeExport` flushes).
+  So a transposed pair is one correction, not two re-checks — the first of
+  which would have queried a half-corrected location. `rewritePastedLine`
+  therefore takes the whole `{name?, lat?, lon?}` set and splices the later
+  span first so the earlier offsets stay valid. While a re-check is in flight
+  the edited site has no verdict, so `setReclassifying()` disables the
+  dialogue's export buttons and shows "re-checking the edited site…" rather
+  than letting a download silently omit the row.
 - **PDF map width — labels only, and REVISIT THIS.** The select's option
   labels are now plain feet then miles (500 ft / 1,000 ft / 2,000 ft /
   0.75 mi / 1.5 mi / 3 mi); the VALUES are the same metre half-widths

@@ -260,18 +260,28 @@ checks.push(["an edited cell flows into the export rows and the preview", edited
   checks.push(["a bad coordinate is refused and the cell reverts", await page.evaluate(() =>
     document.querySelector("#exportTable tr[data-k]").querySelectorAll("td")[EX.lat].textContent === "42.28536"
     && exportRows()[0][EX.lat] === 42.28536)]);
-  // Both halves of a transposed pair, the second committed while the first
-  // is still re-classifying (the row's key has already moved under it).
+  // Both halves of a transposed pair: TAB from Latitude to Longitude must
+  // stash the first edit without re-checking a half-corrected location, then
+  // leaving the row applies both at once.
+  const boxBeforePair = await page.inputValue("#coordsIn");
   await page.evaluate(() => {
     const tr = document.querySelector("#exportTable tr[data-k]");
-    const set = (col, v) => {
-      const td = tr.querySelectorAll("td")[col];
-      td.focus(); td.textContent = v;
-      td.dispatchEvent(new Event("input", { bubbles: true }));
-      td.blur();
-    };
-    set(EX.lat, "42.6911");
-    set(EX.lon, "-84.5360");
+    const tds = tr.querySelectorAll("td");
+    const latTd = tds[EX.lat], lonTd = tds[EX.lon];
+    latTd.focus();
+    latTd.textContent = "42.6911";
+    latTd.dispatchEvent(new Event("input", { bubbles: true }));
+    lonTd.focus();                      // tab to the next cell in the SAME row
+  });
+  checks.push(["tabbing to the next cell in the row saves the edit but holds the re-check",
+    await page.evaluate(([box]) => document.getElementById("coordsIn").value === box
+      && validPoints()[0].lat !== 42.6911, [boxBeforePair])]);
+  await page.evaluate(() => {
+    const tr = document.querySelector("#exportTable tr[data-k]");
+    const lonTd = tr.querySelectorAll("td")[EX.lon];
+    lonTd.textContent = "-84.5360";
+    lonTd.dispatchEvent(new Event("input", { bubbles: true }));
+    lonTd.blur();                       // leaving the row applies both
   });
   let bothOk = false;
   try {
@@ -281,7 +291,7 @@ checks.push(["an edited cell flows into the export rows and the preview", edited
     }, { timeout: 20000 });
     bothOk = true;
   } catch { /* reported below */ }
-  checks.push(["a second identity edit, committed before the first re-check lands, still applies", bothOk]);
+  checks.push(["leaving the row applies both halves of the pair in one re-check", bothOk]);
 
   // put it back so the checks below see the original two sites
   await page.evaluate(() => {

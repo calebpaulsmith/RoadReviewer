@@ -320,15 +320,21 @@ export dialogue; the caret drops a menu of formats.
   this browser. The PDF report re-queries the live layers to draw its
   figures, so it is deliberately not edit-driven.
 - **Site Name, Latitude and Longitude write back.** Those three are the
-  site's identity rather than export decoration, so editing one (committed
-  when you leave the cell) rewrites that site's line in the coordinates box
+  site's identity rather than export decoration, so editing one rewrites
+  that site's line in the coordinates box
   — splicing just the number you changed, leaving your own separators and
   the other number as typed — or its collected record, and the site
   re-classifies at the new location with its pin moving to match. So a
   corrected coordinate gets you the verdict for the corrected spot, and the
   CSV, KMZ and GeoJSON can't disagree about where a site is. A latitude or
   longitude outside the range the coordinate parser itself accepts is
-  refused and the cell reverts.
+  refused and the cell reverts. The edit is saved as soon as you leave the
+  cell, but the write-back and the re-check wait until you leave the **row**
+  — tabbing from Latitude to Longitude is one correction, so a transposed
+  pair is re-checked once rather than twice (the first time at a
+  half-corrected spot). Enter, clicking outside the row, or closing the
+  dialogue applies immediately; while the re-check runs, the dialogue's
+  export buttons are held so a download can't omit the site.
 - **Two clipboard actions** — *Copy site + coordinates* (just the name and
   lat/lon, in the layout the coordinates box itself accepts) and *Copy
   Auto-Detect results* (every column). Both confirm with a short toast;
