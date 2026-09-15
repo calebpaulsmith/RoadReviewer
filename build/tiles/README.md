@@ -63,18 +63,73 @@ build time are recorded here; if a state ever crosses ~95 MB, split it
 
 Measured (2026-09-14, HPMS_National_Current):
 
-| state | features harvested | pmtiles |
+| state | features harvested | pmtiles (with state-linkage attrs) |
 |---|---|---|
-| MI | 349,233 | 19 MB |
-| IN | 529,343 | 6.4 MB |
-| OH | 487,331 | 26 MB |
-| IL | 445,757 | 22 MB |
-| MN | 509,570 | 22 MB |
-| WI | 902,580 | 36 MB |
+| MI | 349,233 | 41 MB |
+| IN | 529,343 | 50 MB |
+| OH | 487,331 | 57 MB |
+| IL | 445,757 | 46 MB |
+| MN | 509,570 | 53 MB |
+| WI | 902,580 | 70 MB |
 
-All six fit comfortably under the 100 MB/file limit; total ≈ 132 MB
-across files. (IN is an outlier at 6.4 MB despite its feature count —
-INDOT submits shorter, simpler segment geometry.)
+The state-linkage attributes (round 2, below) roughly double-to-triple
+each tileset — every file still under the 100 MB limit; ≈ 317 MB total
+across the six states (+ 50 MB basemap + 3 MB ACUB).
+
+## State-linkage attributes in the class tiles (2026-09-14, round 2)
+
+Per user direction ("connect the segments to state segments"), the
+state tilesets are rebuilt carrying each segment's **state LRS keys** —
+HPMS is built from the states' own submissions, so these point straight
+back at the state inventory:
+
+| tile key | HPMS field | meaning |
+|---|---|---|
+| `F` | F_SYSTEM | FHWA class 1-7 (as before) |
+| `R` | ROUTE_ID | the STATE's LRS route id (MI: the MDOT PR number — live-verified `0006904` at the Kalamazoo test point; IN: INDOT LRS id; IL: IDOT key-route; OH: ODOT NLFID-style; MN/WI: their LRS ids) |
+| `B`/`E` | BEGIN/END_POINT | state mileposts (3 decimals) |
+| `N` | RouteName | street/route name — offline names, incl. states whose own layers publish none (MN, IL) |
+| `RN` | RouteNumber | signed route number where present |
+
+Null/empty attrs are omitted per feature. The cached classifier reads
+them into segments (routeId/mpFrom/mpTo/name), the row detail shows a
+"State route <id> · MP <a–b>" chip on the closest segment, and the
+CSV / GeoJSON / KMZ exports carry State Route ID + Milepost Range.
+
+**Service gotcha (2026-09-14 evening):** the HPMS service stopped
+accepting `resultRecordCount` (every query with it → 400 "Invalid query
+parameters"; a republish — the layer now names itself
+HPMS_National_2024_FullJoin). The harvester dropped the parameter; the
+layer's own maxRecordCount (2000) still caps pages and
+`exceededTransferLimit` still signals the quadtree split.
+
+## Cached-tile CLASSIFICATION (2026-09-14, per user direction)
+
+Verdicts now run against the hosted tilesets by default — "couldn't we
+just check every single point with the data we have cached?" — through
+the SAME computeVerdict logic as the live path:
+
+- **Road segments + FHWA class** from the per-state HPMS tilesets
+  (z13 tiles read in-browser via `protomapsL.PmtilesSource`, geometry
+  converted back to lon/lat, true point-to-segment distances).
+- **Urban/rural + urban-area name** from **`web/tiles/acub.pmtiles`**
+  (3 MB, 549 Region V polygons from the NTAD 2020 Adjusted Urban Areas
+  service, built by `build-acub.sh` → z12): point-in-polygon, plus a
+  ring-distance check for the "Urban boundary edge" yellow rule.
+  Tile-clip edges can't fake a boundary hit — tippecanoe's tile buffer
+  keeps them farther from any in-tile point than the 76 m rule floor.
+- Census TIGER **street names** stay a live, non-fatal backfill
+  (verdict-irrelevant); offline they're simply blank.
+- Rows carry a "cached data" chip; **"Live verdicts"** under Data
+  service URLs switches back to per-point state-DOT + NTAD queries
+  (slower, but reflects reclassifications newer than the tilesets).
+- Falls back to the live path automatically on file://, a missing
+  tileset, a read error, or an out-of-region point.
+
+NTAD harvest gotchas (fetch-acub.mjs): resultOffset pagination hits the
+same ~55 s server give-up as the HPMS table, and full-precision
+polygons 504 — hence ids-then-objectId-batches with
+`maxAllowableOffset≈3 m`.
 
 ## Offline road basemap (web/tiles/basemap.pmtiles)
 

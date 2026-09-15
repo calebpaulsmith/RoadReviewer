@@ -167,6 +167,28 @@ Per user direction the left pane's input area is two tabs:
   status, class, urban area, roads and note in each placemark — the
   same conventions as the Excel tool's KML.
 
+## Cached-tile classification (2026-09-14) — verdicts from the hosted data
+
+Per user direction ("couldn't we just check every single point with the
+data we have cached?"), classification now runs against the tilesets
+hosted with the site by default: road segments + FHWA classes from the
+per-state HPMS tiles, urban/rural + urban-area name from the new
+`tiles/acub.pmtiles` (549 Region V polygons of the 2020 Adjusted Urban
+Areas, 3 MB). The SAME `computeVerdict` logic as the live path — only
+the data source changes — so red/green/yellow rules are identical.
+Instant, and zero per-point queries to the six state DOT servers or
+NTAD; only the non-fatal Census TIGER street-name backfill stays live.
+Rows show a "cached data" chip; a **Live verdicts** checkbox under
+"Data service URLs" restores the per-point live queries (slower, but
+reflects reclassifications newer than the tileset year). The live path
+also remains the automatic fallback (file://, missing tileset, read
+error, out-of-region point).
+
+The Search & Collect find box lost its state dropdown — searches cover
+all six Region V states, and typing a state's name matches it directly.
+Showing a searched road now also reports how many of your points lie
+within the search buffer of it.
+
 ## Baked HPMS class tiles (2026-09-14) — the primary class display
 
 Per user direction ("I don't love all this live querying — download the

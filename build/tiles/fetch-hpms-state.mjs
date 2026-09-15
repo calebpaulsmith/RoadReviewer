@@ -77,11 +77,17 @@ async function getJson(url, tries = 5) {
 }
 
 function cellUrl([x0, y0, x1, y1]) {
+  // ROUTE_ID / mileposts / route name+number are the STATE's own LRS keys
+  // (HPMS is built from the states' submissions) — baked into the tiles so
+  // cached verdicts and exports can point back at the state inventory.
   return `${BASE}/query?where=STATE_ID%3D${fips}` +
     `&geometry=${x0.toFixed(5)},${y0.toFixed(5)},${x1.toFixed(5)},${y1.toFixed(5)}` +
     `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
-    `&outFields=OBJECTID,F_SYSTEM&returnGeometry=true&outSR=4326&geometryPrecision=6` +
-    `&resultRecordCount=${PAGE_CAP}&f=geojson`;
+    `&outFields=OBJECTID,F_SYSTEM,ROUTE_ID,BEGIN_POINT,END_POINT,RouteName,RouteNumber` +
+    // NO resultRecordCount: the service stopped accepting it (republish,
+    // 2026-09-14 evening) — the layer's own maxRecordCount (2000) caps the
+    // page and exceededTransferLimit still signals the split.
+    `&returnGeometry=true&outSR=4326&geometryPrecision=6&f=geojson`;
 }
 
 await mkdir(dirname(outPath), { recursive: true });
@@ -133,11 +139,21 @@ async function worker() {
       } else {
         let lines = "";
         for (const f of feats) {
-          const oid = f.properties && f.properties.OBJECTID;
-          const cls = Math.trunc(Number(f.properties && f.properties.F_SYSTEM));
+          const p = f.properties || {};
+          const oid = p.OBJECTID;
+          const cls = Math.trunc(Number(p.F_SYSTEM));
           if (oid == null || seen.has(oid) || !(cls >= 1 && cls <= 7) || !f.geometry) continue;
           seen.add(oid);
-          lines += JSON.stringify({ type: "Feature", properties: { F: cls }, geometry: f.geometry }) + "\n";
+          // Compact keys; null/empty attrs omitted so locals without a
+          // route name cost nothing. R = state LRS ROUTE_ID; B/E =
+          // begin/end mileposts; N = RouteName; RN = RouteNumber.
+          const props = { F: cls };
+          if (p.ROUTE_ID != null && String(p.ROUTE_ID).trim() !== "") props.R = String(p.ROUTE_ID).trim();
+          if (p.BEGIN_POINT != null) props.B = Math.round(p.BEGIN_POINT * 1000) / 1000;
+          if (p.END_POINT != null) props.E = Math.round(p.END_POINT * 1000) / 1000;
+          if (p.RouteName != null && String(p.RouteName).trim() !== "") props.N = String(p.RouteName).trim();
+          if (p.RouteNumber != null && p.RouteNumber !== 0) props.RN = p.RouteNumber;
+          lines += JSON.stringify({ type: "Feature", properties: props, geometry: f.geometry }) + "\n";
           written++;
         }
         if (lines) await new Promise((res, rej) => out.write(lines, e => e ? rej(e) : res()));
