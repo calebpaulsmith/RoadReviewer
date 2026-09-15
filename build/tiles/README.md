@@ -69,7 +69,7 @@ Measured (2026-09-14, HPMS_National_Current):
 | IN | 529,343 | 50 MB |
 | OH | 487,331 | 57 MB |
 | IL | 445,757 | 46 MB |
-| MN | 509,570 | (rebuilding) |
+| MN | 509,570 | 53 MB |
 | WI | 902,580 | (rebuilding) |
 
 The state-linkage attributes (round 2, below) roughly double each
