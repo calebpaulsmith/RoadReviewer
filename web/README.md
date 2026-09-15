@@ -303,6 +303,33 @@ against the last view the user chose. All of it is purely visual —
 exports, the pop-out table, Prev/Next stepping and classification
 always cover every site.
 
+## Export (2026-09-15)
+
+Every export sits behind one blue **Export** split pill, placed with the
+coordinate input rather than under Auto-Detect. The button opens the
+export dialogue; the caret drops a menu of formats.
+
+- **Tabs per format** — Excel, Google Earth (KMZ), GeoJSON, PDF — each
+  with its own actions, its own options, and a **live preview** of what
+  that format will actually write.
+- **One editable table** under the tabs, showing every column the exports
+  carry, **Note included**. Every cell is editable; edits are keyed by the
+  site's coordinates (so they survive the re-render each keystroke in the
+  coordinates box triggers) and flow into the CSV, the clipboard copies,
+  the KMZ and the GeoJSON. A Note edit also sticks to a collected point in
+  this browser. The PDF report re-queries the live layers to draw its
+  figures, so it is deliberately not edit-driven.
+- **Two clipboard actions** — *Copy site + coordinates* (just the name and
+  lat/lon, in the layout the coordinates box itself accepts) and *Copy
+  Auto-Detect results* (every column). Both confirm with a short toast;
+  the page uses `navigator.clipboard` where the browser allows it (the
+  live https site) and falls back to a hidden textarea, telling you to
+  copy the preview by hand if a locked-down browser blocks both.
+- **PDF map width** moved into the PDF tab. Its labels are plain feet then
+  miles; the underlying values are unchanged metre half-widths, so the
+  figures render exactly as before. *Open item: what this control should
+  be is up for review — see CLAUDE.md §7b.*
+
 ## Data sources page
 
 `sources.html` (linked from the header, the review legend, and every

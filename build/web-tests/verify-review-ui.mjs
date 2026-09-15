@@ -185,7 +185,49 @@ checks.push(["changing the radius re-classifies with the new buffer",
 await page.selectOption("#bufferSel", "250");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 
-// --- GeoJSON export (drag-drop file for the ArcGIS / public maps) ---
+// --- Export pill + dialogue (every export lives in here now) ---
+checks.push(["export pill sits with the input, not under Auto-Detect", await page.evaluate(() => {
+  const pill = document.getElementById("exportBtn");
+  const results = document.querySelector(".results");
+  return !!pill && !results.contains(pill) && !!document.getElementById("exportCaret")
+    && !document.querySelector(".sb-exports");
+})]);
+await page.click("#exportCaret");
+checks.push(["dropdown lists both copy actions + one entry per format", await page.evaluate(() => {
+  const t = [...document.querySelectorAll("#exportMenu button")].map(b => b.textContent).join("|");
+  return !document.getElementById("exportMenu").hidden
+    && t.includes("Copy site + coordinates") && t.includes("Copy Auto-Detect results")
+    && t.includes("CSV file") && t.includes("KMZ") && t.includes("GeoJSON") && t.includes("PDF report");
+})]);
+await page.click('#exportMenu button[data-act="tab-geojson"]');
+checks.push(["a menu format opens the dialogue on that tab, with a preview", await page.evaluate(() => {
+  const open = !document.getElementById("exportWrap").hidden;
+  const tab = document.querySelector('.extab[data-tab="geojson"]').classList.contains("active");
+  const pane = !document.querySelector('.ex-pane[data-pane="geojson"]').hidden;
+  return open && tab && pane && document.getElementById("prevGeojson").textContent.includes("FeatureCollection");
+})]);
+checks.push(["dialogue table is editable and carries a Note column", await page.evaluate(() => {
+  const ths = [...document.querySelectorAll("#exportTable th")].map(t => t.textContent);
+  const cells = document.querySelectorAll('#exportTable td[contenteditable="true"]');
+  return ths[0] === "Site Name" && ths[ths.length - 1] === "Note" && cells.length >= ths.length;
+})]);
+// an edit in the table flows into the exports
+await page.evaluate(() => {
+  const tr = document.querySelector("#exportTable tr[data-k]");
+  const td = tr.querySelectorAll("td")[EX.note];
+  td.focus();
+  td.textContent = "culvert undercut";
+  td.dispatchEvent(new Event("input", { bubbles: true }));
+});
+const editedRowOk = await page.evaluate(() => exportRows()[0][EX.note] === "culvert undercut");
+let editedPrevOk = false;   // the preview redraw is debounced ~250 ms
+try {
+  await page.waitForFunction(() =>
+    document.getElementById("prevExcel").textContent.includes("culvert undercut")
+    && document.getElementById("prevGeojson").textContent.includes("culvert undercut"), { timeout: 5000 });
+  editedPrevOk = true;
+} catch { /* reported as a failure below */ }
+checks.push(["an edited cell flows into the export rows and the preview", editedRowOk && editedPrevOk]);
 {
   const [gj] = await Promise.all([
     page.waitForEvent("download", { timeout: 15000 }),
@@ -197,6 +239,7 @@ await page.waitForFunction(() => (document.getElementById("statusCount").textCon
   checks.push(["geojson: FeatureCollection with 2 point features", gjData.type === "FeatureCollection"
     && gjData.features.length === 2 && f0.geometry.type === "Point"
     && f0.geometry.coordinates[0] === -85.57025 && f0.geometry.coordinates[1] === 42.28536]);
+  await page.click("#exportClose");   // the overlay would block the row clicks below
   checks.push(["geojson: verdict + color + reason properties (Excel WriteSitesGeoJson parity)",
     f0.properties.Name === "Kalamazoo culvert" && f0.properties.Verdict === "Federal aid"
     && /^#/.test(f0.properties.VerdictColor) && f1.properties.ReviewNote === "Second road close"]);
@@ -447,7 +490,10 @@ checks.push(["plot-all legend combines class labels + ACUB", allLegend.includes(
 // --- per-row Source links ---
 checks.push(["rows link to sources.html#mi", await page.locator('#resultsBody a[href="sources.html#mi"]').count() >= 2]);
 
-// --- FIRMette ZIP ---
+// --- FIRMette ZIP (PDF tab of the export dialogue) ---
+await page.evaluate(() => { document.getElementById("exportWrap").hidden = true; });
+await page.click("#exportBtn");
+await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 60000 }),
   page.click("#firmZipBtn"),
@@ -468,6 +514,7 @@ checks.push(["zip contains 2 PDFs with site names", zr.names.length === 2
 checks.push(["zip CRCs valid (testzip clean)", zr.bad === null]);
 checks.push(["zip entries are PDFs", zr.allPdf === true]);
 checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "FIRMettes (ZIP)"]);
+await page.click("#exportClose");
 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });
