@@ -1130,14 +1130,65 @@ live services. Full design narrative + verification history:
   load and take rr-core with it. A site name ENDING in a direction word
   ("Rose Drive W 42°17'…") still donates that letter to the coordinate, so a
   leading hemisphere is dropped and the line re-matched when the first read
-  isn't a Region V coordinate. **Street addresses are refused, deliberately**
-  — the Census one-line geocoder the Excel tool uses (§8 resolved #2) sends NO
-  `Access-Control-Allow-Origin` (verified 2026-09-15 against two controls:
-  `services.arcgis.com` sends `*`, `tigerweb.geo.census.gov` reflects the
-  origin, the geocoder sends neither), so the page cannot `fetch()` it. It does
-  serve `format=jsonp`, so addresses need no key and no backend — but they do
-  need a remote `<script>` executing in the page, which is a call for the user,
-  not a default.
+  isn't a Region V coordinate.
+- **Addresses and road names in the same box (2026-09-15, per user).** A line
+  with no coordinate is sorted LOCALLY (`classifyInputLine`, rr-core) into
+  `address` (house number + street, e.g. `5201 Portage Rd, Portage MI 49002`),
+  `road` (street or route + a place after a comma, e.g. `Portage Rd, Portage
+  MI`, `CR 550 N, Hamilton County IN` — a road with no place is deliberately
+  `unknown`: it would mean a six-state search) or `unknown`. Detection sends
+  nothing. The three kinds then diverge:
+  - **coordinates** classify as always;
+  - **road lines resolve automatically** through Census TIGERweb (CORS-clean,
+    the Find box's service): place → county / township / incorporated place /
+    CDP by `BASENAME` (`returnCountOnly` then `returnExtentOnly`; >1 hit with
+    no state typed = ambiguous), then the road's edges by street COMPONENTS
+    (`BASENAME`/`SUFTYPEABRV`/`PREDIRABRV`) inside that extent, then the
+    **whole road is classified**: up to 12 edge midpoints (longest first), one
+    class or one verdict bucket → that verdict; otherwise `Review - Mixed
+    classes on road` with a class-by-length summary chip. The pin is the
+    longest edge's midpoint; the edges draw on `roadLayer`;
+  - **addresses wait for ONE explicit button** — `Geocode N addresses`,
+    shown only while unresolved address lines exist (they are highlighted
+    IN the box: a `coords-mirror` div behind a transparent textarea with the
+    same font/padding/wrap and a `scrollbar-gutter: stable` on both, so
+    highlighted lines sit under typed ones). One click geocodes every
+    unresolved address (3 at a time) through the Census one-line geocoder —
+    which sends NO CORS header, so it is reached by JSONP from a **throwaway
+    sandboxed iframe**: `sandbox="allow-scripts"` only (opaque origin — no DOM,
+    storage or cookies of the page), fixed https host baked into the srcdoc,
+    per-request id + callback name, `postMessage` accepted only from that
+    frame's window with origin `"null"` and that id, the reply reduced by
+    `sanitizeGeocodeResponse` to whitelisted finite/in-range fields, frame
+    removed on success, error or the 20 s timeout. Nothing is sent on
+    keystroke, paste, blur or parse — the button is the network action.
+  - **Why the road name is the anchor and the geocoded point only a hint**
+    (measured 2026-09-15): the geocoder returns a TIGER address-range
+    INTERPOLATION (a centerline point nudged to one side) — `5201 Portage Rd`
+    landed 20 ft from Airview Blvd and 21 ft from Portage Rd, so the
+    closest-road model picked the wrong street by one foot. Now the geocoder's
+    parsed street components are matched (`streetMatchScore` ≥ 2: base name
+    must agree; type/directions add or subtract) against the Census roads
+    within 120 m, the point is SNAPPED onto the matching edge
+    (`closestPointOnPaths`), and classification runs at the snap AND ±150 ft
+    along that edge (`pointAlongPath`): agree → verdict; disagree → `Review -
+    Class change nearby`. No matching street → the raw point classifies with
+    `Review - Street not matched`. 0 geocoder matches / matches >200 ft apart /
+    unreachable → the line stays an unresolved row with the reason and the
+    button offers it again. Results live in memory only (`geocodeStore` /
+    `roadStore`, keyed by the normalized line text): editing a line makes it
+    unresolved again, and nothing survives a reload without another click.
+  - **Typed coordinates are authoritative** — the box is never rewritten by
+    geocoding. Exports carry the snapped coordinates under the geocoder's
+    matched address as the site name. Editing a geocoded row's coordinate in
+    the export dialogue rewrites that line as `<address>, lat, lon` (the
+    identity write-back's "line drifted" branch), which is the intended
+    outcome: once a coordinate is typed it is the coordinate.
+  - **Harness trap:** Chromium's `IsolateSandboxedIframes` puts the
+    allow-scripts frame in its own process, where Playwright's request
+    interception does not reach it — the JSONP request went straight to the
+    network. `verify-review-ui.mjs` launches with
+    `--disable-features=IsolateSandboxedIframes` (harness only).
 - **Where the map's pixels come from.** Basemap = `web/tiles/basemap.pmtiles`
   (50 MB Protomaps/OSM z0-11 extract) rendered by protomaps-leaflet 5.1.0
   through a custom `ATLAS_FLAVOR` paint/label rule set (ivory paper, muted

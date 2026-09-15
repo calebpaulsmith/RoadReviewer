@@ -32,7 +32,8 @@ async function httpGetJson(url) {
 const ctx = vm.createContext({ httpGetJson, console });
 vm.runInContext(m[1], ctx, { filename: "rr-core (from web/index.html)" });
 const core = vm.runInContext(
-  "({ classifyPoint, detectState, parseCoordinates, computeVerdict, classIsFederal, mergeRoadList, minDistanceFt, wisconsinLocalCategoryToFhwa })", ctx);
+  "({ classifyPoint, detectState, parseCoordinates, computeVerdict, classIsFederal, mergeRoadList, minDistanceFt, wisconsinLocalCategoryToFhwa, " +
+  "parseAddressLine, parseRoadLine, streetMatchScore, streetFromTiger, streetFromGeocoder, closestPointOnPaths, pointAlongPath, pathLengthM, sanitizeGeocodeResponse })", ctx);
 
 let pass = 0, fail = 0;
 function check(label, ok, detail) {
@@ -98,6 +99,51 @@ console.log("parseCoordinates — degrees/minutes/seconds:");
   for (const a of ["123 W Main St, Kalamazoo, MI 49007", "5201 Portage Rd, Portage MI 49002",
                    "8500 N 32nd St, Richland, MI", "2200 S 1700 W, Salt Lake City UT"])
     check(`address rejected: ${a}`, (one(a) || { invalid: true }).invalid === true);
+}
+
+/* Lines with no coordinate are sorted locally into address / road / unknown
+   so the page can offer the right next step. Detection sends nothing. */
+console.log("parseCoordinates — addresses and road names (detected locally):");
+{
+  const kind = l => (core.parseCoordinates(l)[0] || {}).kind;
+  for (const [l, k] of [
+    ["5201 Portage Rd, Portage, MI 49002", "address"], ["123 W Main St, Kalamazoo, MI 49007", "address"],
+    ["8500 N 32nd St, Richland, MI", "address"], ["5201 Portage Rd Portage MI 49002", "address"],
+    ["100 S Rose Dr", "address"], ["2200 S 1700 W, Salt Lake City UT", "address"],
+    ["Portage Rd, Portage MI", "road"], ["M-43, Kalamazoo County", "road"], ["CR 550 N, Hamilton County IN", "road"],
+    ["US 131, Kalamazoo", "road"], ["County Road 12, Iosco County MI", "road"],
+    ["Q Ave", "unknown"], ["Portage Rd", "unknown"], ["garbage line", "unknown"], ["Kalamazoo culvert", "unknown"], ["100 Q", "unknown"],
+  ]) check(`${k.padEnd(7)} <- ${JSON.stringify(l)}`, kind(l) === k, "got " + kind(l));
+  const a = core.parseAddressLine("8500 N 32nd St, Richland, MI");
+  check("address parts: house, preDir, base, type, city, state", a && a.house === "8500" && a.street.preDir === "N" && a.street.base === "32ND"
+    && a.street.sufType === "ST" && a.city === "Richland" && a.state === "MI", JSON.stringify(a));
+  const b = core.parseAddressLine("5201 Portage Rd Portage MI 49002");
+  check("no-comma address splits at the street type", b && b.street.base === "PORTAGE" && b.city === "Portage" && b.zip === "49002", JSON.stringify(b));
+  const r = core.parseRoadLine("CR 550 N, Hamilton County IN");
+  check("route road line keeps the route and the place", r && r.street.route && r.street.base === "CR 550" && r.place === "Hamilton County" && r.state === "IN", JSON.stringify(r));
+}
+
+/* The geocoder's parsed street vs TIGER's street parts: the match that
+   makes an address snap onto the street it names, not the nearest line. */
+console.log("street matching + snapping geometry:");
+{
+  const want = core.streetFromGeocoder({ streetName: "PORTAGE", suffixType: "RD", preDirection: "", suffixDirection: "" });
+  const sc = a => core.streetMatchScore(want, core.streetFromTiger(a));
+  check("Portage Rd matches the geocoder's PORTAGE / RD", sc({ BASENAME: "Portage", SUFTYPEABRV: "Rd" }) >= 2);
+  check("Airview Blvd 20 ft away does not", sc({ BASENAME: "Airview", SUFTYPEABRV: "Blvd" }) === 0);
+  check("Portage St scores below Portage Rd", sc({ BASENAME: "Portage", SUFTYPEABRV: "St" }) < sc({ BASENAME: "Portage", SUFTYPEABRV: "Rd" }));
+  const path = [[-85.5710, 42.2850], [-85.5700, 42.2850], [-85.5690, 42.2850]];
+  const cp = core.closestPointOnPaths([path], 42.2852, -85.5701);
+  check("closest point on a path lands on the line ~73 ft away", cp && Math.abs(cp.lat - 42.2850) < 1e-6 && cp.distFt > 70 && cp.distFt < 75, JSON.stringify(cp));
+  const f = core.pointAlongPath(path, cp.segIdx, cp.t, 45.72), bk = core.pointAlongPath(path, cp.segIdx, cp.t, -45.72);
+  check("±150 ft along the path stays on it, ~300 ft apart", Math.abs(f[0] - 42.2850) < 1e-6 && Math.abs(bk[0] - 42.2850) < 1e-6
+    && Math.abs((f[1] - bk[1]) * 111320 * Math.cos(42.285 * Math.PI / 180) - 91.44) < 1);
+  check("walking past the end clamps to the endpoint", core.pointAlongPath(path, 1, 0.9, 500)[1] === -85.5690);
+  const good = { result: { addressMatches: [{ matchedAddress: "X", coordinates: { x: -85.56, y: 42.24 }, addressComponents: { streetName: "PORTAGE", suffixType: "RD" } }] } };
+  const s = core.sanitizeGeocodeResponse(good);
+  check("geocoder reply reduced to whitelisted fields only", s.length === 1 && Object.keys(s[0]).sort().join() === "components,lat,lon,matchedAddress,tigerLineId");
+  check("junk geocoder reply throws", (() => { try { core.sanitizeGeocodeResponse({ nope: 1 }); return false; } catch { return true; } })());
+  check("non-numeric / out-of-range coordinates dropped", core.sanitizeGeocodeResponse({ result: { addressMatches: [{ coordinates: { x: "a", y: 1 } }, { coordinates: { x: 999, y: 1 } }] } }).length === 0);
 }
 
 console.log("detectState (all six states, PR #36):");

@@ -39,10 +39,17 @@ const SOURCES = "file://" + join(here, "..", "..", "web", "sources.html");
 // sandbox image bumps, and fails with a misleading "npx playwright install".
 const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 
-const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
+// IsolateSandboxedIframes puts a sandbox="allow-scripts" frame in its own
+// process, where Playwright's request interception does not reach it (its
+// JSONP request went straight to the network with the flag on: 0 route hits,
+// ERR_CERT_AUTHORITY_INVALID from the sandbox proxy). Harness-only; the page
+// itself is unchanged.
+const browser = await chromium.launch({ executablePath: CHROMIUM_PATH, args: ["--disable-features=IsolateSandboxedIframes"] });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 
 const errors = [];
+const geocoderReqs = [];   // every request to the Census geocoder: url + which frame made it
+page.on("request", r => { if (r.url().includes("geocoding.geo.census.gov")) geocoderReqs.push({ url: r.url(), main: r.frame() === page.mainFrame() }); });
 page.on("pageerror", e => errors.push("pageerror: " + e.message));
 page.on("console", m => {
   if (m.type() === "error" && !m.text().includes("Failed to load resource")) errors.push("console: " + m.text());
@@ -67,6 +74,53 @@ await page.route("**/*", async route => {
   // Site B (42.6911,-84.5360): a Local road ~2 ft away and a Major Collector
   // ~18 ft away -> the closest is non-federal but a federal road is within
   // 30 ft -> YELLOW "Review - Second road close".
+  // --- address / road-name legs ---
+  // Census geocoder, JSONP: the page reaches it only from a sandboxed frame.
+  // 5201 Portage Rd -> a TIGER interpolation just off Portage Rd; 5300 -> a
+  // spot where the class changes 150 ft south; "Zzz Way" -> a location whose
+  // street name matches no Census road; "Nowhere" -> no match at all.
+  if (url.includes("geocoding.geo.census.gov")) {
+    const cb = (/callback=(\w+)/.exec(url) || [])[1] || "cb";
+    const addr = decodeURIComponent((/address=([^&]+)/.exec(url) || ["", ""])[1]).replace(/\+/g, " ");
+    const hit = (y, street, suf) => ({ result: { input: {}, addressMatches: [{ matchedAddress: addr.toUpperCase() + ", 49002",
+      coordinates: { x: -85.560066, y }, tigerLine: { side: "L", tigerLineId: "12230681" },
+      addressComponents: { streetName: street, suffixType: suf, preDirection: "", suffixDirection: "", city: "PORTAGE", state: "MI", zip: "49002" } }] } });
+    const body = addr.includes("Nowhere") ? { result: { addressMatches: [] } }
+      : addr.includes("Zzz") ? hit(42.24177, "ZZZ", "WAY")
+      : addr.includes("5300") ? hit(42.240056, "PORTAGE", "RD")
+      : hit(42.24177, "PORTAGE", "RD");
+    return route.fulfill({ contentType: "application/javascript", body: `/**/${cb}(${JSON.stringify(body)});` });
+  }
+  // TIGER roads near the geocoded point (the snap query asks for SUFDIRABRV):
+  // Airview Blvd crosses 20 ft away, Portage Rd runs N-S at lon -85.5601.
+  if (url.includes("Transportation/MapServer/") && url.includes("SUFDIRABRV") && url.includes("esriGeometryPoint")) {
+    if (!url.includes("MapServer/8")) return route.fulfill({ ...json, body: JSON.stringify({ features: [] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [
+      { attributes: { NAME: "Airview Blvd", BASENAME: "Airview", SUFTYPEABRV: "Blvd", MTFCC: "S1400" }, geometry: { paths: [[[-85.5604, 42.24176], [-85.5598, 42.24176]]] } },
+      { attributes: { NAME: "Portage Rd", BASENAME: "Portage", SUFTYPEABRV: "Rd", MTFCC: "S1400" }, geometry: { paths: [[[-85.56010, 42.2380], [-85.56010, 42.2450]]] } },
+    ] }) });
+  }
+  // Road-name line "Portage Rd, Portage MI": the place resolves as a county
+  // subdivision (count 1, then its extent), then two Portage Rd edges in it.
+  if (url.includes("returnCountOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ count: url.includes("Places_CouSub_ConCity_SubMCD/MapServer/1/") ? 1 : 0 }) });
+  if (url.includes("returnExtentOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ extent: { xmin: -85.65, ymin: 42.15, xmax: -85.53, ymax: 42.25 } }) });
+  if (url.includes("Transportation/MapServer/") && url.includes("SUFDIRABRV") && url.includes("esriGeometryEnvelope")) {
+    if (!url.includes("MapServer/8")) return route.fulfill({ ...json, body: JSON.stringify({ features: [] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [
+      { attributes: { NAME: "Portage Rd", BASENAME: "Portage", SUFTYPEABRV: "Rd" }, geometry: { paths: [[[-85.5601, 42.2300], [-85.5601, 42.2400]]] } },
+      { attributes: { NAME: "Portage Rd", BASENAME: "Portage", SUFTYPEABRV: "Rd" }, geometry: { paths: [[[-85.5601, 42.2400], [-85.5601, 42.2450]]] } },
+    ] }) });
+  }
+  // The state's class layer around Portage Rd: Local (7) south of 42.2400,
+  // Minor Collector (6) north of it — one class change, placed so that the
+  // 5201 address and its ±150 ft samples all read 6, the 5300 address reads
+  // 6 at its snap but 7 at the sample 150 ft south, and the road's two edge
+  // midpoints (42.235 / 42.2425) read 7 and 6.
+  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryPoint") && url.includes("-85.5601")) {
+    const m = /geometry=(-?[\d.]+),(-?[\d.]+)/.exec(url); const lon = +m[1], lat = +m[2];
+    return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { FunctionalSystem: lat < 42.2400 ? 7 : 6, PR: "0006904" },
+      geometry: { paths: [[[lon, lat - 0.0004], [lon, lat + 0.0004]]] } }] }) });
+  }
   if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryPoint")) {
     if (url.includes("-84.536"))
       return route.fulfill({ ...json, body: JSON.stringify({ features: [
@@ -599,6 +653,77 @@ checks.push(["zip entries are PDFs", zr.allPdf === true]);
 checks.push(["firmette button restored", (await page.locator("#firmZipBtn").textContent()) === "FIRMettes (ZIP)"]);
 await page.click("#exportClose");
 
+// --- addresses and road names in the same box ---
+// Coordinates classify as always; a road line resolves by itself through
+// TIGERweb; addresses are highlighted and WAIT for the one Geocode button.
+const ADDR_TEXT = "Kalamazoo culvert,42.28536,-85.57025\n5201 Portage Rd, Portage MI 49002\n5300 Portage Rd, Portage MI 49002\n" +
+  "7 Zzz Way, Portage MI\n1 Nowhere Ln, Nowhere MI\nPortage Rd, Portage MI\ngarbage line";
+geocoderReqs.length = 0;
+await page.fill("#coordsIn", ADDR_TEXT);
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 20000 });
+await page.waitForFunction(() => [...document.querySelectorAll("#coordsMirror mark")].some(m => m.className.includes("road geo-ok")), { timeout: 20000 });
+checks.push(["parse count names the kinds: 1 point, 4 addresses, 1 road, 1 unreadable",
+  (await page.locator("#parseCount").textContent()) === "1 point(s) parsed, 4 addresses, 1 road, 1 line(s) unreadable"]);
+checks.push(["address lines are highlighted in the box (4 marks), the road line too", await page.evaluate(() => {
+  const marks = [...document.querySelectorAll("#coordsMirror mark")];
+  return marks.filter(m => m.classList.contains("addr")).length === 4 && marks.filter(m => m.classList.contains("road")).length === 1
+    && marks.find(m => m.classList.contains("addr")).textContent === "5201 Portage Rd, Portage MI 49002";
+})]);
+checks.push(["highlights sit under the typed lines (mirror and box share metrics)", await page.evaluate(() => {
+  const box = document.getElementById("coordsIn"), mir = document.getElementById("coordsMirror");
+  const cb = getComputedStyle(box), cm = getComputedStyle(mir);
+  const rb = box.getBoundingClientRect(), rm = mir.getBoundingClientRect();
+  return cb.fontFamily === cm.fontFamily && cb.fontSize === cm.fontSize && cb.lineHeight === cm.lineHeight && cb.paddingLeft === cm.paddingLeft
+    && Math.abs(rb.left - rm.left) < 1 && Math.abs(rb.top - rm.top) < 1 && Math.abs(rb.width - rm.width) < 1;
+})]);
+checks.push(["one 'Geocode 4 addresses' button, shown only because addresses are present",
+  !(await page.locator("#geoBar").isHidden()) && (await page.locator("#geocodeBtn").textContent()) === "Geocode 4 addresses"]);
+checks.push(["NOTHING was sent to the geocoder on paste/parse", geocoderReqs.length === 0]);
+checks.push(["the coordinate line classified without the button", (await page.locator("#resultsBody .row").first().textContent()).includes("FEDERAL AID")]);
+const roadRow = page.locator("#resultsBody .row", { hasText: "Portage Rd (Portage)" });
+checks.push(["the road-name line resolved by itself and classified the WHOLE road (mixed classes -> Review)", await roadRow.count() === 1
+  && (await roadRow.textContent()).includes("whole road") && (await roadRow.textContent()).includes("Mixed classes on road")
+  && (await roadRow.textContent()).includes("Local") && (await roadRow.textContent()).includes("Minor Collector")]);
+checks.push(["address rows say they are waiting for the button", await page.locator("#resultsBody .row.v-address").count() === 4
+  && (await page.locator("#resultsBody .row.v-address").first().textContent()).includes("not sent anywhere yet")]);
+
+await page.click("#geocodeBtn");
+await page.waitForFunction(() => !document.getElementById("geocodeBtn").disabled && document.getElementById("geocodeBtn").textContent.startsWith("Geocode"), { timeout: 40000 });
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("5 point(s) classified"), { timeout: 20000 });
+checks.push(["one click sent exactly 4 geocoder requests, all from a child (sandboxed) frame, all JSONP on the fixed host",
+  geocoderReqs.length === 4 && geocoderReqs.every(r => !r.main && r.url.startsWith("https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?")
+    && r.url.includes("format=jsonp") && /callback=cb_g[a-z0-9]+/.test(r.url))]);
+checks.push(["each request carries a distinct callback id", new Set(geocoderReqs.map(r => /callback=(\w+)/.exec(r.url)[1])).size === 4]);
+checks.push(["every sandboxed frame is destroyed afterwards", await page.locator("iframe").count() === 0]);
+checks.push(["the typed text is untouched — coordinates were never rewritten", (await page.inputValue("#coordsIn")) === ADDR_TEXT]);
+const addr1 = page.locator("#resultsBody .row", { hasText: "5201 PORTAGE RD" });
+checks.push(["5201 Portage Rd: snapped onto Portage Rd (not Airview Blvd 20 ft away) and classified from the snapped point",
+  await addr1.count() === 1 && (await addr1.textContent()).includes("snapped to Portage Rd") && (await addr1.textContent()).includes("FEDERAL AID")
+  && await page.evaluate(() => { const p = currentPoints.find(q => q.geo && q.name.startsWith("5201")); return !!p && p.lon === -85.5601 && p.geo.snapped && p.geo.distFt < 20 && p.result.verdict === "Federal aid - Urban Minor Collector"; })]);
+const addr2 = page.locator("#resultsBody .row", { hasText: "5300 PORTAGE RD" });
+checks.push(["5300 Portage Rd: class changes 150 ft along the street -> Review 'Class change nearby'",
+  (await addr2.textContent()).includes("Class change nearby") && await addr2.evaluate(el => el.classList.contains("v-review"))]);
+const addr3 = page.locator("#resultsBody .row", { hasText: "7 ZZZ WAY" });
+checks.push(["a geocode whose street matches no Census road -> Review 'Street not matched', raw point kept",
+  (await addr3.textContent()).includes("Street not matched") && (await addr3.textContent()).includes("street not matched")]);
+checks.push(["no-match address stays an unresolved row with the reason, and the button offers it again",
+  (await page.locator("#resultsBody .row", { hasText: "Nowhere" }).textContent()).includes("No match from the Census geocoder")
+  && (await page.locator("#geocodeBtn").textContent()) === "Geocode 1 address"]);
+checks.push(["mirror marks now show resolved (green) vs failed (red)", await page.evaluate(() => {
+  const c = [...document.querySelectorAll("#coordsMirror mark")].map(m => m.className);
+  return c.filter(x => x === "addr geo-ok").length === 3 && c.filter(x => x === "addr geo-bad").length === 1;
+})]);
+checks.push(["exports carry the snapped coordinates under the matched address", await page.evaluate(() => {
+  const r = exportRows().find(x => String(x[0]).startsWith("5201 PORTAGE RD"));
+  return !!r && r[1] === 42.24177 && r[2] === -85.5601;
+})]);
+checks.push(["clearing the addresses hides the button", await (async () => {
+  await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025");
+  return await page.waitForFunction(() => document.getElementById("geoBar").hidden, { timeout: 5000 }).then(() => true).catch(() => false);
+})()]);
+await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025\nSite B,42.6911,-84.5360");
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
+
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });
 const src = await page.content();
@@ -606,6 +731,8 @@ checks.push(["sources page: MI layer 353 documented", src.includes("NextGenPrFin
 checks.push(["sources page: IN record_status quirk", src.includes("record_status=5")]);
 checks.push(["sources page: WI category-code quirk", src.includes("FNCT_CLS_CTGY_TYCD")]);
 checks.push(["sources page: ACUB + FIRMette + TIGER sections", src.includes('id="acub"') && src.includes('id="firmette"') && src.includes('id="tiger"')]);
+checks.push(["sources page: geocoder section says explicit-click only + interpolation caveat",
+  src.includes('id="geocoder"') && src.includes("only when the") && src.includes("interpolation")]);
 checks.push(["sources page: verdict-logic section (closest road, 30 ft rule, boundary edge)",
   src.includes('id="verdict"') && src.includes("Second road close") && src.includes("Urban boundary edge")
   && src.includes("closest road decides red vs green")]);

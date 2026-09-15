@@ -228,28 +228,63 @@ negative, so when the first read isn't a Region V coordinate the leading
 hemisphere is dropped and the line re-matched. `build/verify-web-core.mjs` pins every form above (each one is
 the §4.2 Kalamazoo test point written differently) plus the name cases.
 
-**Street addresses are NOT accepted** — a line that carries no coordinate is
-flagged invalid rather than guessed at. Geocoding one would mean calling the
-Census Bureau one-line geocoder, which the Excel tool already uses (free, no
-key), but `geocoding.geo.census.gov` returns **no
-`Access-Control-Allow-Origin` header**, so a browser `fetch()` from the Pages
-origin is blocked — unlike `tigerweb.geo.census.gov`, which reflects the
-origin and is why the Find box works. The endpoint does answer
-`format=jsonp&callback=…`, so addresses are technically reachable without a
-key or a backend, but only by injecting a remote `<script>` that executes in
-the page. That trade is the user's call, so addresses are deferred.
+## Addresses and road names in the same box (2026-09-15)
 
-There is a second reason to be careful, measured on 2026-09-15 and independent
-of CORS: the Census geocoder returns a **TIGER address-range interpolation**
-(the response carries `tigerLine.side`), i.e. a point on the street centerline,
-nudged to one side. Four Kalamazoo-area addresses geocoded and classified came
-back **19–22 ft from the nearest classified road** — and for
-`5201 Portage Rd`, the closest road was **Airview Blvd (20 ft), not Portage Rd
-(21 ft)**. The closest-road model exists to answer "which road is this damage
-actually on"; fed a geocoded address it can only restate the address, and a
-foot of interpolation noise decides which street wins. Any address support
-should mark the row as geocoded, show the coordinate for confirmation, and
-never overwrite a typed one (the rule the Excel tool already follows, F4).
+A line with no coordinate is sorted **locally** — nothing is sent to sort it —
+into one of three kinds, and the box highlights the ones that need a decision:
+
+| you type | kind | what happens |
+|---|---|---|
+| `42.28536, -85.57025` | coordinate | classifies as always |
+| `Portage Rd, Portage MI` · `CR 550 N, Hamilton County IN` | road | looked up **automatically** in Census TIGERweb and the **whole road** classified |
+| `5201 Portage Rd, Portage MI 49002` | address | highlighted; **waits for the one `Geocode N addresses` button** |
+| `Q Ave` (a road with no place) · anything else | unknown | shown as unreadable — a road with no place would mean a six-state search |
+
+**Road lines.** The place resolves to a county, township, incorporated place
+or CDP (by `BASENAME`, scoped to the typed state or to the six states — more
+than one hit with no state is reported as ambiguous), then the road's edges
+are fetched by street *components* inside that extent. Up to 12 edges
+(longest first) are classified at their midpoints: one class and one verdict
+bucket → that verdict; otherwise `Review – Mixed classes on road`, with a
+class-by-length chip (`Local 2.1 mi · Major Collector 0.4 mi`). The pin is
+the longest edge's midpoint and the edges draw on the map. TIGERweb sends
+CORS headers, so this is an ordinary `fetch()` — no geocoder involved.
+
+**Address lines.** The Census one-line geocoder sends **no
+`Access-Control-Allow-Origin` header** (verified 2026-09-15 against two
+controls: `services.arcgis.com` sends `*`, `tigerweb.geo.census.gov` reflects
+the origin, the geocoder sends only `Vary: Origin`), so the page can't
+`fetch()` it. It does answer `format=jsonp`, which means a remote script
+executing — so each request runs inside a **throwaway sandboxed iframe**:
+`sandbox="allow-scripts"` only (opaque origin: no access to this page's DOM,
+localStorage or cookies), the https host fixed in the frame's own source, a
+per-request id that is also the callback name, `postMessage` accepted only
+from that frame's window with origin `"null"` and that id, the reply reduced
+to whitelisted, range-checked fields before any of it is used, and the frame
+removed on success, error or a 20 s timeout. **Nothing is sent on keystroke,
+paste, blur or parse.** The button is the network action; it geocodes every
+unresolved address (three at a time) and disappears when none are left.
+
+**Why the street name is the anchor and the geocoded point only a hint.** The
+geocoder returns a TIGER address-range *interpolation* — a point on the
+centerline, nudged to one side. Measured 2026-09-15, `5201 Portage Rd` landed
+**20 ft from Airview Blvd and 21 ft from Portage Rd**, so the closest-road
+model would have picked the wrong street by one foot. Instead the geocoder's
+parsed street components (`streetName` / `suffixType` / directions) are
+matched against the Census roads within 120 m — base name must agree, type
+and directions add or subtract — the point is **snapped onto the matching
+edge**, and the classification runs at the snap **and 150 ft each way along
+that edge**: all agree → verdict; a class change inside that window →
+`Review – Class change nearby`. No matching street → the raw point classifies
+with `Review – Street not matched`. No geocoder match, several matches more
+than 200 ft apart, or an unreachable geocoder → the line stays an unresolved
+row with the reason, and the button offers it again.
+
+**Typed coordinates are authoritative.** Geocoding never rewrites the box.
+Exports carry the snapped coordinates under the geocoder's matched address;
+the row shows a `from address · snapped to Portage Rd` chip (or `street not
+matched`). Results are held in memory only, keyed by the line's text: edit a
+line and it is unresolved again; reload and it takes another click.
 
 ## Cached-tile classification (2026-09-14) — verdicts from the hosted data
 
@@ -497,8 +532,15 @@ that some segments were not drawn.
   queries the public MDOT / INDOT / WisDOT / NTAD / TIGER services
   directly — the identical network path the Excel tool already uses from
   an inspector's laptop. The site operator never sees a coordinate.
-- **No damage data.** Input is name + lat/lon only. WO/DI, applicants,
-  descriptions, categories stay in the Excel workbook.
+- **No damage data.** Input is name + lat/lon — or, since 2026-09-15, a
+  road name or street address. WO/DI, applicants, descriptions, categories
+  stay in the Excel workbook.
+- **Addresses leave the page only on an explicit click.** A typed address
+  is sent to the Census Bureau's geocoder (a federal service, over https)
+  when — and only when — the `Geocode N addresses` button is pressed; road
+  names go to Census TIGERweb automatically, like the Find box. The
+  geocoder's JSONP reply executes inside a sandboxed, throwaway iframe that
+  cannot reach this page (see "Addresses and road names").
 - **Transparency affordances**: a network log at the bottom of the page
   lists every request the page makes; Leaflet is vendored locally
   (`vendor/leaflet/`) so there are no CDN calls; exports (CSV /
