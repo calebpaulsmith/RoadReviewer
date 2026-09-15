@@ -1228,7 +1228,13 @@ const imageryBase = L.layerGroup([
     // maxDataZoom = the extract's maxzoom (11): the library defaults to 15
     // and never reads the archive header, so deeper zooms would fetch
     // nonexistent tiles and render blank instead of overzooming.
-    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", theme: "light", maxDataZoom: 11,
+    // flavor (not theme): protomaps-leaflet 5.x vocabulary. The daily
+    // Protomaps builds are the v4 tile schema (property "kind", rivers as
+    // LINE features inside the water layer); the 3.x library this page
+    // first shipped with only knew the v3 "pmap:kind" names, so roads,
+    // boundaries and place labels never matched a rule (blank grey land)
+    // and every river line got filled as a polygon (the cyan "slivers").
+    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", flavor: "light", lang: "en", maxDataZoom: 11,
       attribution: 'Basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; OpenStreetMap' });
   } catch {
     roadBase = L.tileLayer(STREETS_TILE_URL, { maxZoom: 19, attribution: "Streets &copy; Esri" });
@@ -1282,7 +1288,12 @@ const imageryBase = L.layerGroup([
           : (f.props.class === "school" || f.props.class === "college" || f.props.class === "university") ? "#f0e9f5"
           : "#e9e5dd", opacity: 0.35 }) },
       { dataLayer: "park", symbolizer: new P.PolygonSymbolizer({ fill: "#c9e2b4", opacity: 0.5 }) },
-      { dataLayer: "building", minzoom: 13,
+      // Water redrawn here at street zooms: the offline basemap's z11 water
+      // overzoomed 16x is blocky; OpenFreeMap's z13/14 shorelines are crisp.
+      // Same colour as the basemap's light flavor so the hand-off is invisible.
+      { dataLayer: "water", symbolizer: new P.PolygonSymbolizer({ fill: "rgb(128,222,234)", opacity: 1 }) },
+      { dataLayer: "waterway", symbolizer: new P.LineSymbolizer({ color: "rgb(128,222,234)", width: (z, f) => z >= 16 ? 2.5 : 1.5 }) },
+      { dataLayer: "building", minzoom: 15,
         symbolizer: new P.PolygonSymbolizer({ fill: "#d5ccc3", opacity: 0.55 }) },
       { dataLayer: "transportation", filter: isRibbon,     // casing first, then fill
         symbolizer: new P.LineSymbolizer({ color: "#c9ced4", width: (z, f) => ribbonW(z, f) + 2 }) },
@@ -1291,18 +1302,43 @@ const imageryBase = L.layerGroup([
     ];
     const labelRules = [
       { dataLayer: "transportation_name", minzoom: 14,
-        symbolizer: new P.LineLabelSymbolizer({ label_props: ["name"],
+        symbolizer: new P.LineLabelSymbolizer({ labelProps: ["name"],
           fill: "#3f4a55", stroke: "#ffffff", width: 2, font: "500 10.5px system-ui" }) },
-      { dataLayer: "housenumber", minzoom: 17,
-        symbolizer: new P.CenteredTextSymbolizer({ label_props: ["housenumber"],
+      { dataLayer: "housenumber", minzoom: 18,
+        symbolizer: new P.CenteredTextSymbolizer({ labelProps: ["housenumber"],
           fill: "#9a938c", font: "400 9px system-ui" }) },
     ];
-    P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane",
+    P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane", updateWhenIdle: true,
       minZoom: 13, maxDataZoom: 14,
       attribution: 'Detail &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; OpenStreetMap' }).addTo(map);
   } catch { /* the detail layer is a bonus — never let it break the map */ }
 })();
 map.zoomControl.setPosition("topright");
+
+// REGION MASK — the map is cut to the SHAPE of the six states, not to the
+// rectangle the basemap extract covers. One polygon whose outer ring is
+// the whole world and whose holes are the state outlines (Census TIGERweb
+// generalized boundaries, web/data/r5-states.geojson, 58 KB) is filled
+// with the page ground colour in its own pane above the basemap + detail
+// tiles and below the class/ACUB overlays; the hole edges double as the
+// state borders. Pure overlay: nothing outside the states is fetched or
+// classified any differently, it's simply not shown.
+map.createPane("maskPane").style.zIndex = 300;
+(async () => {
+  try {
+    if (location.protocol === "file:") return;   // fetch() can't read file:// — no mask on a local open
+    const gj = await (await fetch("data/r5-states.geojson")).json();
+    const holes = [];
+    for (const f of gj.features) {
+      const polys = f.geometry.type === "MultiPolygon" ? f.geometry.coordinates : [f.geometry.coordinates];
+      for (const poly of polys) holes.push(poly[0].map(([x, y]) => [y, x]));   // outer ring only
+    }
+    const world = [[-89, -540], [-89, 540], [89, 540], [89, -540]];
+    L.polygon([world, ...holes], { pane: "maskPane", renderer: L.canvas({ pane: "maskPane", padding: 0.5 }),
+      stroke: true, color: "#8f959c", weight: 1.2, opacity: 0.9,
+      fill: true, fillColor: "#e6e4df", fillOpacity: 1, fillRule: "evenodd", interactive: false }).addTo(map);
+  } catch { /* no mask file (file:// or missing): the rectangle extract shows as before */ }
+})();
 const markerLayer = L.layerGroup().addTo(map);
 
 function verdictBucket(v) {
@@ -2791,8 +2827,18 @@ function hpmsPaintRules() {
       // NOTE: protomaps-leaflet treats an attr as per-feature ONLY when the
       // function declares BOTH (zoom, feature) parameters.
       color: (z, f) => FHWA_CHIP_COLOR[f.props.F] || "#8c8c8c",
-      width: (z, f) => (f.props.F <= 2 ? 2.6 : f.props.F <= 4 ? 2.2 : f.props.F <= 6 ? 1.8 : 1.3),
-      opacity: 0.85,
+      // Width grows with zoom. A fixed 1.3 px local-road line at 85%
+      // opacity anti-aliases to ~25% alpha per pixel and simply vanished on
+      // top of the white OpenFreeMap street ribbons at z16+ — locals looked
+      // "unclassified" unless HPMS happened to carry two overlapping
+      // segments (both directions) that doubled the alpha. Measured on the
+      // Long Lake, MI subdivision (Totem Trl: in the tile, painted, invisible).
+      width: (z, f) => {
+        const base = f.props.F <= 2 ? 2.6 : f.props.F <= 4 ? 2.2 : f.props.F <= 6 ? 1.8 : 1.3;
+        const m = z >= 18 ? 2.6 : z >= 16 ? 2.1 : z >= 14 ? 1.5 : 1;
+        return base * m;
+      },
+      opacity: 0.95,
     }),
   }];
 }
@@ -2806,13 +2852,18 @@ async function ensureHpmsTiles(st) {
     const r = await fetch(HPMS_TILE_URL(st), { method: "HEAD" });
     if (!r.ok) throw 0;
     entry.layer = protomapsL.leafletLayer({
-      url: HPMS_TILE_URL(st), pane: "browsePane",
+      url: HPMS_TILE_URL(st), pane: "browsePane", updateWhenIdle: true,
       paintRules: hpmsPaintRules(), labelRules: [],
       // maxDataZoom MUST match the tileset's -z (13): protomaps-leaflet
       // defaults to 15 and never reads the archive header, so without
       // this the class lines silently disappear past z13 (empty fetches;
       // Leaflet leaves stale lower-zoom canvases behind, masking it).
       maxDataZoom: 13,
+      // levelDiff 0: draw each 256 px display tile from the SAME-zoom data
+      // tile. The default (1) builds display z from data z-1, and the
+      // tilesets start at z6 (-Z6) — so at the region view (map minZoom 6)
+      // it asked for nonexistent z5 tiles and drew nothing at all.
+      levelDiff: 0,
       attribution: "Class tiles: FHWA HPMS",
     });
     entry.status = "ok";
@@ -2821,12 +2872,45 @@ async function ensureHpmsTiles(st) {
     return true;
   } catch { entry.status = "missing"; return false; }
 }
-function setHpmsTilesVisible(on) {
-  for (const e of hpmsTile.values()) {
+// Only the states whose extent touches the current view stay attached.
+// Every attached protomaps layer creates one canvas per visible tile
+// whether or not its state has data there — six states attached at the
+// region view and never detached meant 6x the canvases (150 at a
+// 1600x1000 viewport, 4x that in pixels on a HiDPI screen) at every
+// street-level zoom in Michigan, most of them empty. That was the bulk of
+// the per-zoom main-thread cost measured under CPU throttling.
+function setHpmsTilesVisible(on, statesInView) {
+  for (const [st, e] of hpmsTile) {
     if (e.status !== "ok") continue;
-    if (on) { if (!map.hasLayer(e.layer)) e.layer.addTo(map); }
+    const want = on && (!statesInView || statesInView.includes(st));
+    if (want) { if (!map.hasLayer(e.layer)) e.layer.addTo(map); }
     else if (map.hasLayer(e.layer)) map.removeLayer(e.layer);
   }
+}
+
+// Urban-boundary DISPLAY from acub.pmtiles — the same file the cached
+// verdict path reads — as a static polygon layer in its own pane just
+// under the class lines. Replaces the live NTAD frame query + canvas
+// polygon rebuild that used to run on EVERY pan/zoom from z7 up (the
+// single slowest thing the map did while browsing). The live query
+// survives only as the fallback when the tileset is unusable (file://).
+map.createPane("acubPane").style.zIndex = 340;
+let acubTileLayer = null;
+async function ensureAcubTileLayer() {
+  if (acubTileLayer) return true;
+  if (!hpmsTilesUsable() || !(await acubTilesUsable())) return false;
+  if (acubTileLayer) return true;
+  acubTileLayer = protomapsL.leafletLayer({ url: ACUB_TILE_URL, pane: "acubPane", updateWhenIdle: true,
+    paintRules: [{ dataLayer: "acub", symbolizer: new protomapsL.PolygonSymbolizer({
+      fill: "rgb(252,201,237)", opacity: 0.32, stroke: "#8a6d80", width: 1 }) }],
+    labelRules: [], minZoom: BROWSE_ACUB_ZOOM, maxDataZoom: ACUB_TILE_Z,
+    attribution: "Urban areas: USDOT NTAD 2020" });
+  return true;
+}
+function setAcubTilesVisible(on) {
+  if (!acubTileLayer) return;
+  if (on) { if (!map.hasLayer(acubTileLayer)) acubTileLayer.addTo(map); }
+  else if (map.hasLayer(acubTileLayer)) map.removeLayer(acubTileLayer);
 }
 
 /* ============================================================
@@ -3013,7 +3097,7 @@ function browseCached(key, fn) {
 let browseSeq = 0, browseTimer = null;
 async function refreshBrowseLayers() {
   const seq = ++browseSeq;
-  if (!$("liveLayers").checked) { browseOverlay.clearLayers(); setHpmsTilesVisible(false); setLiveLegend(""); return; }
+  if (!$("liveLayers").checked) { browseOverlay.clearLayers(); setHpmsTilesVisible(false); setAcubTilesVisible(false); setLiveLegend(""); return; }
   const z = map.getZoom();
   const b = map.getBounds().pad(0.08);
   const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
@@ -3023,10 +3107,13 @@ async function refreshBrowseLayers() {
   // live road fetching below. States without tiles keep the live mirror.
   const tiledFlags = await Promise.all(states.map(ensureHpmsTiles));
   if (seq !== browseSeq) return;
-  setHpmsTilesVisible(true);
+  setHpmsTilesVisible(true, states);
   const tiled = states.filter((s, i) => tiledFlags[i]);
   const untiled = states.filter((s, i) => !tiledFlags[i]);
   const wantAcub = z >= BROWSE_ACUB_ZOOM;
+  const acubTiled = wantAcub && await ensureAcubTileLayer();
+  if (seq !== browseSeq) return;
+  setAcubTilesVisible(acubTiled);
   const classCap = browseClassCap(z);
   const wantRoads = classCap !== 0 && untiled.length > 0;
   if (!wantAcub && !wantRoads && !tiled.length) {
@@ -3037,7 +3124,7 @@ async function refreshBrowseLayers() {
   const bboxKey = [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat].map(v => v.toFixed(4)).join(",");
   const degPerPx = (bbox.maxLon - bbox.minLon) / Math.max(1, map.getSize().x);
   const jobs = [];
-  if (wantAcub) {
+  if (wantAcub && !acubTiled) {
     const offs = Math.max(0.0001, degPerPx);
     jobs.push(browseCached("ACUB|" + bboxKey, async () => {
       const [json, meta] = await Promise.all([
@@ -3100,7 +3187,7 @@ async function refreshBrowseLayers() {
     entries.push(`<div class="hdr">Road functional class — FHWA HPMS ${HPMS_TILE_YEAR} tiles (${tiled.join(", ")})</div>`);
     for (let c = 1; c <= 7; c++)
       entries.push(`<div><span class="sw" style="background:${FHWA_CHIP_COLOR[c]}"></span>${esc(functionalSystemLabel(c))}</div>`);
-    entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — the full network incl. local streets, no live queries. Interstates appear from z6, locals from z12. Verdicts are always computed live from the state DOT layers.</div>`);
+    entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — every road FHWA classifies, incl. local streets; no live queries. Interstates appear from z6, locals from z12. Roads with no class line (private drives, some subdivision streets) have no FHWA class in HPMS. Verdicts use these same tiles unless "live verdicts" is ticked under Data service URLs.</div>`);
   }
   if (untiled.length && !wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes${tiled.length ? " for " + esc(untiled.join(", ")) : ""}</div>`);
   else if (wantRoads && classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up${tiled.length ? " for " + esc(untiled.join(", ")) : ""} — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
@@ -3111,7 +3198,8 @@ async function refreshBrowseLayers() {
     entries.push(`<div class="note">No classified roads in view</div>`);
   }
   entries.push(`<div class="hdr">Urban boundary (USDOT NTAD 2020)</div>`);
-  entries.push(acubDrawn
+  if (acubTiled) entries.push(`<div><span class="swp" style="background:${acubCss};opacity:.55"></span>2020 Adjusted Urban Area (pink, where present)</div>`);
+  else entries.push(acubDrawn
     ? `<div><span class="swp" style="background:${acubCss};opacity:.55"></span>2020 Adjusted Urban Area</div>`
     : `<div class="note">No adjusted urban area in view (rural)</div>`);
   if (truncated) entries.push(`<div class="note">Record cap hit — zoom in for complete coverage</div>`);

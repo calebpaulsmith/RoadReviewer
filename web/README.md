@@ -120,8 +120,23 @@ toggles float in a bar over the map's top-left.
 - **The road basemap is served from this site** —
   `web/tiles/basemap.pmtiles`, a 50 MB Protomaps/OSM extract of the six
   states (z0-11, layers earth/water/roads/boundaries/places), rendered
-  by the vendored protomaps-leaflet `light` theme. Browsing the road map
-  fetches nothing from a tile CDN. **Satellite stays live Esri**,
+  by the vendored protomaps-leaflet **5.1.0** `light` *flavor*. Browsing
+  the road map fetches nothing from a tile CDN. **Renderer/tile schema
+  must match (bug fixed 2026-09-14):** the daily Protomaps builds are the
+  v4 schema (property `kind`; rivers are LINE features inside the water
+  layer). The 3.x renderer first vendored only knew v3's `pmap:kind`, so
+  roads/boundaries/place labels never matched a rule (blank grey land at
+  every zoom) and every river got filled as a polygon (long cyan "sliver"
+  triangles across Minnesota). Any future protomaps-leaflet upgrade must
+  stay on a version whose flavors read the schema version of
+  `basemap.pmtiles`.
+- **Cut to the state shapes.** `web/data/r5-states.geojson` (Census
+  TIGERweb state boundaries, generalized, 58 KB) is drawn as one mask
+  polygon — world outer ring, the six states as holes — in a pane above
+  the basemap + detail tiles and below the class/ACUB overlays, filled
+  with the page ground colour; the hole edges are the state borders. The
+  basemap extract itself is still six rectangles (no local `pmtiles`
+  CLI to re-extract by polygon), but nothing outside the states shows. **Satellite stays live Esri**,
   fetched only when switched to; the live Esri street layer remains as
   the automatic fallback when the basemap file is missing (or on
   `file://`). Build pipeline + gotchas: `build/tiles/README.md`.
@@ -141,8 +156,11 @@ toggles float in a bar over the map's top-left.
   resolves the versioned `{z}/{x}/{y}.pbf` template at runtime). It
   draws in its own pane between the offline basemap (z200) and the
   HPMS class overlay (z350), fetch-gated to z13+ so region browsing
-  stays fully offline; labels appear z14+ (street names), z17+ (house
-  numbers). **No POI markers** — the first cut drew POI dots + names
+  stays fully offline; labels appear z14+ (street names), z18+ (house
+  numbers — z17 was wall-to-wall numbers downtown). OpenFreeMap's
+  `water`/`waterway` are redrawn here too (same colour as the basemap's
+  light flavor): the offline basemap stops at z11 and its lakes
+  overzoomed 16x were blocky at street zooms. Buildings from z15. **No POI markers** — the first cut drew POI dots + names
   and the user rejected the clutter. Best-effort: blocked or down, the
   map just shows no detail layer.
 

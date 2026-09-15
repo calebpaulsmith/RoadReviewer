@@ -187,3 +187,22 @@ Refresh occasionally from a newer Protomaps daily build (OSM edits).
   features split at tile borders — z13 counts exceed the input count;
   judge completeness by decoding a known urban tile (Kalamazoo
   13/2148/3032 held 762 features), not by totals alone.
+
+## Basemap renderer / schema (2026-09-14)
+
+`web/tiles/basemap.pmtiles` is extracted from the daily Protomaps build,
+which is the **v4 tile schema** (`kind`, `kind_detail`, water lines in the
+`water` layer). The vendored renderer must read that schema:
+`web/vendor/protomaps-leaflet/protomaps-leaflet.js` is **5.1.0**
+(`flavor:"light", lang:"en"`). A 3.x renderer (v3 `pmap:kind` themes)
+draws only earth + water — blank land and river lines filled as polygon
+slivers — which is exactly what shipped first. If the renderer is ever
+downgraded or the build ever changes schema, re-check one tile's property
+keys (`build/tiles`'s sibling probe: decode a z11 tile and list layer
+keys) before committing.
+
+The class tilesets start at z6 (`-Z6`); the page renders them with
+`levelDiff: 0` (display z from data z) so the region view at map minZoom
+6 has data — the renderer default (levelDiff 1) asked for z5 tiles and
+drew nothing at the region zoom.
+

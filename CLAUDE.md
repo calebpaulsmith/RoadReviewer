@@ -969,6 +969,9 @@ build/                                  Local assembly + verification scripts (n
     verify-review-ui.mjs                map name labels, click-to-zoom, Prev/Next stepping, on-map
                                           source layers + legend, sources.html, FIRMette ZIP batch
                                           (ZIP validated with Python zipfile incl. CRCs)
+    verify-map-render.mjs               map rendering against the real tilesets: basemap paints at
+                                          the region view, class + ACUB tile pixels, six-state mask,
+                                          local class line visible at z17, zoom long-task budget
     fixtures/                           real captured MDOT + ACUB responses used to stub the
                                           network (see each script's header comment for why)
 web/                                    FHWA Road Checker (provisional) — static web prototype (§7b)
@@ -979,6 +982,9 @@ web/                                    FHWA Road Checker (provisional) — stat
   sources.html                          per-state data-source citations: org, service URL, exact
                                           layer names, fields read, schema quirks
   vendor/leaflet/                       Leaflet 1.9.4 vendored locally (no CDN calls)
+  vendor/protomaps-leaflet/             protomaps-leaflet 5.1.0 (v4 basemap schema; see §7b) + pmtiles
+  data/r5-states.geojson                six-state boundaries (Census TIGERweb, generalized) — the
+                                          region mask + state borders on the web map
   vendor/jspdf/                         jsPDF 2.5.2 UMD build vendored locally (no CDN calls)
   README.md                             privacy model, hosting, PDF report design, verification
 docs/
@@ -1152,6 +1158,38 @@ live services. Full design narrative + verification history:
   detail restyle same pass: POI dots/labels REMOVED (user: clutter);
   OpenFreeMap transportation now draws Google-style white road
   ribbons with gray casings under the FHWA class centerlines.
+- Map render fix pass (2026-09-14, user screenshots: crash at street
+  level, nothing at region zoom, rectangle cut, weird water, "roads
+  without a class", slow): ROOT CAUSE of the first three visuals was a
+  renderer/tile SCHEMA mismatch — the daily Protomaps builds are the v4
+  schema (`kind`; rivers as LINE features in the `water` layer) and the
+  vendored protomaps-leaflet was 3.x (v3 `pmap:kind` themes), so only
+  earth+water matched a rule (blank land everywhere) and river lines were
+  filled as polygons (the cyan "slivers"). Vendored **5.1.0**
+  (`flavor:"light", lang:"en"`, `labelProps`; `theme`/`label_props` are
+  gone). Then: `levelDiff: 0` on the class tiles (renderer default 1
+  asked for z5 tiles from a -Z6 tileset → nothing at the region view);
+  the six-state CUT is a mask polygon (`web/data/r5-states.geojson`,
+  Census TIGERweb generalized, world ring + state holes, pane z300) —
+  the basemap extract is still rectangles (no `pmtiles` CLI locally);
+  ACUB display now comes from `acub.pmtiles` (pane z340) instead of a
+  live NTAD frame query + canvas rebuild on every pan; class layers for
+  states OUTSIDE the view are detached (all six stayed attached from the
+  region view → 150 tile canvases at every street zoom, most empty —
+  the bulk of the per-zoom cost under 4x CPU throttling); "roads with
+  no class" were two things: streets absent from HPMS entirely (private
+  drives / some subdivision streets — tile == live service, verified
+  Long Lake MI) and class-7 lines that WERE painted but at 1.3 px × 85%
+  opacity anti-aliased to ~25% alpha and vanished over the white OSM
+  ribbons — width now scales with zoom, opacity 0.95. Water/waterway
+  are redrawn from OpenFreeMap at z13+ (the z11 basemap lakes overzoom
+  blocky); house numbers z18+. `build/web-tests/verify-map-render.mjs`
+  pins all of it (pixel reads against the real tilesets + a zoom
+  long-task budget). The "Page Unresponsive" crash did NOT reproduce
+  headless (max long task ~0.5 s under 4x throttling + DPR 2); the
+  canvas-count fix is the best candidate — re-check on the real laptop.
+  Wheel-debounce coalescing was tried and reverted (same cost, fewer
+  levels per scroll).
 - Cached-tile classification (2026-09-14, per user: "check every
   point with the data we have cached"): verdicts default to the
   hosted tilesets — HPMS z13 road tiles (read via
