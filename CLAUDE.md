@@ -1044,6 +1044,12 @@ docs/
   web-manual-tests.md                   hand-test pass for the web tool — clipboard, Excel, Google
                                           Earth, PDF layout, the editable export table; the things
                                           build/web-tests/ can't judge (ids are stable, quote them)
+  NEXT-road-name-lookup.md              PLANNED, NOT BUILT — bare road names with no place: the
+                                          measured ambiguity (904 places for "Main St" region-wide
+                                          vs 2 in a county), what HPMS actually carries per segment
+                                          (COUNTY_ID / URBAN_ID / OWNERSHIP, all verified live),
+                                          the Default-Area + county-gated picker design, and the
+                                          tile-size risk. Start here to resume that work
 notebooks/                              AGOL notebook port of rr-core (jupytext-paired .py/.ipynb)
 AutoChecker/                            loose reference snippets from the user's other automation
                                           (column lists, GPS extraction, sample output) — not built
@@ -1269,6 +1275,13 @@ live services. Full design narrative + verification history:
   best candidate — re-check on the laptop. (c) Caleb's hand pass over the
   export/edit work (`docs/web-manual-tests.md`, interactive copy at
   <https://claude.ai/artifact/KMuEX8xpojeYZ36aBrvSnG>) is outstanding.
+  (d) **A road name with NO place is refused** (`Q Ave` — a bare name would
+  mean a six-state search: 904 distinct "Main St" places region-wide vs 2
+  inside a county, measured 2026-09-16). The plan to fix it — a Default Area
+  box, a picker gated on county-or-smaller, and baking HPMS's `COUNTY_ID` /
+  `URBAN_ID` / `OWNERSHIP` into the tiles (county is on every segment;
+  city/township is NOT, only Indiana carries municipality names) — is written
+  up in **`docs/NEXT-road-name-lookup.md`**. Nothing of it is built.
 
 ---
 
