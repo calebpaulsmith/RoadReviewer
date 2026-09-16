@@ -3,18 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Information Flow — FHWA Road Checker</title>
-<meta name="description" content="Every provider → source → transform → artifact → UI surface behind the FHWA Road Checker, with the fields each result reads and the shortcomings of each. Includes the planned county-scoped street search and the rejected alternatives. Not endorsed by FEMA, FHWA or the Census Bureau." />
+<title>How the Road Checker Decides — FHWA Road Checker</title>
+<meta name="description" content="How the FHWA Road Checker decides a road's federal-aid status: when it reads the HPMS tiles hosted with the site and when it queries the state DOT layers live, and where every item on the screen comes from. Not endorsed by FEMA, FHWA or the Census Bureau." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,600;0,700;0,800;0,900&display=swap" rel="stylesheet" />
 <style>
 :root{
-  --navy:#162e51;--navy-2:#0b1f3a;--blue:#005ea2;--blue-dark:#1a4480;--blue-vivid:#2491ff;--blue-light:#d9e8f6;
-  --gold:#ffbe2e;--gold-dark:#e5a000;--red:#b50909;--red-vivid:#e41d3d;--orange:#c05600;--green:#00a91c;--green-dark:#008817;
+  --navy:#162e51;--navy-2:#0b1f3a;--blue:#005ea2;--blue-dark:#1a4480;--blue-light:#d9e8f6;
+  --gold:#ffbe2e;--gold-dark:#e5a000;--red:#b50909;--red-vivid:#e41d3d;--green:#00a91c;--green-dark:#008817;
   --ink:#1b1b1b;--ink-2:#3d4551;--ink-3:#565c65;--line:#dfe1e2;--line-2:#c6cace;--bg:#f0f0ee;--bg-2:#f9f9f7;--white:#fff;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.08),0 1px 4px rgba(0,0,0,.06);
-  --radius:8px;--radius-lg:14px;
+  --hpms:#1a7a3a;--hpms-bg:#e8f4ea;--state:#7b4ea0;--state-bg:#f1eaf7;--census:#005ea2;--census-bg:#e3eef8;--other:#8a6d1c;--other-bg:#fbf3dc;
   --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
 }
 *{box-sizing:border-box;}
@@ -22,657 +21,266 @@ html{scroll-behavior:smooth;}
 body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
 a{color:var(--blue);}
 .masthead{background:linear-gradient(120deg,var(--navy-2),var(--navy) 55%,var(--blue-dark) 130%);color:#fff;border-bottom:4px solid var(--gold);}
-.masthead__inner{max-width:1500px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.masthead__inner{max-width:1180px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 .masthead h1{font-size:20px;margin:0;font-weight:900;letter-spacing:-.01em;}
 .eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);}
 .masthead__sub{margin:2px 0 0;font-size:13px;color:#cdd9ea;}
-.masthead a.back{margin-left:auto;color:#fff;text-decoration:none;font-weight:700;font-size:13px;background:rgba(255,255,255,.12);padding:8px 13px;border-radius:8px;border:1px solid rgba(255,255,255,.18);}
+.masthead a.back{color:#fff;text-decoration:none;font-weight:700;font-size:13px;background:rgba(255,255,255,.12);padding:8px 13px;border-radius:8px;border:1px solid rgba(255,255,255,.18);}
+.masthead .mlinks{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;}
 .masthead a.back:hover{background:rgba(255,255,255,.2);}
-.masthead a.back + a.back{margin-left:0;}
-.toolbar{position:sticky;top:0;z-index:30;background:var(--white);border-bottom:1px solid var(--line);box-shadow:var(--shadow-sm);}
-.toolbar__inner{max-width:1500px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:12px 14px;flex-wrap:wrap;}
-.legend{display:flex;gap:11px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2);}
-.legend b{color:var(--ink);}
-.chip-h{display:inline-flex;align-items:center;gap:5px;}
-.sw{width:11px;height:11px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);}
-.sw.shipped{background:var(--green);}.sw.planned{background:var(--blue-vivid);}.sw.risk{background:var(--gold);}.sw.rejected{background:var(--red-vivid);}
-.toolbar input[type=search]{padding:7px 11px;border:1px solid var(--line-2);border-radius:7px;font-family:inherit;font-size:13px;min-width:150px;}
-.toolbar select{padding:7px 9px;border:1px solid var(--line-2);border-radius:7px;font-family:inherit;font-size:13px;background:var(--white);max-width:230px;}
-.btn{font-family:inherit;font-size:12.5px;font-weight:700;color:var(--navy);background:var(--bg-2);border:1px solid var(--line-2);border-radius:7px;padding:7px 12px;cursor:pointer;}
-.btn:hover{background:#eef0f2;}
-.btn.on{background:var(--navy);color:#fff;border-color:var(--navy);}
-.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
-.filters .lbl{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
-.fchip{font-size:12px;font-weight:600;border:1px solid var(--line-2);border-radius:20px;padding:3px 11px;cursor:pointer;background:var(--white);color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;user-select:none;}
-.fchip .gd{width:9px;height:9px;border-radius:50%;}
-.fchip.off{opacity:.42;background:var(--bg-2);text-decoration:line-through;}
-.barwrap{max-width:1500px;margin:0 auto;padding:7px 20px 0;}
-.wrap{max-width:1500px;margin:0 auto;padding:14px 20px 40px;display:grid;grid-template-columns:1fr 380px;gap:18px;}
-.graph{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:auto;max-height:78vh;position:relative;}
-.graph svg{display:block;}
-.colhead{fill:var(--ink-3);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
-.node rect{rx:7;cursor:pointer;transition:opacity .12s;}
-.node text{font-size:11.5px;fill:var(--ink);pointer-events:none;}
-.node .nm{font-weight:700;}
-.node.dim{opacity:.14;}
-.node.sel rect.box{stroke-width:2.6;}
-.node.rejected rect.box{stroke-dasharray:4 3;}
-.node.planned rect.box{stroke-dasharray:2 3;}
-.edge{fill:none;stroke:#c4ccd6;stroke-width:1.3;transition:opacity .12s,stroke .12s;}
-.edge.dim{opacity:.05;}
-.edge.hot{stroke:var(--gold-dark);stroke-width:2.1;}
-.edge.hot.rejected{stroke:var(--red-vivid);}
-.edge.planned{stroke-dasharray:4 3;}
-.panel{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:16px 17px;align-self:start;position:sticky;top:120px;max-height:78vh;overflow:auto;}
-.panel h2{font-size:15px;margin:0 0 3px;word-break:break-word;}
-.kindtag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;padding:2px 8px;border-radius:20px;margin-bottom:8px;margin-right:4px;}
-.panel .desc{font-size:13px;color:var(--ink-2);margin:6px 0 12px;}
-.row{display:flex;gap:8px;font-size:12.5px;padding:5px 0;border-top:1px solid var(--line);}
-.row .k{color:var(--ink-3);min-width:84px;flex:none;font-weight:600;}
-.row .v{color:var(--ink);min-width:0;}
-.statusline{font-weight:800;}
-.statusline.shipped{color:var(--green-dark);}.statusline.planned{color:var(--blue);}.statusline.risk{color:var(--gold-dark);}.statusline.rejected{color:var(--red);}
-.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px;}
-.chip{font-size:11.5px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:14px;padding:2px 9px;cursor:pointer;color:var(--navy);}
-.chip:hover{background:var(--blue-light);}
-.colchip{cursor:pointer;}
-.colchip.planned{border-color:var(--blue-vivid);color:var(--blue);}
-.colchip.unused{opacity:.55;}
-.colchip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
-.fieldtbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
-.fieldtbl td{border-top:1px solid var(--line);padding:3px 4px;vertical-align:top;}
-.fieldtbl td:first-child{font-family:ui-monospace,Consolas,monospace;white-space:nowrap;color:var(--navy);}
-.fieldtbl .short{color:var(--red);}
-.short{color:var(--red);}
-.shortlist{margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--ink-2);}
-.shortlist li{margin:2px 0;}
-details summary{cursor:pointer;font-size:12.5px;color:var(--blue);font-weight:600;}
-.footer{max-width:1500px;margin:0 auto;padding:0 20px 36px;font-size:12px;color:var(--ink-3);}
+.toolbar{position:sticky;top:0;z-index:30;background:var(--white);border-bottom:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.toolbar__inner{max-width:1180px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;font-size:13px;}
+.toolbar a{font-weight:700;text-decoration:none;}
+.legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2);margin-left:auto;}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);vertical-align:-2px;margin-right:4px;}
+.sw.hpms{background:var(--hpms);}.sw.state{background:var(--state);}.sw.census{background:var(--census);}.sw.other{background:var(--other);}
+main{max-width:1180px;margin:0 auto;padding:18px 20px 40px;}
+section{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:18px;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+h2{font-size:18px;margin:0 0 6px;font-weight:800;}
+h3{font-size:14.5px;margin:18px 0 6px;font-weight:800;color:var(--ink-2);}
+p{margin:6px 0;}
+.lead{font-size:15px;color:var(--ink-2);}
+.answer{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px;}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg-2);}
+.card h4{margin:0 0 6px;font-size:13.5px;font-weight:800;}
+.card p{font-size:13.5px;margin:4px 0;}
+.tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;color:#fff;white-space:nowrap;}
+.tag.hpms{background:var(--hpms);}.tag.state{background:var(--state);}.tag.census{background:var(--census);}.tag.other{background:var(--other);}
+/* the flow */
+.flow{display:grid;gap:10px;margin-top:10px;}
+.frow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch;}
+.frow.two{grid-template-columns:1fr 1fr;}
+.frow.one{grid-template-columns:1fr;}
+.box{border:1.5px solid var(--line-2);border-radius:10px;padding:10px 13px;background:var(--white);font-size:13.5px;}
+.box b.t{display:block;font-size:13.5px;margin-bottom:3px;}
+.box.hpms{border-color:var(--hpms);background:var(--hpms-bg);}
+.box.state{border-color:var(--state);background:var(--state-bg);}
+.box.census{border-color:var(--census);background:var(--census-bg);}
+.box.rule{border-color:var(--navy);background:#eef2f8;}
+.box.decide{border-color:var(--gold-dark);background:#fff8e6;}
+.box ul{margin:4px 0 0;padding-left:18px;}
+.box li{margin:2px 0;}
+.arrow{text-align:center;color:var(--ink-3);font-size:22px;line-height:1;margin:-2px 0;}
+.arrow.split{display:grid;grid-template-columns:1fr 1fr;}
+.arrow small{display:block;font-size:12px;font-weight:700;color:var(--ink-2);}
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:13px;margin:6px 0 4px;}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;}
+th{background:#f1f3f5;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3);}
+td.src{white-space:nowrap;}
+td.what{font-weight:700;width:24%;}
+.note{font-size:12.5px;color:var(--ink-3);}
+.gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin-top:10px;}
+.gloss .card{border-left:5px solid var(--line-2);}
+.gloss .card.hpms{border-left-color:var(--hpms);}.gloss .card.state{border-left-color:var(--state);}.gloss .card.census{border-left-color:var(--census);}.gloss .card.other{border-left-color:var(--other);}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1f3f5;padding:1px 5px;border-radius:3px;}
+.warn{background:#fdf5e2;border-left:4px solid var(--gold-dark);padding:8px 12px;border-radius:0 6px 6px 0;font-size:13.5px;margin:10px 0;}
+.footer{max-width:1180px;margin:0 auto;padding:0 20px 36px;font-size:12px;color:var(--ink-3);}
 .footer .disc{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:11px 14px;}
-.muted{color:var(--ink-3);font-size:12px;}
-@media(max-width:1000px){.wrap{grid-template-columns:1fr;}.panel{position:static;max-height:none;}}
+@media(max-width:820px){.frow,.frow.two{grid-template-columns:1fr;}.arrow.split{grid-template-columns:1fr;}td.what{width:auto;}td.src{white-space:normal;}}
 </style>
 </head>
 <body>
 <header class="masthead">
   <div class="masthead__inner">
     <div>
-      <div class="eyebrow">Provenance Atlas</div>
-      <h1>Information Flow</h1>
-      <p class="masthead__sub">Every provider → source → transform → artifact → UI surface, the fields each result reads, and where each one falls short. <span class="muted" id="verstamp"></span></p>
+      <div class="eyebrow">Behind the verdict</div>
+      <h1>How the Road Checker decides</h1>
+      <p class="masthead__sub">When it reads the HPMS tiles hosted with this site, when it asks the state DOT live, and where every item on the screen comes from.</p>
     </div>
-    <a class="back" href="index.html">← Back to the Road Checker</a>
-    <a class="back" href="sources.html">Data sources &amp; citations</a>
+    <div class="mlinks"><a class="back" href="index.html">← Back to the Road Checker</a> <a class="back" href="sources.html">Sources &amp; citations</a></div>
   </div>
 </header>
 
 <div class="toolbar">
   <div class="toolbar__inner">
+    <a href="#answer">The short answer</a>
+    <a href="#flow">How a verdict is decided</a>
+    <a href="#screen">What's on screen, and its source</a>
+    <a href="#sources">The sources in plain words</a>
+    <a href="#planned">Planned street search</a>
     <div class="legend">
-      <span class="chip-h"><b>Status:</b></span>
-      <span class="chip-h"><span class="sw shipped"></span>shipped</span>
-      <span class="chip-h"><span class="sw planned"></span>planned</span>
-      <span class="chip-h"><span class="sw risk"></span>at risk</span>
-      <span class="chip-h"><span class="sw rejected"></span>rejected</span>
+      <span><span class="sw hpms"></span>HPMS tiles (hosted here)</span>
+      <span><span class="sw state"></span>State DOT layer (live)</span>
+      <span><span class="sw census"></span>Census (live)</span>
+      <span><span class="sw other"></span>Esri / OSM / FEMA</span>
     </div>
-    <input type="search" id="search" placeholder="Find a node…" aria-label="Find a node" />
-    <select id="trace" aria-label="Trace lineage for a surface"><option value="">Trace a UI surface…</option></select>
-    <button class="btn" id="isolate" title="Hide everything outside the selected node's dependency cone">Isolate</button>
-    <button class="btn" id="reset">Reset</button>
-    <span class="muted" id="counts"></span>
   </div>
-  <div class="barwrap"><div class="filters" id="filters"><span class="lbl">Flows:</span></div></div>
 </div>
 
-<div class="wrap">
-  <div class="graph" id="graph"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
-  <aside class="panel" id="panel"></aside>
-</div>
+<main>
+
+<section id="answer">
+  <h2>The short answer: HPMS or the state?</h2>
+  <p class="lead">Two different jobs use two different sources, and they can sit side by side on the same screen.</p>
+  <div class="answer">
+    <div class="card">
+      <h4><span class="tag hpms">HPMS tiles</span> decide the verdict</h4>
+      <p>The red / green / yellow status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"cached data"</b> chip.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag state">State layer</span> decides the verdict only when…</h4>
+      <p>…any one of these is true: the <b>"Live verdicts"</b> box (under Data service URLs) is ticked; the point is <b>outside the six states</b>; the tiles <b>cannot be read</b> (opened from a file, a state's tile file missing, a read error). Then that state's own functional-class layer and the live NTAD urban boundaries are queried per point.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag hpms">HPMS tiles</span> draw the class lines while you browse</h4>
+      <p>The colored road-class lines that appear from zoom 9 and the urban-boundary outlines are the same tiles. Nothing live is fetched for them.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag state">State layer</span> draws the lines around a selected site and in the PDF</h4>
+      <p>Click a row, step Prev / Next, or export the PDF report and the "Source layers at this site" lines come from the <b>state DOT layer, live, in that state's own published colors</b>, with the urban boundary from the live NTAD service. Same for the class swatch on Find-box road suggestions.</p>
+    </div>
+  </div>
+  <div class="warn"><b>What this means in practice.</b> The verdict and the site overlay can disagree. The tiles are one HPMS year old; the state layer is current. If a collector was reclassified since the 2024 submission, the row may say one thing and the lines around the pin another. Ticking "Live verdicts" makes both use the state layer.</div>
+</section>
+
+<section id="flow">
+  <h2>How a verdict is decided, step by step</h2>
+  <p class="lead">Every kind of input ends up as one or more points, every point goes down one of two paths, and both paths finish with the same rule.</p>
+
+  <div class="flow">
+    <h3>1. What you typed becomes points</h3>
+    <div class="frow">
+      <div class="box"><b class="t">Coordinates</b>Decimal or DMS, optional site name in front. Used exactly as typed, never rewritten. → <b>one point</b>.</div>
+      <div class="box census"><b class="t">Address (house number + street)</b>Waits for the <b>Geocode</b> button. The Census geocoder returns a point, and the tool <b>snaps it onto the named street</b> in Census TIGER (the raw geocode can land 20 ft from the wrong street). → <b>three points</b>: the snap and 150 ft either way along the street. Disagree → "Review - Class change nearby".</div>
+      <div class="box census"><b class="t">Road name + place</b>("Portage Rd, Portage MI"). The place is looked up in Census TIGER (county → township → city), the road's edges are fetched inside that area, and the <b>12 longest edges</b> are sampled at their midpoints. → <b>up to 12 points</b>. Different classes along the road → "Review - Mixed classes on road" with a length-by-class summary.</div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>2. Each point picks a path</h3>
+    <div class="frow one">
+      <div class="box decide"><b class="t">Go live (state layer) if any of these hold — otherwise use the tiles</b>
+        <ul>
+          <li>"Live verdicts" is ticked (remembered in this browser).</li>
+          <li>The point is not inside one of the six states.</li>
+          <li>The page was opened as a file, the state's tile file is missing, or a tile read fails.</li>
+        </ul></div>
+    </div>
+    <div class="arrow split"><span>↓ <small>default</small></span><span>↓ <small>live</small></span></div>
+    <div class="frow two">
+      <div class="box hpms"><b class="t"><span class="tag hpms">Cached path</span> &nbsp;HPMS tiles hosted with this site</b>
+        <ul>
+          <li><b>Roads within 250 ft</b> from <code>web/tiles/&lt;state&gt;.pmtiles</code>: FHWA class 1–7, the HPMS street name, and the state's own route id + mileposts (the "State route · MP" chip).</li>
+          <li><b>Urban or rural</b> from <code>web/tiles/acub.pmtiles</code> (NTAD 2020 adjusted urban areas), plus "on the boundary" when the point is outside every polygon but within 250 ft of one.</li>
+          <li><b>Street names</b> from Census TIGER, live, if reachable. Names never change the verdict.</li>
+        </ul></div>
+      <div class="box state"><b class="t"><span class="tag state">Live path</span> &nbsp;That state's DOT layer, per point</b>
+        <ul>
+          <li><b>Roads within 250 ft</b> from the state's functional-class layer: MDOT 353, INDOT 22, WisDOT local then trunk, MnDOT 11, IDOT 0, ODOT 0. Michigan filters retired segments; Wisconsin decodes its urban/rural-encoded codes back to bare FHWA.</li>
+          <li><b>Urban or rural</b> from the NTAD urban-area service, live.</li>
+          <li><b>Names</b> from the state's own name layer where one exists (MDOT trunklines, INDOT centerlines, WisDOT, ODOT route numbers) plus Census TIGER.</li>
+        </ul></div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>3. The same rule, whichever path</h3>
+    <div class="frow one">
+      <div class="box rule"><b class="t">The closest road decides</b>
+        <ul>
+          <li><b>Federal aid</b> — class 1–5 anywhere; class 6 (Minor Collector) when urban.</li>
+          <li><b>Non-federal aid</b> — class 7 (Local) anywhere; class 6 when rural.</li>
+          <li><b>Review</b> — no road within the buffer; a named road that the layer gives no class; class 0 (non-certified); a second road within 30 ft that is federal aid; any other federal-aid road nearby; a Minor Collector on the urban boundary.</li>
+        </ul>
+        <p class="note">Yellow only ever downgrades green. Red stays red. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p></div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>4. Where it lands</h3>
+    <div class="frow one">
+      <div class="box"><b class="t">Row, pin, exports</b>The verdict, FHWA class, urban/rural + urban-area name, road name(s) with distances, the state route chip, and a "cached data" chip when the tiles were used — on the row, as the pin color, and in every export (CSV, TSV, GeoJSON, KMZ, PDF).</div>
+    </div>
+  </div>
+</section>
+
+<section id="screen">
+  <h2>What's on the screen, and where it comes from</h2>
+  <p class="lead">Grouped by where you see it. "Watch out" is the known shortcoming of that source for that item.</p>
+
+  <h3>The result row</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">Federal aid / Non-federal aid / Review</td><td>Closest road's class + urban/rural through the rule above</td><td class="src"><span class="tag hpms">HPMS tiles</span> default · <span class="tag state">state</span> if live</td><td>Tiles are one HPMS year old. Streets absent from HPMS (private drives, some subdivision streets) read as "no road".</td></tr>
+    <tr><td class="what">FHWA class ("Minor Collector 36 ft")</td><td>Class code of each road within 250 ft, closest first</td><td class="src"><span class="tag hpms">HPMS tiles</span> default · <span class="tag state">state</span> if live</td><td>HPMS carries the bare code; Wisconsin's own layer encodes urban/rural into the code and is decoded.</td></tr>
+    <tr><td class="what">Urban / Rural + urban-area name</td><td>Point-in-polygon against the adjusted urban areas</td><td class="src"><span class="tag hpms">ACUB tiles</span> default · NTAD live if live</td><td>2020 boundaries only. ACUB is the single source of urban/rural; state fields that say urban/rural are deliberately ignored.</td></tr>
+    <tr><td class="what">Road name(s) + distance</td><td>HPMS street name on the segment, merged with Census TIGER names nearby</td><td class="src"><span class="tag hpms">HPMS</span> + <span class="tag census">TIGER</span></td><td>HPMS names are missing on a third to two-thirds of rural WI / MN segments; TIGER fills them. Spellings differ and are collapsed.</td></tr>
+    <tr><td class="what">"State route 0006904 · MP 3.2–4.1" chip</td><td>The state's LRS route id and mileposts as submitted to HPMS</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Cached path only. Quality follows each state's submission.</td></tr>
+    <tr><td class="what">"cached data" chip</td><td>Marks a verdict from the tiles</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Absent means the live path ran for that point.</td></tr>
+    <tr><td class="what">Geocoded address name, "snapped 18 ft" note</td><td>Census geocoder match + snap onto the TIGER street</td><td class="src"><span class="tag census">Census</span></td><td>Only on the Geocode button. Ambiguous when city / state are missing.</td></tr>
+    <tr><td class="what">"whole road · Kalamazoo County" row + class-by-length chip</td><td>TIGER edges of the named road, 12 midpoints classified</td><td class="src"><span class="tag census">TIGER</span> → then the path above</td><td>Same-named townships with a state typed are merged into one huge search box (Portage MI → most of Michigan). 12 samples, not length-weighted.</td></tr>
+  </table>
+
+  <h3>The map</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">Road-class lines while browsing (zoom 9 and in)</td><td>Pre-built per-state tiles; interstates from z6, locals from z12</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Dense downtown cores were thinned at build time. A state with no tile file falls back to a live mirror of its DOT layer.</td></tr>
+    <tr><td class="what">Urban-boundary outlines while browsing</td><td>Urban-area tiles</td><td class="src"><span class="tag hpms">ACUB tiles</span></td><td>2020 vintage.</td></tr>
+    <tr><td class="what">Lines around a selected site ("Source layers at this site" legend)</td><td>A frame of the state's live functional-class layer in its published symbology, plus the live NTAD boundary</td><td class="src"><span class="tag state">State layer</span> live</td><td><b>Different source from the verdict</b> unless "Live verdicts" is on. INDOT publishes one color for everything, so an FHWA palette is substituted (disclosed).</td></tr>
+    <tr><td class="what">Verdict pins (red / green / yellow)</td><td>The row's verdict</td><td class="src">as the row</td><td></td></tr>
+    <tr><td class="what">Paper-style basemap (roads, water, places)</td><td>Six-state OpenStreetMap extract hosted with the site, z0–11</td><td class="src"><span class="tag other">OSM / Protomaps</span></td><td>Rectangular extract; the state-shaped cut is a mask. Falls back to live Esri streets if the file is missing.</td></tr>
+    <tr><td class="what">Buildings, parks, street names at street zoom</td><td>OpenFreeMap vector tiles, fetched from zoom 13</td><td class="src"><span class="tag other">OSM / OpenFreeMap</span></td><td>Public service with no SLA; if it is down there is simply no detail.</td></tr>
+    <tr><td class="what">Satellite</td><td>Esri World Imagery, only when switched to</td><td class="src"><span class="tag other">Esri</span></td><td></td></tr>
+    <tr><td class="what">Six-state mask and state borders</td><td>Census TIGERweb generalized outlines, stored in the site</td><td class="src"><span class="tag census">Census</span> (file)</td><td></td></tr>
+  </table>
+
+  <h3>Find &amp; Search</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">State / county / township matches + dashed outline</td><td>TIGERweb boundary layers</td><td class="src"><span class="tag census">Census</span> live</td><td>Cities and tribal areas are not searched yet.</td></tr>
+    <tr><td class="what">Road matches in the visible map</td><td>TIGERweb road layers, limited to the map view (zoom 11+)</td><td class="src"><span class="tag census">Census</span> live</td><td>You have to know roughly where the road is first.</td></tr>
+    <tr><td class="what">Class swatch on a road suggestion</td><td>One live point query at the longest segment's midpoint</td><td class="src"><span class="tag state">State layer</span> live</td><td>Not the tiles — so it can differ from a cached verdict at the same spot.</td></tr>
+    <tr><td class="what">Search &amp; Collect points and notes</td><td>What you typed, kept in this browser only</td><td class="src">you</td><td>Cleared with site data; never sent anywhere.</td></tr>
+  </table>
+
+  <h3>PDF report and exports</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">PDF figure per site (class lines, boundary, labels)</td><td>Live state layer in its published colors, live NTAD boundary, TIGER street labels, Esri basemap tiles</td><td class="src"><span class="tag state">State</span> + <span class="tag census">Census</span> + <span class="tag other">Esri</span></td><td>Figure is live; the verdict printed beside it may be from the tiles (see the warning above).</td></tr>
+    <tr><td class="what">CSV / TSV / GeoJSON / KMZ columns</td><td>The rows as shown, plus State Route ID and Milepost Range</td><td class="src">as the row</td><td>No County or Owner column yet.</td></tr>
+    <tr><td class="what">FIRMettes (ZIP)</td><td>FEMA's FIRMette print service, one job per site</td><td class="src"><span class="tag other">FEMA</span></td><td>Slow per site; failed sites can be re-run.</td></tr>
+    <tr><td class="what">Per-row reference links</td><td>FEMA Map Viewer pin, each state's official app at its root, Google / Bing / Street View</td><td class="src"><span class="tag other">links</span></td><td>State apps open at their default extent; coordinate deep-links mis-navigate, so they are not used.</td></tr>
+  </table>
+</section>
+
+<section id="sources">
+  <h2>The sources, in plain words</h2>
+  <div class="gloss">
+    <div class="card hpms"><h4>HPMS road tiles <span class="tag hpms">hosted here</span></h4>
+      <p>FHWA's Highway Performance Monitoring System, national 2024 submission, harvested once per state and stored as six tile files with the site (41–70 MB each). Every public road with its FHWA class, the state's route id and mileposts, and the HPMS street name. <b>Default source of every verdict and of the class lines you browse.</b></p>
+      <p class="note">Shortcomings: one year behind the states; names missing on many rural WI / MN roads; the live service behind it is far too slow to query interactively (2–55 s, errors in metro counties, measured 2026-09-16); county, owner and urban code exist in HPMS but are not in the tiles yet.</p></div>
+    <div class="card hpms"><h4>Urban-boundary tiles <span class="tag hpms">hosted here</span></h4>
+      <p>The NTAD 2020 Adjusted Urban Areas (549 Region V polygons, 3 MB), from the same USDOT service the live path queries. <b>Decides urban vs rural on the cached path</b> and draws the boundary outlines while browsing.</p></div>
+    <div class="card state"><h4>State DOT functional-class layers <span class="tag state">live</span></h4>
+      <p>Each state's own published layer: MDOT (MI), INDOT (IN), WisDOT local + state trunk (WI), MnDOT (MN), IDOT (IL), ODOT TIMS (OH). Current, authoritative, and the only thing the state's official map shows. <b>Used for verdicts only when "Live verdicts" is on or the tiles can't be used; always used for the site overlay, PDF figures and Find-box swatches.</b></p>
+      <p class="note">Shortcomings: flaky servers (INDOT 500s, MDOT needs a browser User-Agent, WisDOT moved a layer once); no street names in MN / IL; no county or owner anywhere except Indiana; one point at a time, no name search.</p></div>
+    <div class="card state"><h4>NTAD urban boundaries <span class="tag state">live</span></h4>
+      <p>The same 2020 adjusted urban areas, queried per point on the live path and per frame for the site overlay and PDF.</p></div>
+    <div class="card census"><h4>Census TIGER roads <span class="tag census">live</span></h4>
+      <p>Every road edge in the country with a parsed street name (base name, type, directions). <b>Street names on rows, the road-name lookup, the address snap, the Find box, and the planned street search.</b> Fast when scoped to a county (0.3 s measured); no class, no county attribute on the edge.</p></div>
+    <div class="card census"><h4>Census geocoder + boundary layers <span class="tag census">live</span></h4>
+      <p>The one-line geocoder turns a house address into a point (reached through a sandboxed frame because it sends no CORS header; only on the Geocode button). The state / county / township / place layers back the Find box and the road-name place lookup.</p></div>
+    <div class="card other"><h4>Esri, OpenStreetMap, FEMA <span class="tag other">display &amp; exports</span></h4>
+      <p>Esri World Imagery for satellite and PDF basemaps; a Protomaps OpenStreetMap extract for the paper basemap; OpenFreeMap for street-level detail; FEMA's FIRMette print service for the ZIP. None of these touch the verdict.</p></div>
+  </div>
+</section>
+
+<section id="planned">
+  <h2>Planned: the street search box</h2>
+  <p class="lead">A street-only search on the map, right side, that requires a state and a county — so the inspector picks a real street from a list instead of typing one for the parser to interpret.</p>
+  <table>
+    <tr><th>Step</th><th>Source</th><th>Why that source</th></tr>
+    <tr><td class="what">County pick list + county outline</td><td class="src"><span class="tag census">Census</span> (524 counties, baked once)</td><td>County is the only place unit that exists on both road records and PA declarations. Townships and cities are where a road <i>passes</i>, not an attribute of it.</td></tr>
+    <tr><td class="what">Street suggestions as you type</td><td class="src"><span class="tag census">TIGER roads</span> inside the county polygon</td><td>Complete names, 0.3 s. HPMS names are incomplete and its live service is too slow (rejected on measurement).</td></tr>
+    <tr><td class="what">Same street in two townships</td><td class="src"><span class="tag census">County subdivisions</span></td><td>Label each cluster by the township it sits in; order by distance from the sites already on the map.</td></tr>
+    <tr><td class="what">Class along the whole street, "x mi federal aid / y mi non-federal aid"</td><td class="src"><span class="tag hpms">HPMS tiles</span> + <span class="tag hpms">ACUB tiles</span></td><td>Works with today's tiles: sample the edges, bucket by verdict, sum lengths, draw the segments in red / green.</td></tr>
+    <tr><td class="what">Owner / maintainer chip ("County Highway Agency")</td><td class="src"><span class="tag hpms">HPMS</span> re-harvest</td><td>Only HPMS carries who owns and who maintains a road. Needs the tiles rebuilt with those fields, gated on a Michigan size trial (Wisconsin's tile file is already 70 MB of the 100 MB GitHub limit).</td></tr>
+  </table>
+  <p class="note">Full plan and measurements: <code>docs/NEXT-road-name-lookup.md</code>.</p>
+</section>
+
+</main>
 
 <div class="footer">
-  <p class="disc"><b>This is not a government website.</b> It maps the data flow of an independent tool built on FHWA HPMS, USDOT NTAD, Census TIGERweb, the Census Geocoder, six state DOT map services, Esri, OpenStreetMap and FEMA's FIRMette service — <b>not endorsed by FEMA</b>, FHWA, USDOT, the Census Bureau or any state DOT. The graph is hand-maintained in this file (no build script); keep it in step with <a href="sources.html">sources.html</a>, <code>docs/NEXT-road-name-lookup.md</code> and CLAUDE.md §7b. Latencies and coverage figures marked "measured" were taken live on 2026-09-15/16 and will drift.</p>
+  <p class="disc"><b>This is not a government website.</b> It explains an independent tool built on FHWA HPMS, USDOT NTAD, Census TIGERweb and the Census Geocoder, six state DOT map services, Esri, OpenStreetMap and FEMA's FIRMette service — <b>not endorsed by FEMA</b>, FHWA, USDOT, the Census Bureau or any state DOT. Hand-maintained; keep it in step with <a href="sources.html">sources.html</a>. Figures marked "measured" were taken live on 2026-09-15/16.</p>
 </div>
-
-<script>
-/* ---------------------------------------------------------------------------
-   The manifest. Same shape as DisasterParameters' lineage.json, plus:
-     status   shipped | planned | risk | rejected   (any node; default shipped)
-     group    which "flow" filter chip the node belongs to
-     feeds    transform → surface edges for in-memory results (no file)
-     fields   [{n, use, to:[transform/surface ids], status, note}] on sources
-     short    [] shortcomings shown in the panel
---------------------------------------------------------------------------- */
-const MAN = {
-schema: "provenance-atlas/rr-1",
-providers: [
-  { id:"fhwa", name:"FHWA / USDOT BTS", links:["https://www.fhwa.dot.gov/policyinformation/hpms.cfm","https://geodata.bts.gov/"] },
-  { id:"census", name:"US Census Bureau", links:["https://tigerweb.geo.census.gov/tigerwebmain/TIGERweb_main.html","https://geocoding.geo.census.gov/"] },
-  { id:"mdot", name:"MDOT (Michigan)", links:["https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce"] },
-  { id:"indot", name:"INDOT (Indiana)", links:["https://gis.indot.in.gov/ro/rest/services"] },
-  { id:"wisdot", name:"WisDOT (Wisconsin)", links:["https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services"] },
-  { id:"mndot", name:"MnDOT (Minnesota)", links:["https://dotapp9.dot.state.mn.us/egis12/rest/services"] },
-  { id:"idot", name:"IDOT (Illinois)", links:["https://gis1.dot.illinois.gov/arcgis/rest/services"] },
-  { id:"odot", name:"ODOT (Ohio)", links:["https://tims.dot.state.oh.us/ags/rest/services"] },
-  { id:"esri", name:"Esri", links:["https://services.arcgisonline.com/arcgis/rest/services"] },
-  { id:"osm", name:"OpenStreetMap (Protomaps, OpenFreeMap)", links:["https://protomaps.com/","https://openfreemap.org/"] },
-  { id:"fema", name:"FEMA", links:["https://msc.fema.gov/","https://fema.maps.arcgis.com/"] },
-  { id:"user", name:"The inspector (typed input)", links:[] },
-],
-sources: [
-  { id:"hpms", providerId:"fhwa", name:"HPMS National (2024 FullJoin)", binding:"snapshot", cadence:"annual", group:"Verdicts",
-    endpoint:"https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/HPMS_National_Current/FeatureServer/0",
-    description:"Every public road in the six states (~3.23 M segments) with FHWA class and the state's own LRS keys. Harvested by quadtree into the state tilesets; never queried live by the page.",
-    fields:[
-      {n:"F_SYSTEM",use:"FHWA class 1–7 → tile F → verdict",to:["fetch_hpms"],note:"No urban/rural inside the code; ACUB supplies that."},
-      {n:"RouteName",use:"street name → tile N",to:["fetch_hpms"],note:"Coverage by county, measured: Kalamazoo 94 %, Hamilton IN 99 %, Logan IL 96 %, Vilas WI 56 %, Douglas MN 36 %. Spelled differently from TIGER (\"Q Ave E\" vs \"E Q Ave\"), so never match on it."},
-      {n:"ROUTE_ID / BEGIN_POINT / END_POINT",use:"state LRS key + mileposts → tile R, B, E",to:["fetch_hpms"],note:"As good as each state's submission."},
-      {n:"RouteNumber",use:"signed route number → tile RN",to:["fetch_hpms"],note:""},
-      {n:"STATE_ID / COUNTY_ID",use:"county FIPS on every segment",to:["reharvest"],status:"planned",note:"No name domain (needs the 524-row table). 99.6 % populated in MI. Not baked today."},
-      {n:"OWNERSHIP",use:"owning agency (27-value domain) → owner chip",to:["reharvest"],status:"planned",note:"Owner is not always the PA applicant. 0 of 360 Lac du Flambeau segments carried a tribal code."},
-      {n:"MAINTENANCE_OPERATIONS",use:"maintaining agency (27-value domain)",to:["reharvest"],status:"planned",note:"Often the better applicant hint; can differ from owner. Not in the plan document yet."},
-      {n:"URBAN_ID",use:"urban-area code (514-value domain; 99999 = rural)",to:["reharvest"],status:"planned",note:"Redundant with the ACUB tiles, which stay the single urban/rural source. 1.4 % null in MI, distinct from the explicit rural code."},
-      {n:"NHS / STRAHNET_TYPE / NN / NHFN",use:"national network flags",to:[],status:"unused",note:"NHS was dropped in F9; available offline if ever baked."},
-      {n:"FACILITY_TYPE / STRUCTURE_TYPE",use:"one-way, ramp, bridge",to:[],status:"unused",note:"Could exclude ramps from a street summary."},
-      {n:"AADT / SPEED_LIMIT / THROUGH_LANES / SURFACE_TYPE",use:"traffic and pavement",to:[],status:"unused",note:"Mostly populated only on HPMS sample sections; sparse on locals."},
-      {n:"DATA_YEAR",use:"submission year",to:[],status:"unused",note:"Would let the page state the tile vintage per segment."},
-      {n:"~70 pavement / geometry / sample fields",use:"IRI, rutting, curves, grades, tolls…",to:[],status:"unused",note:"Sample-section only. Not relevant."},
-    ],
-    short:["Live queries are unusable for anything interactive: county-scoped name searches took 2–55 s and returned HTTP 400 in every metro county (Wayne, Cook, Franklin), measured 2026-09-16.","2,000-record cap and a ~55 s server give-up on any attribute-only or state-sized query.","Republished under a new name once already (resultRecordCount stopped being accepted).","One submission year behind the state DOT layers."] },
-  { id:"ntad_acub", providerId:"fhwa", name:"NTAD 2020 Adjusted Urban Areas", binding:"hybrid", cadence:"decennial (FHWA-adjusted)", group:"Verdicts",
-    endpoint:"https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
-    description:"The nationwide ACUB polygons — the single source of urban vs rural for every state. Baked into acub.pmtiles for the cached path; queried live per point on the live path.",
-    fields:[
-      {n:"NAME",use:"urban-area name on the row",to:["build_acub","classify_live"],note:"Case-sensitive JSON key — a case-insensitive match hits the field metadata first."},
-      {n:"UACE",use:"5-digit urban-area code",to:["build_acub","classify_live"],note:"Same code HPMS URBAN_ID carries (43723 = Kalamazoo)."},
-      {n:"state_1",use:"state abbreviation",to:["build_acub"],note:""},
-      {n:"F2020POPUL / F2020HOUSI / F2020_POPD / AREA",use:"demographics",to:[],status:"unused",note:""},
-    ],
-    short:["2020 boundaries only; ~3 m generalization in the tiles (the 76 m edge rule absorbs it).","Full-precision harvest 504s — ids-then-batches with maxAllowableOffset is the only way to pull it."] },
-  { id:"tiger_roads", providerId:"census", name:"TIGERweb roads (Transportation 2 / 6 / 8)", binding:"live", cadence:"annual", group:"Street search",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8",
-    description:"Primary, secondary and local road edges with parsed street-name components. CORS-clean, fast when spatially scoped: a county-envelope prefix search answered in 0.3 s (measured). The Find box, the road-line resolver, the address snap and the planned street search all read it.",
-    fields:[
-      {n:"NAME / BASENAME",use:"street list, name match, TIGER-name backfill on rows",to:["resolve_road","geocode","find_search","street_search","classify_tiles","classify_live"],note:"No county, state, place or class on the edge. Un-indexed LIKE — fine county-scoped, too slow statewide."},
-      {n:"PREDIRABRV / PRETYPEABRV / SUFTYPEABRV / SUFDIRABRV",use:"component match (streetMatchScore)",to:["resolve_road","geocode","street_search"],note:"Type abbreviations need the canonical map already in rr-core."},
-      {n:"PREQUALABRV / SUFQUALABRV",use:"qualifiers (Old, Bypass…)",to:[],status:"unused",note:"\"Old US 31\" is unreadable today; these would help."},
-      {n:"MTFCC",use:"feature class (S1400 local, alleys, private drives…)",to:["street_search"],status:"planned",note:"Which classes layer 8 carries is unverified — check before the suggestion list, or alleys and private drives appear as streets."},
-      {n:"RTTYP",use:"route type letter (C county, S state, U US, M common name)",to:["street_search"],status:"planned",note:"Useful for labelling CR / STH entries."},
-      {n:"geometry",use:"edges to draw, snap to, and sample class along",to:["resolve_road","geocode","find_search","street_search"],note:"One feature per intersection-to-intersection edge — dozens per road; a road crossing the county line is cut by the filter."},
-    ],
-    short:["No county attribute: county scoping must be geometric (polygon filter), not a WHERE clause.","Same-named streets in different townships are indistinguishable without a spatial join to county subdivisions.","Names are the complete set (every road) — the reason it beats HPMS RouteName for a picker."] },
-  { id:"tiger_counties", providerId:"census", name:"TIGERweb counties (State_County 1)", binding:"live", cadence:"annual", group:"Street search",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1",
-    description:"524 counties across the six states. Today: the Find box and the road-line place lookup. Planned: the static county name table, the county polygon file, and the spatial filter behind the street search.",
-    fields:[
-      {n:"GEOID / STATE / COUNTY",use:"county FIPS (join key to HPMS COUNTY_ID)",to:["find_search","resolve_road","bake_counties"],note:""},
-      {n:"NAME / BASENAME",use:"county pick list, place lookup",to:["find_search","resolve_road","bake_counties"],note:"13 KB for all 524 once baked; never changes."},
-      {n:"geometry",use:"dashed outline on Find; polygon filter for street search; point-in-polygon county of a site",to:["find_search","bake_counties","street_search"],note:"Needs maxAllowableOffset live, or the one-time polygon file."},
-      {n:"LSADC / FUNCSTAT / AREALAND / centroids",use:"",to:[],status:"unused",note:""},
-    ],
-    short:["Live fetch of a full-resolution county polygon is heavy; generalize or bake it once."] },
-  { id:"tiger_states", providerId:"census", name:"TIGERweb states (State_County 0)", binding:"hybrid", cadence:"annual", group:"Map display",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0",
-    description:"State names for the Find box (live) and the generalized six-state outlines baked into r5-states.geojson (the region mask).",
-    fields:[{n:"NAME / STATE",use:"Find box state matches",to:["find_search"],note:""},{n:"geometry (generalized)",use:"region mask + state borders",to:["build_mask"],note:"Generalized; the mask hides the basemap outside the six states."}],
-    short:[] },
-  { id:"tiger_cousubs", providerId:"census", name:"TIGERweb county subdivisions (Places_CouSub 1)", binding:"live", cadence:"annual", group:"Street search",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/1",
-    description:"Townships, charter townships, and (in these six states) cities as county subdivisions. Used for Find and the road-line place lookup; planned as the township labels that split a duplicate street name.",
-    fields:[
-      {n:"NAME (\"Portage charter township\") / BASENAME",use:"place lookup, township labels",to:["find_search","resolve_road","street_search"],note:"Same BASENAME repeats: Portage ×3 in MI, Springfield ×26 across the six states (measured). Cities appear here AND in the places layer."},
-      {n:"STATE / COUNTY / COUSUB / GEOID",use:"scoping",to:["find_search","resolve_road","street_search"],note:"A subdivision never crosses a county line."},
-      {n:"LSADC / FUNCSTAT",use:"township vs city vs village; active government",to:["street_search"],status:"planned",note:"CDPs are statistical, not governments — not applicants."},
-      {n:"POP100 / HU100 / UR / geometry",use:"dashed outline on Find",to:["find_search"],note:""},
-    ],
-    short:["With a state typed, the shipped resolver skips its ambiguity check and unions all same-named subdivisions into one extent — \"Portage MI\" becomes a box from the Upper Peninsula to the Indiana line (measured)."] },
-  { id:"tiger_places", providerId:"census", name:"TIGERweb incorporated places + CDPs (layers 4 / 5)", binding:"live", cadence:"annual", group:"Street search",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/4",
-    description:"Cities and villages (4) and census-designated places (5). Read by the road-line place lookup; not yet searchable in the Find box.",
-    fields:[{n:"NAME / BASENAME / PLACE / GEOID",use:"place lookup fallback after county and township",to:["resolve_road"],note:"Places can span two counties, so a city does not scope cleanly to one county."},{n:"LSADC / FUNCSTAT",use:"",to:[],status:"unused",note:""}],
-    short:["Duplicates the cousub hit for every city in these states."] },
-  { id:"tiger_aiannha", providerId:"census", name:"TIGERweb AIANNHA (reservations 2 / 3 / 4)", binding:"live", cadence:"annual", group:"Street search", status:"planned",
-    endpoint:"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/AIANNHA/MapServer/2",
-    description:"Federal reservations, off-reservation trust land and state reservations — the only source for a tribal-area search.",
-    fields:[{n:"NAME / GEOID / AIANNH / geometry",use:"tribal area search + outline",to:["find_search"],status:"planned",note:"Boundaries cross county and state lines; nothing on a road record points back here."}],
-    short:["HPMS ownership codes 50/62 do not mark reservation roads (0 of 360 at Lac du Flambeau)."] },
-  { id:"census_geocoder", providerId:"census", name:"Census one-line geocoder", binding:"live", cadence:"n/a", group:"Addresses",
-    endpoint:"https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
-    description:"Address → point, reached by JSONP from a throwaway sandboxed iframe because the service sends no CORS header. Only fires on the explicit Geocode button.",
-    fields:[
-      {n:"coordinates.x / y",use:"the point (before snapping)",to:["geocode"],note:"TIGER address-range interpolation nudged to one side: 5201 Portage Rd landed 20 ft from the wrong street (measured)."},
-      {n:"addressComponents (streetName, preDirection, suffixType, suffixDirection, city, state, zip, fromAddress, toAddress)",use:"snap to the named street (streetMatchScore ≥ 2)",to:["geocode"],note:"Reliable because Census parsed it — but only when a house number is present."},
-      {n:"matchedAddress",use:"site name in exports",to:["geocode"],note:""},
-      {n:"tigerLine.tigerLineId / side",use:"",to:[],status:"unused",note:"Not queryable on TIGERweb, so it cannot fetch the edge directly."},
-    ],
-    short:["Refuses road-only input (no house number).","Ambiguous when city/state are missing; matches >200 ft apart are surfaced as ambiguous.","JSONP sandbox is the only CORS workaround; a harness needs --disable-features=IsolateSandboxedIframes."] },
-  { id:"mi_nfc", providerId:"mdot", name:"MDOT NFC layer 353 (+ route names 543)", binding:"live", cadence:"continuous", group:"Verdicts",
-    endpoint:"https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-    description:"Michigan functional class (bare FHWA 0–7) with the PR LRS key; trunkline route names on 543.",
-    fields:[{n:"FunctionalSystem",use:"class",to:["classify_live","find_search","pdf_report"],note:"Filter RHRetireDate IS NULL or retired segments leak in."},{n:"PR",use:"State route chip (live path)",to:["classify_live"],note:""},{n:"RouteDesignation / RouteNumber (543)",use:"trunkline names",to:["classify_live"],note:"Blank for every local street."}],
-    short:["Requires a browser User-Agent (403 otherwise).","No county, no owner, no local street names."] },
-  { id:"in_nfc", providerId:"indot", name:"INDOT LRSE_Functional_Class 22 (+ centerlines 15)", binding:"live", cadence:"continuous", group:"Verdicts",
-    endpoint:"https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
-    description:"Indiana class (bare FHWA 1–7) on the authoritative RO service; street names from the gisdata centerlines layer (st_full).",
-    fields:[{n:"FUNCTIONAL_CLASS",use:"class",to:["classify_live","find_search","pdf_report"],note:"where=1=1 — a RECORD_STATUS filter silently dropped 16,830 null-status segments."},{n:"st_full (centerlines)",use:"street name",to:["classify_live"],note:"ALL CAPS; collapsed with TIGER title-case by NormalizeRoadKey."},{n:"county_l / county_r / incmuni_l / incmuni_r",use:"county + municipality on the road",to:[],status:"unused",note:"The only state whose road records carry municipality names."}],
-    short:["Intermittent 500s / empty responses (2026-07-15).","Genuinely unclassified roads return zero segments → \"Review - road not classified\"."] },
-  { id:"wi_nfc", providerId:"wisdot", name:"WisDOT local (Functional_Class_Local_Non_Prod 1) + state trunk (FFCL_gdb 3)", binding:"live", cadence:"snapshot service", group:"Verdicts",
-    endpoint:"https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
-    description:"Local first (urban/rural encoded in FNCT_CLS_CTGY_TYCD), trunk as fallback (bare FED_FC_CD). Stubs on the local layer trigger the trunk query.",
-    fields:[{n:"FNCT_CLS_CTGY_TYCD",use:"class (decoded to bare FHWA)",to:["classify_live","find_search","pdf_report"],note:"96 = Urban Collector Other; mapped to Major Collector, which never changes an urban verdict."},{n:"ST_LABL_NM",use:"local street name",to:["classify_live"],note:""},{n:"FED_FC_CD / HWYTYPE / HWYNUM / HWYDIR (trunk)",use:"class + highway name",to:["classify_live"],note:"Renderer keys off FC_CD, not FED_FC_CD."},{n:"FEDUA_TYCD / URB_TYPE / NHS_CLS_TYCD / DOT_CNTY_CD",use:"",to:[],status:"unused",note:"Urban/rural deliberately ignored (ACUB policy). DOT_CNTY_CD is a code, not a name."}],
-    short:["The local service was moved and token-locked once already; both URLs are runtime-overridable."] },
-  { id:"mn_nfc", providerId:"mndot", name:"MnDOT Functional Class (mndot_commonlayers2 11)", binding:"live", cadence:"continuous", group:"Verdicts",
-    endpoint:"https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
-    description:"Minnesota class, bare FHWA 1–7. Seven fields total.",
-    fields:[{n:"FUNCTIONAL_CLASS / FUNCTIONAL_CLASS_DESC",use:"class (renderer keys off the DESC string)",to:["classify_live","find_search","pdf_report"],note:""},{n:"ROUTE_ID",use:"",to:[],status:"unused",note:"LRS key only."}],
-    short:["No street names, no county. TIGER backfills every name."] },
-  { id:"il_nfc", providerId:"idot", name:"IDOT Functional Class (AdministrativeData/FunctionalClass 0)", binding:"live", cadence:"continuous", group:"Verdicts",
-    endpoint:"https://gis1.dot.illinois.gov/arcgis/rest/services/AdministrativeData/FunctionalClass/MapServer/0",
-    description:"Illinois class as a STRING '1'–'7'.",
-    fields:[{n:"FC",use:"class (string)",to:["classify_live","find_search","pdf_report"],note:"Read with isStringClass."},{n:"LABEL_1 / KEY_RT_*",use:"",to:[],status:"unused",note:"Route-system inventory codes (\"FAU 1422\"), not names."}],
-    short:["No street names, no county."] },
-  { id:"oh_nfc", providerId:"odot", name:"ODOT TIMS Functional_Class 0", binding:"live", cadence:"continuous", group:"Verdicts",
-    endpoint:"https://tims.dot.state.oh.us/ags/rest/services/Roadway_Information/Functional_Class/MapServer/0",
-    description:"Ohio class, bare FHWA 1–7, with numbered-route names on the same layer.",
-    fields:[{n:"FUNCTION_CLASS_CD",use:"class",to:["classify_live","find_search","pdf_report"],note:""},{n:"ROUTE_TYPE / ROUTE_NBR",use:"US / SR / IR names",to:["classify_live"],note:"County/township/municipal codes (\"MR 00923\") are cryptic and skipped."},{n:"COUNTY_CD / JURISDICTION_CD",use:"",to:[],status:"unused",note:"3-letter county code; jurisdiction is a maintenance flag, not a place."}],
-    short:[] },
-  { id:"esri_imagery", providerId:"esri", name:"Esri World Imagery + World Street Map", binding:"live", cadence:"continuous", group:"Map display",
-    endpoint:"https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer",
-    description:"Satellite basemap (fetched only when switched to), the PDF report's basemap tiles (CORS anonymous), the fallback street basemap when basemap.pmtiles is missing, and the Excel Map Pages aerials via /export.",
-    fields:[{n:"tiles / export image",use:"satellite view, PDF figures, Map Pages aerials",to:["render_map","pdf_report","xl_mapfetch"],note:"Reachability from a hardened FEMA laptop untested."}],
-    short:["Attribution required on every printed page."] },
-  { id:"openfreemap", providerId:"osm", name:"OpenFreeMap vector tiles", binding:"live", cadence:"continuous", group:"Map display",
-    endpoint:"https://tiles.openfreemap.org/planet",
-    description:"Keyless OSM street-level detail (buildings, parks, water, road ribbons, names, house numbers) fetched only at z13+. Best-effort: down or blocked simply means no detail.",
-    fields:[{n:"transportation / building / landuse / water / housenumber layers",use:"street-level detail pane (z250)",to:["render_map"],note:"POIs deliberately not drawn."}],
-    short:["Third-party public service with no SLA."] },
-  { id:"protomaps_build", providerId:"osm", name:"Protomaps daily build (v4 schema)", binding:"snapshot", cadence:"daily builds; extracted occasionally", group:"Map display",
-    endpoint:"https://maps.protomaps.com/builds/",
-    description:"Source of the offline road basemap: a six-state z0–11 extract, filtered to earth / water / roads / boundaries / places.",
-    fields:[{n:"earth / water / roads / boundaries / places (kind, kind_detail)",use:"atlas basemap",to:["build_basemap"],note:"boundaries carry admin levels as kind_detail; the renderer draws every level present at 0.5 px, unlabelled — which levels the extract kept is unverified."}],
-    short:["pmtiles extract does not checksum — one pull shipped ~2,700 corrupt tiles; the filter script gunzip-verifies every tile.","Rectangular extract, not the state shape; the mask hides the rest."] },
-  { id:"fema_firmette", providerId:"fema", name:"FEMA MSC PrintFIRMette GP service", binding:"live", cadence:"n/a", group:"Exports",
-    endpoint:"https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette",
-    description:"submitJob → poll → OutputFile per site. Web: batch ZIP. Excel: per-site PDFs.",
-    fields:[{n:"jobId / jobStatus / OutputFile.url",use:"one PDF per site",to:["firmette_zip","xl_firmette"],note:"Slow per site; per-row Failed + re-run is the recovery."}],
-    short:[] },
-  { id:"state_apps", providerId:"fema", name:"Official map apps (state DOT Experience apps, FEMA Map Viewer)", binding:"live", cadence:"n/a", group:"Reference",
-    endpoint:"https://fema.maps.arcgis.com/apps/mapviewer/index.html",
-    description:"Link targets only: each state's official app at its canonical root, the FEMA Map Viewer with a pin, Google / Bing / Street View.",
-    fields:[{n:"root URL / find= marker= level= params",use:"per-row reference links",to:["links"],note:"Experience Builder coordinate deep-links MIS-NAVIGATE (PR #17/#18) — root URLs only. url= side-load rendering is still unverified in a browser."}],
-    short:[] },
-  { id:"user_paste", providerId:"user", name:"Pasted lines (coordinates, DMS, addresses, road + place)", binding:"live", cadence:"n/a", group:"Verdicts",
-    description:"The coordinates box. A line is sorted locally into coordinate / address / road / unknown before anything is sent.",
-    fields:[{n:"lat, lon (decimal or DMS) + optional name",use:"points to classify",to:["parse_lines"],note:"Typed coordinates are authoritative; never rewritten."},{n:"house number + street + place",use:"address line → Geocode button",to:["parse_lines"],note:"\"12 Mile Rd\" reads as house 12 on Mile Rd; \"12th St\" is unreadable; \"N 550 W\" is unreadable (measured on the shipped parser)."},{n:"street, place",use:"road line → whole-road verdict",to:["parse_lines"],note:"A road with no place is refused by design; intersections (\"Q Ave and 12th St\") parse as one street; \"CTH K\", \"TR 123\", \"Broadway\" are unreadable."}],
-    short:["Free text is where most user-experience risk lives; the planned street search sidesteps it."] },
-  { id:"user_collect", providerId:"user", name:"Search & Collect form (site name, GPS, note)", binding:"live", cadence:"n/a", group:"Search & Collect",
-    description:"Points added one at a time in the left pane, persisted in this browser only.",
-    fields:[{n:"name / lat / lon / note",use:"joins currentPoints; note travels to exports",to:["collect"],note:"Lives in localStorage — never leaves the browser, never reaches Claude or a server, gone if site data is cleared."}],
-    short:[] },
-  { id:"user_county", providerId:"user", name:"State + County selection (street search)", binding:"live", cadence:"n/a", group:"Street search", status:"planned",
-    description:"Required scope for the planned street box: state, then one of that state's counties (from the baked 524-row table), pre-filled from the county the pasted points fall in.",
-    fields:[{n:"state, county GEOID",use:"scopes the TIGER street query and labels the county column",to:["street_search"],status:"planned",note:"County is the only place unit present on both road records and PA declarations; township/city are spatial relationships, not road attributes."}],
-    short:["A street that crosses the county line is cut at the polygon — the result must say so."] },
-  { id:"user_overrides", providerId:"user", name:"Data service URL overrides", binding:"live", cadence:"n/a", group:"Reference",
-    description:"Pasted replacement layer URLs (the \"lego swapout\"), same key names as the Excel Sources sheet and the notebook.",
-    fields:[{n:"MI_NFC, IN_NFC, WI_LOCAL_ROADS, WI_STATE_TRUNK, MN_NFC, IL_NFC, OH_NFC, ACUB, TIGER_ROADS…",use:"svc(key) lookups in rr-core",to:["classify_live"],note:"Covers the query endpoints only, not deep-link templates or the FIRMette GP."}],
-    short:[] },
-],
-transforms: [
-  { id:"fetch_hpms", label:"HPMS harvest + tippecanoe", name:"build/tiles/fetch-hpms-state.mjs + build-state-tiles.sh", runtime:"offline", schedule:"manual (annual HPMS refresh)", group:"Verdicts",
-    method:"Quadtree envelope harvest of one state (≤1° seed cells, 'Unable to perform query' = split, dedupe by OBJECTID), then tippecanoe -Z6 -z13 with class bands baked by a $zoom feature filter.",
-    reads:["hpms"], writes:["state_tiles"],
-    description:"Builds the per-state class tilesets. Only F, R, B, E, N, RN reach the tiles today.",
-    short:["Hours per six-state run; the harvest is the expensive step — take every wanted field in one pass.","--drop-densest-as-needed thins dense cores, so a downtown block can be missing from a whole-road read.","Per-feature tippecanoe minzoom keys silently rate-drop lines; only the $zoom filter works."] },
-  { id:"reharvest", label:"HPMS re-harvest: owner / county (at risk)", name:"HPMS re-harvest with COUNTY_ID / OWNERSHIP / MAINTENANCE_OPERATIONS / URBAN_ID", runtime:"offline", schedule:"manual", group:"Street search", status:"risk",
-    method:"Add the fields to outFields + the props block; rebuild MI first and measure mi.pmtiles against 41 MB before committing the other five.",
-    reads:["hpms"], writes:["state_tiles","domain_tables"],
-    description:"The only path to owner / maintainer on a road. Gated on the Michigan size trial.",
-    short:["GitHub's 100 MB per-file limit: WI is 70 MB today. Three to four small ints per segment are estimated at <10 % growth (the string linkage attrs tripled the files), but measure first.","Recourse if a state crosses the line: split the state into two PMTiles (the page already loads one file per state), drop/round the mileposts, or coarser z13 generalization. Git LFS is NOT served by GitHub Pages.","Not needed for county: the county polygon file gives county-of-point without touching the road tiles."] },
-  { id:"build_acub", label:"ACUB harvest + tippecanoe", name:"build/tiles/fetch-acub.mjs + build-acub.sh", runtime:"offline", schedule:"manual", group:"Verdicts",
-    method:"returnIdsOnly per state envelope, then geometry in small objectId batches with ~3 m maxAllowableOffset; tippecanoe -Z0 -z12.",
-    reads:["ntad_acub"], writes:["acub_tiles"], description:"549 Region V urban polygons for offline urban/rural.", short:[] },
-  { id:"build_basemap", label:"Basemap extract + layer filter", name:"build/tiles/build-basemap.sh + filter-basemap-layers.py", runtime:"offline", schedule:"manual", group:"Map display",
-    method:"pmtiles extract (six rectangles, z0–11) then a wire-level layer filter that gunzip-verifies every tile.",
-    reads:["protomaps_build"], writes:["basemap_tiles"], description:"The 50 MB offline atlas basemap.", short:["tippecanoe tile-join cannot read some Protomaps tiles — hence the python filter."] },
-  { id:"build_mask", label:"Region mask export", name:"r5-states.geojson export (TIGERweb generalized)", runtime:"offline", schedule:"manual", group:"Map display",
-    method:"Generalized six-state outlines, assembled as a world ring with state holes.", reads:["tiger_states"], writes:["r5_mask"], description:"Region mask + state borders.", short:[] },
-  { id:"bake_counties", label:"County table + polygons (planned)", name:"County name table + county polygon file (planned)", runtime:"offline", schedule:"manual", group:"Street search", status:"planned",
-    method:"State_County/1 filtered to the six states → {GEOID: NAME} (13 KB) and a generalized polygon PMTiles built like acub.pmtiles.",
-    reads:["tiger_counties"], writes:["county_table","county_tiles"],
-    description:"Gives every site a County (point-in-polygon, offline), the county pick list, and the polygon that scopes the street search — with zero growth to the road tiles.", short:["Independent cities do not exist in Region V, so county polygons partition the region cleanly."] },
-  { id:"parse_lines", label:"Line parser (classifyInputLine)", name:"classifyInputLine / DMS parser (rr-core)", runtime:"browser", schedule:"on every edit", group:"Verdicts",
-    method:"Leading digits = house number → address; text before the first comma = street (must end in a known suffix or match ROUTE_RE); trailing 2-letter state and 5-digit ZIP peeled; remainder = place. Sends nothing.",
-    reads:["user_paste"], writes:["resolved_lines"], feeds:["rows"],
-    description:"Sorts each pasted line into coordinate / address / road / unknown.",
-    short:["Fails on Michigan mile roads, ordinal streets, Indiana grid roads, lettered county highways, TR-prefixed township roads, intersections, suffix-less names, multi-part places (measured on 41 lines, 2026-09-16).","Serviceable as a first-cut sorter; not a foundation for more free-text parsing."] },
-  { id:"resolve_road", label:"Road-line resolver (TIGER)", name:"tigerPlaceExtent + tigerRoadByName (rr-core)", runtime:"browser", schedule:"automatic per road line", group:"Verdicts",
-    method:"Place → county / township / city / CDP by exact BASENAME (count, then extent); road edges by street components inside that extent; classify up to 12 edge midpoints (longest first); one bucket → verdict, else 'Review - Mixed classes on road'.",
-    reads:["tiger_counties","tiger_cousubs","tiger_places","tiger_roads"], writes:["resolved_lines"], feeds:["road_rows"],
-    description:"Shipped in PR #44: a road plus a place is classified as a whole road.",
-    short:["With a state typed, n>1 same-named subdivisions are unioned instead of flagged ambiguous (Portage MI → most of Michigan).","Envelope, not polygon: a county-name search leaks into neighbouring counties and (for the region box) into Iowa / Missouri / Kentucky.","12 midpoints, not length-weighted."] },
-  { id:"geocode", label:"Geocoder + street snap", name:"geocodeSandboxed + snapToStreet (rr-core)", runtime:"browser", schedule:"Geocode button only", group:"Addresses",
-    method:"JSONP from a sandboxed iframe (allow-scripts only, fixed host, per-request id, 20 s timeout), reply reduced to whitelisted finite fields; parsed street components matched to TIGER roads within 120 m and the point snapped onto the matching edge; classification at the snap and ±150 ft along it.",
-    reads:["census_geocoder","tiger_roads"], writes:["resolved_lines"], feeds:["geocode_ui"],
-    description:"Address lines become snapped points on the named street.",
-    short:["No matching street → raw point with 'Review - Street not matched'.","Three at a time; results live in memory only."] },
-  { id:"classify_tiles", label:"Cached classifier (tiles)", name:"classifyPointTiles + computeVerdict (cached path)", runtime:"browser", schedule:"automatic per point", group:"Verdicts",
-    method:"Read the z13 HPMS tile(s) around the point via PmtilesSource, convert to lon/lat, true point-to-segment distances; urban/rural from acub.pmtiles point-in-polygon + 76 m edge rule; closest road drives the verdict, 'Nearby FHWA road' yellow rule; TIGER name backfill live, non-fatal.",
-    reads:["state_tiles","acub_tiles","tiger_roads","resolved_lines"], writes:["site_results"],
-    description:"The default verdict path: zero live class or ACUB queries.",
-    short:["One HPMS year behind the DOT layers (reclassifications move the federal-aid line).","Falls back to the live path on file://, missing tiles, read errors, out-of-region points."] },
-  { id:"classify_live", label:"Live classifier (DOT + NTAD)", name:"rr-core live path (NFC_WIRED per state + NTAD)", runtime:"browser", schedule:"'Live verdicts' checkbox or fallback", group:"Verdicts",
-    method:"Point intersect then buffer against the state's own layer(s) (WI local-first with stub trigger), NTAD point-in-polygon, same computeVerdict.",
-    reads:["mi_nfc","in_nfc","wi_nfc","mn_nfc","il_nfc","oh_nfc","ntad_acub","tiger_roads","user_overrides","resolved_lines"], writes:["site_results"],
-    description:"The authoritative-but-slow path, identical rule to the tiles.",
-    short:["State server flakiness (INDOT 500s, MDOT UA, WisDOT relocations) — per-row Failed + re-run is the recovery."] },
-  { id:"collect", label:"Search & Collect add-a-point", name:"Search & Collect add-a-point", runtime:"browser", schedule:"on submit", group:"Search & Collect",
-    method:"Concats collected points onto currentPoints (rebuildPoints) and persists them.",
-    reads:["user_collect"], writes:["rr_collected"], feeds:["rows"], description:"", short:[] },
-  { id:"find_search", label:"Find box search", name:"Find box (TIGERweb states / counties / townships / roads-in-view)", runtime:"browser", schedule:"as you type (300 ms)", group:"Search & Collect",
-    method:"Boundary match → zoom + dashed outline; road names only within the visible map (z≥11); each road suggestion annotated with the state's live class at the longest segment's midpoint.",
-    reads:["tiger_states","tiger_counties","tiger_cousubs","tiger_roads","tiger_aiannha","mi_nfc","in_nfc","wi_nfc","mn_nfc","il_nfc","oh_nfc"], feeds:["find_ui"],
-    description:"Today's search. Moving it onto the map (top-right, beside the pin tool) is a layout change, not new capability; adding places and reservations is one URL each.",
-    short:["Does not search incorporated places or tribal areas yet.","Road search is view-limited, so a road name with no idea where it is still needs a county first."] },
-  { id:"street_search", label:"County-scoped street search (planned)", name:"County-scoped street search (planned)", runtime:"browser", schedule:"as you type (300 ms)", group:"Street search", status:"planned",
-    method:"State + county required. Prefix search on TIGER roads inside the county polygon (0.3 s measured); same-name clusters labelled by township via one county-subdivision spatial join, ordered by distance from the current sites; pick → fetch edges, zoom, draw; classify along the edges from the tiles; sum length per verdict bucket; 'Add to sites'.",
-    reads:["user_county","tiger_roads","tiger_cousubs","county_tiles","county_table","state_tiles","acub_tiles"], writes:["site_results"], feeds:["street_ui","road_summary_ui"],
-    description:"The user's proposal: a street-only box on the map, right side. Sidesteps the free-text parser entirely; the inspector picks from real names.",
-    short:["Suggestion lists in metro counties need a cap and useful township labels (Cook has 35 places with a Main St).","Whole-road coverage inherits tile thinning in dense cores.","Owner / maintainer chips depend on the re-harvest; everything else works with today's tiles."] },
-  { id:"hpms_live_search", label:"Live HPMS search (rejected)", name:"Live HPMS street search (rejected)", runtime:"browser", schedule:"—", group:"Street search", status:"rejected",
-    method:"County bbox + STATE_ID + COUNTY_ID + RouteName LIKE against the 30 M-row national table.",
-    reads:["hpms"], feeds:["street_ui"],
-    description:"Rejected 2026-09-16 on measurement: 9 s for a prefix search in Kalamazoo; 55 s then HTTP 400 in Wayne, Cook and Franklin; 15–45 s in mid-size counties; and RouteName is missing on a third to two-thirds of rural WI/MN segments.",
-    short:["Also the only source of OWNERSHIP live — which is why owner must be baked instead."] },
-  { id:"default_area", label:"Default-area text box (rejected)", name:"Free-text 'Default area' box (superseded)", runtime:"browser", schedule:"—", group:"Street search", status:"rejected",
-    method:"A typed area applied to every road line without a place (docs/NEXT-road-name-lookup.md §4.1).",
-    reads:["user_paste"], feeds:["road_rows"],
-    description:"Superseded by the state + county selects: free text re-enters the parsing problem the street search is meant to remove.",
-    short:[] },
-  { id:"render_map", label:"Map renderer", name:"Map renderer (Leaflet + protomaps-leaflet 5.1.0)", runtime:"browser", schedule:"on pan/zoom", group:"Map display",
-    method:"Panes: basemap 200 → OpenFreeMap detail 250 → state mask 300 → ACUB 340 → class 350 → site overlay/pins. Class lines held until z9, ACUB until z9, locals from z12; class layers for states outside the view are detached. Explicit maxDataZoom on every layer.",
-    reads:["basemap_tiles","state_tiles","acub_tiles","r5_mask","openfreemap","esri_imagery"], feeds:["map_basemap","map_class","map_acub","map_pins"],
-    description:"Everything the map paints.",
-    short:["protomaps-leaflet defaults maxDataZoom to 15 and never reads the PMTiles header — past the real maxzoom it renders blank.","A renderer/tile schema mismatch (v3 renderer on v4 tiles) once drew blank land and river slivers.","The 'Page Unresponsive' crash did not reproduce headless; canvas-count fix is the best candidate."] },
-  { id:"export_build", label:"CSV / GeoJSON / KMZ writers", name:"CSV / TSV / GeoJSON / KMZ writers (makeZip)", runtime:"browser", schedule:"on click", group:"Exports",
-    method:"Rows → text; KMZ = zipped KML with red / green / yellow pushpins by verdict (the Excel KML conventions); State Route ID + Milepost Range via closestStateSeg; Note column.",
-    reads:["site_results"], feeds:["exports"], description:"", short:["County and owner columns arrive with the planned work."] },
-  { id:"pdf_report", label:"PDF report builder", name:"jsPDF report builder", runtime:"browser", schedule:"on click", group:"Exports",
-    method:"Per-site figure: Esri basemap tiles (crossOrigin anonymous) + each state layer's published drawingInfo.renderer drawn client-side (INDOT single-symbol → FHWA palette, disclosed); compress:true.",
-    reads:["site_results","esri_imagery","mi_nfc","in_nfc","wi_nfc","mn_nfc","il_nfc","oh_nfc","ntad_acub"], feeds:["pdf"], description:"", short:["AGOL-hosted FeatureServers are Query-only — no /export or /legend, hence client-side symbology."] },
-  { id:"firmette_zip", label:"FIRMette batch", name:"FIRMette batch (submitJob → poll → OutputFile)", runtime:"browser", schedule:"on click", group:"Exports",
-    reads:["fema_firmette","site_results"], feeds:["firmette"], method:"One GP job per site, zipped in the browser.", description:"", short:[] },
-  { id:"links", label:"Reference links", name:"Per-row reference links", runtime:"browser", schedule:"per row", group:"Reference",
-    reads:["state_apps","site_results"], feeds:["link_ui"], method:"FEMA Map Viewer pin (find/marker/level), official state app root, Google / Bing / Street View / Google Earth.", description:"", short:[] },
-  { id:"xl_classify", label:"Excel Check Roads", name:"Excel modClassify (Check Roads)", runtime:"Excel VBA", schedule:"button", group:"Excel",
-    method:"Per row: Census geocode if address-only, state NFC + NTAD ACUB + route name, computeVerdict; Re-run Failed Rows retries 'Failed - ' rows.",
-    reads:["mi_nfc","in_nfc","wi_nfc","mn_nfc","il_nfc","oh_nfc","ntad_acub","census_geocoder","tiger_roads"], feeds:["xl_sites"],
-    description:"The same rule, in the two workbooks. Kept in sync with rr-core by hand.", short:["No offline path: every row is a live query.","No county, owner, or street search."] },
-  { id:"xl_firmette", label:"Excel FIRMettes", name:"Excel modMaps (Download FIRMettes)", runtime:"Excel VBA", schedule:"button", group:"Excel", reads:["fema_firmette"], feeds:["xl_maps"], method:"", description:"", short:[] },
-  { id:"xl_mapfetch", label:"Excel Map Pages PDF", name:"Excel modMapFetch + modPdf (Map Pages PDF)", runtime:"Excel VBA", schedule:"button", group:"Excel", reads:["esri_imagery"], feeds:["xl_maps"], method:"World Imagery /export per page, direct PDF writer (JPEG pages + vector stamp / pin / attribution).", description:"", short:["Excel's print renderer stretches pages ~7 % on real machines — the direct writer exists because of it."] },
-],
-artifacts: [
-  { id:"state_tiles", name:"web/tiles/{mi,in,wi,mn,il,oh}.pmtiles", group:"Verdicts", producedBy:["fetch_hpms","reharvest"],
-    description:"Six per-state HPMS class tilesets, z6–13, ≈317 MB total. Keys: F class · R route id · B/E mileposts · N name · RN route number.",
-    size:"MI 41 · IN 50 · IL 46 · MN 53 · OH 57 · WI 70 MB",
-    short:["WI is 70 MB against GitHub's 100 MB per-file limit.","Reading a whole county's z13 tiles at once is too many bytes for a search index — which is why TIGER supplies the street list."] },
-  { id:"acub_tiles", name:"web/tiles/acub.pmtiles", group:"Verdicts", producedBy:["build_acub"], size:"3 MB", description:"549 Region V urban polygons, z0–12.", short:[] },
-  { id:"basemap_tiles", name:"web/tiles/basemap.pmtiles", group:"Map display", producedBy:["build_basemap"], size:"50 MB", description:"Six-state Protomaps extract, z0–11, five layers.", short:["z11 lakes overzoom blocky; water is redrawn from OpenFreeMap at z13+."] },
-  { id:"r5_mask", name:"web/data/r5-states.geojson", group:"Map display", producedBy:["build_mask"], size:"58 KB", description:"World ring with six state holes.", short:[] },
-  { id:"county_table", name:"county FIPS → name table (planned)", group:"Street search", status:"planned", producedBy:["bake_counties"], size:"~13 KB", description:"524 rows; the county pick list and the County column's label.", short:[] },
-  { id:"county_tiles", name:"web/tiles/counties.pmtiles (planned)", group:"Street search", status:"planned", producedBy:["bake_counties"], size:"est. 1–3 MB", description:"Generalized county polygons: county-of-point offline and the street-search spatial filter.", short:[] },
-  { id:"domain_tables", name:"OWNERSHIP / MAINTENANCE_OPERATIONS / URBAN_ID name tables (planned)", group:"Street search", status:"planned", producedBy:["reharvest"], size:"27 + 27 + 514 rows", description:"Read once from the HPMS layer metadata.", short:[] },
-  { id:"resolved_lines", name:"geocodeStore / roadStore (in memory)", group:"Verdicts", producedBy:["parse_lines","resolve_road","geocode"], size:"—", description:"Resolved address and road lines keyed by normalized line text. Editing a line makes it unresolved again.", short:["Nothing survives a reload without another click."] },
-  { id:"site_results", name:"currentPoints + verdicts (in memory)", group:"Verdicts", producedBy:["classify_tiles","classify_live","street_search"], size:"—", description:"Every site with its verdict, class list, ACUB, closest state segment, TIGER name, notes, and (planned) county / owner.", short:[] },
-  { id:"rr_collected", name:"localStorage rr_collected", group:"Search & Collect", producedBy:["collect"], size:"—", description:"Collected points, this browser only.", short:["Cleared with site data; never shared."] },
-],
-surfaces: [
-  { id:"rows", name:"Result rows + detail (verdict, class, ACUB, route chip, cached chip)", location:"index.html left pane", group:"Verdicts", reads:["site_results"], description:"Compact rows; click = select + expand; the pop-out table shows every site's full detail.", short:["County and owner are not on the row yet."] },
-  { id:"road_rows", name:"Whole-road rows (road lines)", location:"index.html left pane", group:"Verdicts", reads:["site_results","resolved_lines"], description:"'whole road · place' rows with a class-by-length chip when mixed.", short:["Scope is the typed place's extent; the shipped ambiguity gap applies."] },
-  { id:"geocode_ui", name:"Geocode N addresses button + highlighted lines", location:"index.html coordinates box", group:"Addresses", reads:["resolved_lines"], description:"Shown only while unresolved address lines exist; the mirror div highlights them in the box.", short:[] },
-  { id:"map_basemap", name:"Atlas basemap + street detail + satellite", location:"index.html map", group:"Map display", reads:["basemap_tiles","r5_mask","openfreemap","esri_imagery"], description:"Ivory paper basemap through ATLAS_FLAVOR paint rules; OpenFreeMap ribbons z13+; live Esri satellite on demand.", short:[] },
-  { id:"map_class", name:"Class overlay (HPMS bands, z9+)", location:"index.html map", group:"Map display", reads:["state_tiles"], description:"Interstates z6 → locals z12 baked bands; width scales with zoom, opacity 0.95.", short:["Streets absent from HPMS (private drives, some subdivision streets) simply do not draw."] },
-  { id:"map_acub", name:"Urban boundary overlay (z9+)", location:"index.html map", group:"Map display", reads:["acub_tiles"], description:"", short:[] },
-  { id:"map_pins", name:"Verdict pins + site review stepping", location:"index.html map", group:"Verdicts", reads:["site_results"], description:"Red / green / yellow pins with a white ring; Prev/Next zooms each site over the source layers.", short:[] },
-  { id:"find_ui", name:"Find box results (state / county / township / road)", location:"index.html Search & Collect tab", group:"Search & Collect", reads:["rr_collected"], description:"Suggestions as you type, dashed outline for a boundary hit, class swatch on road hits, row filter 'in map view'.", short:["Lives in the left pane today; the proposal moves it onto the map beside the pin tool."] },
-  { id:"street_ui", name:"Street search box (planned, on the map, right)", location:"index.html map (top-right)", group:"Street search", status:"planned", reads:["county_table","county_tiles"], description:"State → county → street prefix list with township labels; pick zooms to the street.", short:[] },
-  { id:"road_summary_ui", name:"Street result panel: class breakdown + 'x mi federal aid / y mi non-federal aid' (planned)", location:"index.html map panel", group:"Street search", status:"planned", reads:["site_results","domain_tables"], description:"Segments drawn by bucket, length per bucket, class list, county, owner / maintainer chip (after the re-harvest), 'Add to sites'.", short:["Tells the inspector about the road, not the work order."] },
-  { id:"link_ui", name:"Per-row reference links", location:"index.html row detail", group:"Reference", reads:["state_apps","site_results"], description:"", short:[] },
-  { id:"exports", name:"CSV / TSV / GeoJSON / KMZ downloads", location:"index.html exports panel", group:"Exports", reads:["site_results"], description:"All sites, notes, State Route ID + Milepost Range.", short:["County / owner columns pending."] },
-  { id:"pdf", name:"PDF report", location:"index.html exports panel", group:"Exports", reads:["site_results"], description:"One figure per site in the source's published symbology.", short:[] },
-  { id:"firmette", name:"FIRMettes (ZIP)", location:"index.html exports panel", group:"Exports", reads:["site_results"], description:"", short:[] },
-  { id:"svc_panel", name:"Data service URLs panel + 'Live verdicts' toggle", location:"index.html transparency panel", group:"Reference", reads:["user_overrides"], description:"Same key vocabulary as Excel and the notebook.", short:[] },
-  { id:"sources_page", name:"sources.html citations", location:"sources.html", group:"Reference", reads:["user_overrides"], description:"Per-state citations, exact layer names, fields read, schema quirks.", short:["Hand-kept; must be updated with any new source on this page."] },
-  { id:"xl_sites", name:"Excel Sites table (RoadReviewer.xlsm / Site Inspector Review Tool.xlsm)", location:"Sites sheet", group:"Excel", reads:["user_overrides"], description:"Federal Aid Status, Review Reason, FHWA Class, Urban/Rural, ACUB Name, Road Name, Street Name + photo / NFC links; CSV, KML, GeoJSON exports.", short:["No County column, no owner, no street search — the web tool leads here."] },
-  { id:"xl_maps", name:"Excel FIRMettes + Map Pages PDF", location:"Map Pages sheet", group:"Excel", reads:[], description:"Per-site FIRMette PDFs and the one-click combined Location Map PDF with the WO / DI / Disaster / Applicant stamp.", short:[] },
-],
-};
-
-/* --------------------------------------------------------------------------- */
-const KINDS=[
-  {k:"provider",label:"Provider",arr:"providers"},
-  {k:"source",label:"Source",arr:"sources"},
-  {k:"transform",label:"Transform",arr:"transforms"},
-  {k:"artifact",label:"Artifact",arr:"artifacts"},
-  {k:"surface",label:"Surface",arr:"surfaces"},
-];
-const KCOLOR={provider:"#5a6b8c",source:"#005ea2",transform:"#7b4ea0",artifact:"#1a7a3a",surface:"#c05600"};
-const GROUPS=[
-  ["Verdicts","#005ea2"],["Street search","#2491ff"],["Addresses","#8168b3"],["Search & Collect","#2e8540"],
-  ["Map display","#5a8f3a"],["Exports","#c05600"],["Reference","#e5a000"],["Excel","#5a6b8c"],
-];
-const GCOLOR={};GROUPS.forEach(([g,c])=>GCOLOR[g]=c);
-const SCOLOR={shipped:"#00a91c",planned:"#2491ff",risk:"#ffbe2e",rejected:"#e41d3d"};
-const RANK={shipped:0,risk:1,planned:2,rejected:3};
-
-let NODEH=30,VGAP=40,TOP=64,LEFT=24,COLW=270,NODEW=196;
-function sizeConsts(){const w=window.innerWidth;if(w<760){COLW=182;NODEW=152;}else{COLW=270;NODEW=196;}}
-
-let nodes=[],byKey={},dataById={},provById={},edges=[],outAdj={},inAdj={};
-let selected=null,isolateKey=null,activeGroups=new Set(GROUPS.map(g=>g[0]));
-
-function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function basename(p){const s=String(p||"");const i=s.lastIndexOf("/");return i<0?s:s.slice(i+1);}
-function cssid(key){return "n_"+key.replace(/[^a-zA-Z0-9]/g,"_");}
-function groupOf(n){return n.kind==="provider"?"Provider":(n.d.group||"Verdicts");}
-function ownStatus(n){return n.d.status||"shipped";}
-// A surface or artifact inherits the worst status of what it directly reads / is built by,
-// unless it declares its own. Sources and providers are what they are.
-function nodeStatus(n){
-  if(n.d.status)return n.d.status;
-  if(n.kind==="artifact"){let w="shipped";(n.d.producedBy||[]).forEach(t=>{const k=byKey["transform:"+t];if(k&&RANK[ownStatus(k)]>RANK[w]&&ownStatus(k)!=="rejected")w=ownStatus(k);});
-    // an artifact that a shipped transform already builds is shipped even if a risky one also targets it
-    if((n.d.producedBy||[]).some(t=>{const k=byKey["transform:"+t];return k&&ownStatus(k)==="shipped";}))return "shipped";return w;}
-  if(n.kind==="surface"){let w="shipped";(n.d.reads||[]).forEach(r=>{const k=byKey[dataById[r]];if(k&&RANK[nodeStatus(k)]>RANK[w])w=nodeStatus(k);});return w;}
-  return "shipped";
-}
-
-function build(man){
-  nodes=[];byKey={};dataById={};provById={};edges=[];outAdj={};inAdj={};
-  KINDS.forEach((kd,col)=>{(man[kd.arr]||[]).forEach(d=>{
-    const key=kd.k+":"+d.id;
-    const n={key,kind:kd.k,col,id:d.id,d,label:d.label||d.name||d.id,x:0,y:0};
-    nodes.push(n);byKey[key]=n;
-    if(kd.k==="source"||kd.k==="artifact")dataById[d.id]=key;
-    if(kd.k==="provider")provById[d.id]=key;
-  });});
-  const add=(f,t,planned)=>{if(f&&t&&byKey[f]&&byKey[t]){edges.push({from:f,to:t,planned:!!planned});(outAdj[f]=outAdj[f]||[]).push(t);(inAdj[t]=inAdj[t]||[]).push(f);}};
-  const isPl=k=>{const n=byKey[k];return n&&ownStatus(n)!=="shipped";};
-  (man.sources||[]).forEach(s=>add(provById[s.providerId],"source:"+s.id,isPl("source:"+s.id)));
-  (man.transforms||[]).forEach(t=>{const tk="transform:"+t.id;
-    (t.reads||[]).forEach(r=>add(dataById[r],tk,isPl(tk)||isPl(dataById[r])));
-    (t.writes||[]).forEach(w=>add(tk,"artifact:"+w,isPl(tk)));
-    (t.feeds||[]).forEach(su=>add(tk,"surface:"+su,isPl(tk)));});
-  (man.surfaces||[]).forEach(su=>(su.reads||[]).forEach(r=>add(dataById[r],"surface:"+su.id,isPl("surface:"+su.id)||isPl(dataById[r]))));
-  buildFilters();buildTrace();
-}
-
-function cone(start,adj){const seen=new Set(),st=[start];while(st.length){const k=st.pop();(adj[k]||[]).forEach(nx=>{if(!seen.has(nx)){seen.add(nx);st.push(nx);}});}return seen;}
-function passGroup(n){return n.kind==="provider"||activeGroups.has(groupOf(n));}
-function computeVisible(){
-  const vis=new Set();let base;
-  if(isolateKey&&byKey[isolateKey]){const u=cone(isolateKey,inAdj),d=cone(isolateKey,outAdj);base=new Set([isolateKey,...u,...d]);}
-  nodes.forEach(n=>{if(passGroup(n)&&(!base||base.has(n.key)))vis.add(n.key);});
-  // providers with nothing visible below them drop out
-  nodes.forEach(n=>{if(n.kind==="provider"&&vis.has(n.key)&&!(outAdj[n.key]||[]).some(k=>vis.has(k)))vis.delete(n.key);});
-  return vis;
-}
-function relayout(vis){
-  const cols={};for(const n of nodes)if(vis.has(n.key))(cols[n.col]=cols[n.col]||[]).push(n);
-  const colKeys=Object.keys(cols).map(Number).sort((a,b)=>a-b);
-  for(const c of colKeys)cols[c].sort((a,b)=>(a.y||0)-(b.y||0)||a.label.localeCompare(b.label));
-  const order=new Map();const reindex=()=>{for(const c of colKeys)cols[c].forEach((n,i)=>order.set(n.key,i));};reindex();
-  const visEdges=edges.filter(e=>vis.has(e.from)&&vis.has(e.to));
-  const nbr=(key,adjCol)=>{const r=[];for(const e of visEdges){if(e.from===key&&byKey[e.to].col===adjCol)r.push(order.get(e.to));if(e.to===key&&byKey[e.from].col===adjCol)r.push(order.get(e.from));}return r;};
-  for(let pass=0;pass<6;pass++){
-    const dir=pass%2===0?1:-1;const seq=dir>0?colKeys:[...colKeys].reverse();
-    for(const c of seq){const adj=c-dir;const arr=cols[c];const bary=new Map();
-      arr.forEach(n=>{const ns=nbr(n.key,adj);bary.set(n.key,ns.length?ns.reduce((x,y)=>x+y,0)/ns.length:order.get(n.key));});
-      arr.sort((a,b)=>bary.get(a.key)-bary.get(b.key));reindex();}
-  }
-  let maxLen=0;for(const c of colKeys){cols[c].forEach((n,i)=>{n.x=LEFT+c*COLW;n.y=TOP+i*VGAP;});maxLen=Math.max(maxLen,cols[c].length);}
-  return {maxLen,vis,visEdges};
-}
-function render(){
-  sizeConsts();
-  const vis=computeVisible();
-  const {maxLen}=relayout(vis);
-  const W=LEFT*2+4*COLW+NODEW,H=Math.max(TOP+maxLen*VGAP+30,200);
-  const svg=document.getElementById("svg");
-  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);svg.setAttribute("width",W);svg.setAttribute("height",H);
-  let s="";
-  KINDS.forEach((kd,c)=>{s+=`<text class="colhead" x="${LEFT+c*COLW}" y="34">${kd.label}</text>`;});
-  edges.forEach((e,i)=>{if(!vis.has(e.from)||!vis.has(e.to))return;const a=byKey[e.from],b=byKey[e.to];
-    const x1=a.x+NODEW,y1=a.y+NODEH/2,x2=b.x,y2=b.y+NODEH/2,dx=Math.max(40,Math.abs(x2-x1)*0.4);
-    s+=`<path class="edge${e.planned?" planned":""}" id="e${i}" d="M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}"/>`;});
-  nodes.forEach(n=>{if(!vis.has(n.key))return;const st=nodeStatus(n),stripe=n.kind==="provider"?KCOLOR.provider:SCOLOR[st];
-    const lab=n.label.length>26?n.label.slice(0,25)+"…":n.label;
-    s+=`<g class="node ${st}" id="${cssid(n.key)}" data-key="${esc(n.key)}" transform="translate(${n.x},${n.y})">`
-      +`<title>${esc(n.label)} — ${st}</title>`
-      +`<rect class="box" width="${NODEW}" height="${NODEH}" fill="#fff" stroke="${KCOLOR[n.kind]}" stroke-width="1.4"/>`
-      +`<rect width="5" height="${NODEH}" fill="${stripe}"/>`
-      +`<text class="nm" x="12" y="${NODEH/2+4}">${esc(lab)}</text></g>`;});
-  svg.innerHTML=s;
-  nodes.forEach(n=>{if(!vis.has(n.key))return;const g=document.getElementById(cssid(n.key));g&&g.addEventListener("click",ev=>{ev.stopPropagation();selected=n.key;applyFocus(n.key,vis);showDetailKey(n.key);});});
-  document.getElementById("counts").textContent=`${vis.size} of ${nodes.length} nodes`+(isolateKey?" · isolated":"");
-  if(selected&&vis.has(selected))applyFocus(selected,vis);
-}
-function applyFocus(key,vis){
-  vis=vis||computeVisible();
-  const up=cone(key,inAdj),down=cone(key,outAdj),active=new Set([key,...up,...down]),sel=nodeStatus(byKey[key]);
-  nodes.forEach(n=>{if(!vis.has(n.key))return;const g=document.getElementById(cssid(n.key));if(!g)return;
-    g.classList.toggle("dim",!active.has(n.key));g.classList.toggle("sel",n.key===key);});
-  edges.forEach((e,i)=>{if(!vis.has(e.from)||!vis.has(e.to))return;const el=document.getElementById("e"+i);if(!el)return;
-    const hot=active.has(e.from)&&active.has(e.to);el.classList.toggle("dim",!hot);el.classList.toggle("hot",hot);
-    el.classList.toggle("rejected",hot&&sel==="rejected");});
-}
-function clearFocus(){nodes.forEach(n=>{const g=document.getElementById(cssid(n.key));g&&g.classList.remove("dim","sel");});
-  edges.forEach((e,i)=>{const el=document.getElementById("e"+i);el&&el.classList.remove("dim","hot","rejected");});}
-
-function chip(key,txt){return byKey[key]?`<span class="chip" data-key="${esc(key)}">${esc(txt)}</span>`:`<span class="chip" style="opacity:.5;cursor:default">${esc(txt)} ?</span>`;}
-function nameOf(key){const n=byKey[key];return n?(n.d.label||n.d.name||n.id):key;}
-function statusRow(n){const st=nodeStatus(n);return ["Status",`<span class="statusline ${st}">${st.toUpperCase()}</span>${n.d.status?"":(n.kind==="surface"||n.kind==="artifact")?' <span class="muted">(worst of inputs)</span>':""}`];}
-function shortRows(d){return (d.short||[]).length?[["Shortcomings",`<ul class="shortlist">${d.short.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`]]:[];}
-function rowsFor(n){
-  const d=n.d,R=[];
-  const link=(p,t)=>`<a href="${esc(p)}" ${/^https?:/.test(p)?'target="_blank" rel="noopener"':""}>${esc(t||p)}</a>`;
-  if(n.kind==="provider"){if((d.links||[]).length)R.push(["Links",d.links.map(l=>link(l)).join("<br>")]);
-    const kids=MAN.sources.filter(s=>s.providerId===d.id);R.push(["Datasets",`<div class="chips">${kids.map(s=>chip("source:"+s.id,s.name)).join("")}</div>`]);}
-  if(n.kind==="source"){R.push(statusRow(n));
-    if(d.providerId)R.push(["Provider",`<div class="chips">${chip("provider:"+d.providerId,nameOf("provider:"+d.providerId))}</div>`]);
-    if(d.binding)R.push(["Binding",`<b>${esc(d.binding)}</b> ${d.binding==="live"?"(fetched in-browser / in Excel)":d.binding==="hybrid"?"(baked snapshot + live path)":"(committed snapshot)"}`]);
-    if(d.cadence)R.push(["Cadence",esc(d.cadence)]);if(d.endpoint)R.push(["Endpoint",link(d.endpoint)]);
-    if((d.fields||[]).length){
-      const chips=d.fields.map((f,i)=>`<span class="chip colchip ${f.status||""}" data-i="${i}" data-src="${esc(n.key)}" title="${esc(f.use||"")}">${esc(f.n)}</span>`).join("");
-      const tbl=`<details><summary>Field table: what each one feeds, and its shortcoming</summary><table class="fieldtbl">${d.fields.map(f=>`<tr><td>${esc(f.n)}${f.status&&f.status!=="used"?`<br><span class="muted">${esc(f.status)}</span>`:""}</td><td>${esc(f.use||"")}</td><td class="short">${esc(f.note||"")}</td></tr>`).join("")}</table></details>`;
-      R.push(["Fields",`<div class="chips">${chips}</div><div id="fieldTrace" class="muted" style="margin-top:7px">Click a field to trace it downstream →.</div>${tbl}`]);}
-    R.push(...shortRows(d));}
-  if(n.kind==="transform"){R.push(statusRow(n));
-    R.push(["Runtime",`<b>${esc(d.runtime||"offline")}</b> ${d.runtime==="browser"?"(runs in the page)":d.runtime==="Excel VBA"?"(in the workbook)":"(offline build)"}`]);
-    if(d.schedule)R.push(["Runs",esc(d.schedule)]);
-    if(d.method)R.push(["Method",esc(d.method)]);
-    if((d.reads||[]).length)R.push(["Reads",`<div class="chips">${d.reads.map(r=>chip(dataById[r]||("?:"+r),nameOf(dataById[r]||r))).join("")}</div>`]);
-    if((d.writes||[]).length)R.push(["Writes",`<div class="chips">${d.writes.map(w=>chip("artifact:"+w,nameOf("artifact:"+w))).join("")}</div>`]);
-    if((d.feeds||[]).length)R.push(["Feeds",`<div class="chips">${d.feeds.map(w=>chip("surface:"+w,nameOf("surface:"+w))).join("")}</div>`]);
-    R.push(...shortRows(d));}
-  if(n.kind==="artifact"){R.push(statusRow(n));
-    if(d.size)R.push(["Size",esc(d.size)]);
-    if((d.producedBy||[]).length)R.push(["Built by",`<div class="chips">${d.producedBy.map(t=>chip("transform:"+t,nameOf("transform:"+t))).join("")}</div>`]);
-    const cons=[...MAN.surfaces.filter(su=>(su.reads||[]).includes(n.id)).map(su=>"surface:"+su.id),...MAN.transforms.filter(t=>(t.reads||[]).includes(n.id)).map(t=>"transform:"+t.id)];
-    if(cons.length)R.push(["Read by",`<div class="chips">${cons.map(k=>chip(k,nameOf(k))).join("")}</div>`]);
-    R.push(...shortRows(d));}
-  if(n.kind==="surface"){R.push(statusRow(n));
-    if(d.location)R.push(["Location",esc(d.location)]);
-    if((d.reads||[]).length)R.push(["Reads",`<div class="chips">${d.reads.map(r=>chip(dataById[r]||("?:"+r),nameOf(dataById[r]||r))).join("")}</div>`]);
-    const fed=MAN.transforms.filter(t=>(t.feeds||[]).includes(n.id));if(fed.length)R.push(["Fed by",`<div class="chips">${fed.map(t=>chip("transform:"+t.id,nameOf("transform:"+t.id))).join("")}</div>`]);
-    R.push(...shortRows(d));}
-  if(n.kind!=="provider")R.push(["Flow",`<span class="chip" style="cursor:default;border-color:${GCOLOR[groupOf(n)]}">${esc(groupOf(n))}</span>`]);
-  R.push(["Upstream",`${cone(n.key,inAdj).size} · Downstream ${cone(n.key,outAdj).size}`]);
-  return R;
-}
-let activeCol=null;
-function showDetailKey(key){const n=byKey[key];if(!n)return;activeCol=null;const p=document.getElementById("panel");
-  const kindLabel=(KINDS.find(x=>x.k===n.kind)||{}).label||n.kind,st=nodeStatus(n);
-  const rows=rowsFor(n).map(([k,v])=>`<div class="row"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join("");
-  p.innerHTML=`<span class="kindtag" style="background:${KCOLOR[n.kind]}">${esc(kindLabel)}</span>`+(n.kind!=="provider"?`<span class="kindtag" style="background:${SCOLOR[st]}">${st}</span>`:"")
-    +`<h2>${esc(n.d.name||n.id)}</h2>`
-    +(n.d.description?`<div class="desc">${esc(n.d.description)}</div>`:"")+rows;
-  p.querySelectorAll(".chip[data-key]").forEach(c=>c.addEventListener("click",()=>{const k=c.getAttribute("data-key");selected=k;render();showDetailKey(k);document.getElementById(cssid(k))?.scrollIntoView({block:"center",inline:"center"});}));
-  p.querySelectorAll(".colchip").forEach(c=>c.addEventListener("click",ev=>{ev.stopPropagation();handleColClick(c.getAttribute("data-src"),+c.getAttribute("data-i"),c);}));
-  p.scrollTop=0;
-  history.replaceState(null,"","#"+encodeURIComponent(key));}
-
-// Trace one field → the transforms / surfaces that read it → everything downstream of those.
-function handleColClick(srcKey,idx,chipEl){
-  const same=activeCol&&activeCol.src===srcKey&&activeCol.i===idx;
-  document.querySelectorAll(".colchip.active").forEach(e=>e.classList.remove("active"));
-  const ft=document.getElementById("fieldTrace");
-  if(same){activeCol=null;applyFocus(srcKey);if(ft)ft.innerHTML="Click a field to trace it downstream →.";return;}
-  activeCol={src:srcKey,i:idx};chipEl.classList.add("active");
-  const f=byKey[srcKey].d.fields[idx],ids=f.to||[];
-  const tKeys=ids.map(id=>byKey["transform:"+id]?"transform:"+id:(byKey["surface:"+id]?"surface:"+id:null)).filter(Boolean);
-  const active=new Set([srcKey,...tKeys]),surfaces=new Set();
-  tKeys.forEach(k=>{if(byKey[k].kind==="surface")surfaces.add(k);cone(k,outAdj).forEach(x=>{active.add(x);if(byKey[x].kind==="surface")surfaces.add(x);});});
-  const transformKeys=tKeys.filter(k=>byKey[k].kind==="transform");
-  const vis=computeVisible();
-  nodes.forEach(n=>{if(!vis.has(n.key))return;const g=document.getElementById(cssid(n.key));if(g){g.classList.toggle("dim",!active.has(n.key));g.classList.toggle("sel",n.key===srcKey);}});
-  edges.forEach((e,i)=>{if(!vis.has(e.from)||!vis.has(e.to))return;const el=document.getElementById("e"+i);if(!el)return;const hot=active.has(e.from)&&active.has(e.to);el.classList.toggle("dim",!hot);el.classList.toggle("hot",hot);el.classList.remove("rejected");});
-  if(ft){
-    const note=f.note?`<div class="short" style="margin-top:4px">${esc(f.note)}</div>`:"";
-    if(!tKeys.length)ft.innerHTML=`<div><b>${esc(f.n)}</b> — <b style="color:var(--orange)">not read by anything</b>${f.use?` <span class="muted">(${esc(f.use)})</span>`:""}.</div>${note}`;
-    else{const head=`→ <b>${transformKeys.length}</b> transform(s) → <b>${surfaces.size}</b> surface(s)`;
-      ft.innerHTML=`<div><b>${esc(f.n)}</b> ${head}${f.use?` <span class="muted">· ${esc(f.use)}</span>`:""}:</div>`
-        +(transformKeys.length?`<div class="chips" style="margin-top:4px">${transformKeys.map(k=>chip(k,nameOf(k))).join("")}</div>`:"")
-        +(surfaces.size?`<div class="chips" style="margin-top:4px">${[...surfaces].map(k=>chip(k,nameOf(k))).join("")}</div>`:"")+note;
-      ft.querySelectorAll(".chip[data-key]").forEach(c=>c.addEventListener("click",()=>{const k=c.getAttribute("data-key");selected=k;render();showDetailKey(k);}));}
-  }
-}
-function overview(){const p=document.getElementById("panel");const t={shipped:0,planned:0,risk:0,rejected:0};
-  nodes.forEach(n=>{if(n.kind!=="provider")t[nodeStatus(n)]++;});
-  p.innerHTML=`<h2>Information Flow</h2><div class="desc">Click any node to trace its <b>upstream</b> (where the data comes from) and <b>downstream</b> (what it reaches). On a <b>source</b>, click a field to see exactly which results read it and where it falls short. Use the <b>Flows</b> chips to hide areas, <b>Trace a UI surface</b> or <b>Isolate</b> to focus one chain.</div>`
-    +`<div class="row"><span class="k">Nodes</span><span class="v"><span class="statusline shipped">${t.shipped} shipped</span> · <span class="statusline planned">${t.planned} planned</span> · <span class="statusline risk">${t.risk} at risk</span> · <span class="statusline rejected">${t.rejected} rejected</span></span></div>`
-    +`<div class="row"><span class="k">Planned</span><span class="v muted">The county-scoped <b>street search</b> (state + county required, TIGER names, tile classes, length per verdict bucket), the county name table + polygon file, and the HPMS re-harvest for owner / maintainer. Dashed edges are planned; dashed red boxes were tried or measured and rejected. Details: <code>docs/NEXT-road-name-lookup.md</code>.</span></div>`
-    +`<div class="row"><span class="k">Rule</span><span class="v muted">Every verdict — cached, live, whole-road, planned street summary — runs the same <b>computeVerdict</b>: closest road's FHWA class + ACUB urban/rural → Federal aid / Non-federal aid / Review. The tool tags the road, never the project.</span></div>`;}
-
-function buildFilters(){const f=document.getElementById("filters");
-  GROUPS.forEach(([g,c])=>{const el=document.createElement("span");el.className="fchip";el.dataset.g=g;
-    el.innerHTML=`<span class="gd" style="background:${c}"></span>${g}`;
-    el.addEventListener("click",()=>{if(activeGroups.has(g))activeGroups.delete(g);else activeGroups.add(g);el.classList.toggle("off",!activeGroups.has(g));render();});
-    f.appendChild(el);});}
-function buildTrace(){const sel=document.getElementById("trace");
-  MAN.surfaces.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(su=>{const o=document.createElement("option");o.value="surface:"+su.id;o.textContent=su.name;sel.appendChild(o);});}
-
-document.getElementById("reset").addEventListener("click",()=>{selected=null;isolateKey=null;activeGroups=new Set(GROUPS.map(g=>g[0]));document.querySelectorAll(".fchip").forEach(c=>c.classList.remove("off"));document.getElementById("trace").value="";document.getElementById("isolate").classList.remove("on");render();clearFocus();overview();history.replaceState(null,"","#");});
-document.getElementById("isolate").addEventListener("click",function(){if(!selected){return;}isolateKey=isolateKey?null:selected;this.classList.toggle("on",!!isolateKey);render();if(selected)showDetailKey(selected);});
-document.getElementById("trace").addEventListener("change",function(){const v=this.value;if(!v){isolateKey=null;document.getElementById("isolate").classList.remove("on");render();overview();return;}selected=v;isolateKey=v;document.getElementById("isolate").classList.add("on");render();showDetailKey(v);});
-document.getElementById("graph").addEventListener("click",e=>{if(e.target.id==="svg"||e.target.id==="graph"){selected=null;clearFocus();overview();history.replaceState(null,"","#");}});
-document.getElementById("search").addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();if(!q)return;const hit=nodes.find(n=>(n.label||"").toLowerCase().includes(q)||(n.id||"").toLowerCase().includes(q));if(hit){selected=hit.key;render();showDetailKey(hit.key);document.getElementById(cssid(hit.key))?.scrollIntoView({block:"center",inline:"center"});}});
-let rT;window.addEventListener("resize",()=>{clearTimeout(rT);rT=setTimeout(render,150);});
-
-build(MAN);
-document.getElementById("verstamp").textContent="· schema "+MAN.schema+" · measured 2026-09-16";
-render();
-const h0=decodeURIComponent((location.hash||"").slice(1));
-if(h0&&byKey[h0]){selected=h0;render();showDetailKey(h0);}else overview();
-</script>
 </body>
 </html>
