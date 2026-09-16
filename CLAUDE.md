@@ -993,6 +993,9 @@ build/                                  Local assembly + verification scripts (n
     verify-review-ui.mjs                map name labels, click-to-zoom, Prev/Next stepping, on-map
                                           source layers + legend, sources.html, FIRMette ZIP batch
                                           (ZIP validated with Python zipfile incl. CRCs)
+    verify-coord-readout.mjs            the bottom-right pointer coordinate readout (§7b) —
+                                          placement, tracking accuracy, click-to-copy, and the
+                                          per-event cost measurements
     verify-map-render.mjs               map rendering against the real tilesets: basemap paints at
                                           the region view, class + ACUB tile pixels, six-state mask,
                                           local class line visible at z17, zoom long-task budget
@@ -1122,6 +1125,23 @@ live services. Full design narrative + verification history:
   Buffer** select with an ⓘ explainer, text row filter, opt-in "filter by
   map view" checkbox, compact one-line rows, "⧉ Expand table"). The map is
   locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
+- **Pointer coordinate readout (2026-09-16).** A Leaflet `bottomright`
+  control (`.coordbox`) showing the lat/lon under the pointer, ArcGIS-style;
+  map centre (labelled "center") whenever the pointer is off the map or the
+  device has no pointer; click copies `lat, lon`. Three load-bearing choices,
+  all measured by `build/web-tests/verify-coord-readout.mjs`: a NATIVE
+  listener on the map container (`map.on("mousemove")` makes Leaflet walk for
+  event targets on every event, and reports a hovered MARKER's latlng instead
+  of the pointer's); the handler only stashes the point and schedules a rAF,
+  so 600 events in one frame = 1 DOM write; the box is fixed-size +
+  `contain: layout paint size`, because that same handler READS the map
+  container's rect and an unconstrained per-frame write in that corner would
+  turn every read into a forced reflow. It also freezes while the pointer is
+  over any in-container control or popup — those mousemoves bubble to the
+  container, so without it, reaching for the box overwrites the value you are
+  reaching for. Measured cost ~3–6 µs/event (well under 1 ms per second of continuous
+  movement at a 120 Hz polling rate); `#siteLegend`'s `bottom` moved 26px →
+  56px to clear it.
 - **Accepted input formats (2026-09-15).** Both input paths share
   `parseCoordinates`: decimal degrees in either order, and **DMS /
   degrees-decimal-minutes** (`42°17'07.3"N 85°34'12.9"W`, `N42°…`,
@@ -1856,6 +1876,7 @@ other way.
 |---|---|---|
 | `build/verify-web-core.mjs` | rr-core's classification against the §4.2-§4.2e test coords for all six states | live state DOTs + NTAD |
 | `web-tests/verify-review-ui.mjs` | the page's UI contract: Auto-Detect panel, Detection Buffer, row filter ↔ pin mirroring, site stepping, on-map layers + legend, the Export pill/menu/dialogue, the editable table and the identity write-back (incl. the tab-holds-the-recheck rule), sources.html, FIRMette ZIP | stubbed (fixtures) |
+| `web-tests/verify-coord-readout.mjs` | the bottom-right pointer coordinate readout: placement above the attribution, tracking accuracy against Leaflet's own projection, re-projection on pan, freeze + click-to-copy, and the cost measurements (µs/event, one DOM write per frame, long tasks under a throttled sweep) | tiles only |
 | `web-tests/verify-pdf-report.mjs` | PDF report structure (page count, embedded images) + the pdfZoom option list | stubbed |
 | `web-tests/verify-map-render.mjs` | real tilesets: basemap pixels, class + ACUB pixels, the six-state mask, class visible at z15/z17, zero class pixels at the region view, zoom long-task budget | tiles only |
 | `web-tests/verify-hpms-tiles.mjs` | the cached-tile verdict path: HPMS legend section, painted pixels, and a known verdict with ZERO live point queries | tiles only |
@@ -1864,6 +1885,7 @@ other way.
 ```bash
 cd build/web-tests && npm install          # once — playwright-core only
 node verify-review-ui.mjs
+node verify-coord-readout.mjs
 node verify-pdf-report.mjs
 node verify-hpms-tiles.mjs
 node verify-map-render.mjs

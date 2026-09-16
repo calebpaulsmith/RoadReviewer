@@ -146,3 +146,25 @@ Portage Rd, Portage MI
 - [ ] **7.10** Reload the page and re-paste. → Addresses are unresolved again
   (results are not stored) until you click.
 
+
+## 8. Pointer coordinate readout (~3 min) — newest work
+
+- [ ] **8.1** Fresh load, don't touch the mouse. → A box in the map's
+  bottom-right corner, above the attribution line, shows a coordinate tagged
+  **center**.
+- [ ] **8.2** Move over the map. → The value follows the pointer continuously
+  and the tag reads **pointer**; motion stays smooth at street zoom with
+  imagery on.
+- [ ] **8.3** Park the pointer on a known feature and compare against the pin
+  of a site you already classified. → Same coordinate to ~5 decimals.
+- [ ] **8.4** Hold the pointer still and drag the map with the keyboard arrows
+  (or scroll-zoom). → The value updates as the ground moves under the cursor.
+- [ ] **8.5** Move off the map (over the left panel). → Falls back to the
+  centre, tagged **center**.
+- [ ] **8.6** Move onto the box itself, then click. → The value **freezes** as
+  you approach it, and the toast confirms the copy. Paste into the coordinates
+  box → it parses as a point at exactly that spot.
+- [ ] **8.7** With a site legend showing, check the corner. → Legend sits above
+  the readout; neither covers the attribution.
+- [ ] **8.8** On a phone. → The box shows the map centre and updates as you
+  pan; nothing overlaps the attribution.

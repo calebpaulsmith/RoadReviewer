@@ -325,11 +325,25 @@ details.howcolors { margin-top: 8px; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mapbar .rinfo:empty { display: none; }
 
-/* Site legend: floating card bottom-right (above the attribution line). */
+/* Site legend: floating card bottom-right, above the coordinate readout
+   and the attribution line (56px clears both). */
 #siteLegend {
-  position: absolute; right: 12px; bottom: 26px; z-index: 1000;
+  position: absolute; right: 12px; bottom: 56px; z-index: 1000;
   max-height: 60%; max-width: min(280px, 40%);
 }
+
+/* Pointer coordinate readout — a Leaflet bottomright control, so it stacks
+   itself above the attribution line without fighting it for the corner.
+   FIXED width/height + `contain` on purpose: the mousemove handler reads the
+   map container's rect, and an unconstrained per-frame text write in the same
+   corner would make every one of those reads a forced reflow. */
+.coordbox { background: rgba(255,255,255,.95); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 9px; width: 210px; height: 25px; contain: layout paint size;
+  box-shadow: var(--shadow-sm); cursor: pointer; user-select: none;
+  white-space: nowrap; overflow: hidden; line-height: 15px; }
+.coordbox .cr-val { font: 11.5px/15px ui-monospace, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums; color: var(--ink); }
+.coordbox .cr-tag { margin-left: 7px; font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--faint); }
 
 /* ---- pop-out: the full-detail table over the map ---- */
 #popoutWrap { position: fixed; inset: 0; z-index: 3000; background: rgba(15,25,35,.45);
@@ -2276,6 +2290,77 @@ async function copyText(text, what) {
     return false;
   }
 }
+/* ---- pointer coordinate readout (bottom-right, ArcGIS-style) ----
+   Mirrors whatever the pointer is over; falls back to the map CENTER when the
+   pointer leaves the map and on touch, where there is no pointer at all, so
+   the box is never blank. Click copies "lat, lon" in exactly the form the
+   coordinates box parses back.
+
+   Three deliberate cost choices, in order of how much they matter:
+   1. The listener is NATIVE, on the map container, not map.on("mousemove").
+      A Leaflet-level mousemove listener makes Leaflet walk the DOM for event
+      targets and project a latlng on every one of the ~120 events/s a
+      high-polling mouse emits — and over a marker it reports the MARKER's
+      latlng, not the pointer's, which would be wrong here anyway.
+   2. The handler only stashes the point and schedules a rAF; the DOM write
+      happens at most once per frame, however fast the mouse reports.
+   3. The box is fixed-size and `contain`ed (see .coordbox) so that write
+      cannot dirty the map container's layout, which this same handler reads.
+   Measured cost: build/web-tests/verify-coord-readout.mjs. */
+const coordCtl = L.control({ position: "bottomright" });
+let coordEl = null, coordVal = null, coordTag = null;
+let coordPt = null;           // last container point under the pointer, or null
+let coordShown = null, coordFrame = 0, coordIsPointer = false;
+
+function fmtLatLon(ll) { return ll.lat.toFixed(5) + ", " + ll.lng.toFixed(5); }
+
+function paintCoord() {
+  coordFrame = 0;
+  if (!coordEl || !coordShown) return;
+  coordVal.textContent = fmtLatLon(coordShown);
+  coordTag.textContent = coordIsPointer ? "pointer" : "center";
+}
+function showCoord(ll, fromPointer) {
+  coordShown = ll;
+  coordIsPointer = fromPointer;
+  if (!coordFrame) coordFrame = requestAnimationFrame(paintCoord);
+}
+function refreshCoord() {
+  // Re-project the held container point: during a pan or zoom the geography
+  // under a stationary cursor changes without any mousemove firing.
+  if (coordPt) showCoord(map.containerPointToLatLng(coordPt), true);
+  else showCoord(map.getCenter(), false);
+}
+
+coordCtl.onAdd = function () {
+  const d = L.DomUtil.create("div", "leaflet-control coordbox");
+  d.innerHTML = '<span class="cr-val"></span><span class="cr-tag"></span>';
+  d.title = "Latitude, longitude under the pointer — click to copy";
+  coordEl = d;
+  coordVal = d.querySelector(".cr-val");
+  coordTag = d.querySelector(".cr-tag");
+  L.DomEvent.disableClickPropagation(d);
+  d.addEventListener("click", () => {
+    if (coordShown) copyText(fmtLatLon(coordShown), "Coordinate");
+  });
+  return d;
+};
+coordCtl.addTo(map);
+
+const coordHost = map.getContainer();
+coordHost.addEventListener("mousemove", ev => {
+  // Freeze over the controls that live INSIDE the map container (this box
+  // included, plus popups): their mousemoves bubble up here, so without this
+  // the act of reaching for the box would overwrite the value you were
+  // reaching for, and the click would copy the box's own position.
+  if (ev.target.closest && ev.target.closest(".leaflet-control, .leaflet-popup")) return;
+  coordPt = map.mouseEventToContainerPoint(ev);
+  showCoord(map.containerPointToLatLng(coordPt), true);
+}, { passive: true });
+coordHost.addEventListener("mouseleave", () => { coordPt = null; showCoord(map.getCenter(), false); });
+map.on("move zoom", refreshCoord);
+refreshCoord();
+
 function tsvAll() { return [EXPORT_HEADERS, ...exportRows()].map(r => r.join("\t")).join("\n"); }
 function tsvCoords() {
   return [["Site Name", "Latitude", "Longitude"],
