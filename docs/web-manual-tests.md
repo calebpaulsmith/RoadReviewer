@@ -160,13 +160,15 @@ Portage Rd, Portage MI
   (or scroll-zoom). → The value updates as the ground moves under the cursor.
 - [ ] **8.5** Move off the map (over the left panel). → Falls back to the map
   centre.
-- [ ] **8.6** Move onto the box, then click. → The value **freezes** as you
-  approach it, and the click switches it to `42°17'07.3"N 85°34'12.9"W`.
-  Click again → back to decimal.
-- [ ] **8.7** Copy the DMS text and paste it into the coordinates box. → It
-  parses to the same point.
+- [ ] **8.6** Move onto the coordinate, then click it. → The value **freezes**
+  as you approach it, and the click copies exactly that value ("Coordinate
+  copied to clipboard"). Paste into the coordinates box → a point at that spot.
+- [ ] **8.7** Click the small **DD** box beside it. → The coordinate becomes
+  `42°17'07.3"N 85°34'12.9"W` and the box now reads **DMS**. Click the
+  coordinate again → the DMS text copies, and it pastes back to the same point.
 - [ ] **8.8** Reload the page. → It comes back in whichever format you left it.
 - [ ] **8.9** With a site legend showing, check the corner. → Legend sits above
   the readout; neither covers the attribution.
-- [ ] **8.10** On a phone. → The box shows the map centre and updates as you
-  pan; tapping it still switches format.
+- [ ] **8.10** On a phone. → The boxes show the map centre and update as you
+  pan; tapping DD/DMS still switches format, and they don't crowd the
+  attribution.

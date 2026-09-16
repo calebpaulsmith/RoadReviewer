@@ -11,9 +11,11 @@
 //   - panning with the pointer held still re-projects the held point
 //     (the geography under a stationary cursor changes during a pan)
 //   - leaving the map falls back to the centre
-//   - the box is a BUTTON: clicking it switches decimal degrees <-> DMS,
-//     the DMS text parses back through parseCoordinates() to the same
-//     point, Enter toggles it too, and the choice survives a reload
+//   - clicking the COORDINATE copies exactly what is displayed, and the
+//     copied text parses back through parseCoordinates() in either format
+//   - the small DD/DMS box beside it switches the format, labels itself
+//     with the format in force, toggles from the keyboard too, and the
+//     choice survives a reload
 //
 // Cost measured (printed, and budgeted loosely so this fails only on a real
 // regression):
@@ -66,6 +68,7 @@ const ok = (cond, label, detail = "") => {
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 const page = await context.newPage();
 const pageErrors = [];
 page.on("pageerror", e => pageErrors.push(e.message));
@@ -79,7 +82,7 @@ const readout = () => page.evaluate(() => {
 
 console.log("placement + initial state");
 const place = await page.evaluate(() => {
-  const el = document.querySelector(".coordbox");
+  const el = document.querySelector(".coordwrap");
   if (!el) return null;
   const corner = el.parentElement;
   const attrib = document.querySelector(".leaflet-control-attribution");
@@ -94,11 +97,18 @@ ok(place && /leaflet-bottom/.test(place.corner) && /leaflet-right/.test(place.co
 ok(place && place.sameCorner && place.aboveAttrib, "stacks above the attribution line rather than over it");
 ok(place && place.clearsLegend, "the site legend clears it (legend bottom is above the box)");
 const role = await page.evaluate(() => {
-  const el = document.querySelector(".coordbox");
-  return { role: el.getAttribute("role"), tab: el.tabIndex, labels: el.textContent.replace(/[-\d.,\u00b0'"\sNSEW]/g, "") };
+  const box = document.querySelector(".coordbox"), btn = document.querySelector(".coordfmt");
+  return { boxRole: box.getAttribute("role"), boxTab: box.tabIndex,
+           btnRole: btn.getAttribute("role"), btnTab: btn.tabIndex, btnText: btn.textContent,
+           labels: box.textContent.replace(/[-\d.,\u00b0'"\sNSEW]/g, ""),
+           sideBySide: Math.abs(box.getBoundingClientRect().top - btn.getBoundingClientRect().top) < 2
+                       && btn.getBoundingClientRect().left >= box.getBoundingClientRect().right - 1 };
 });
-ok(role.role === "button" && role.tab === 0, "is a real button (role + keyboard focusable)", `${role.role}/${role.tab}`);
-ok(role.labels === "", "carries no label text, just the coordinate", JSON.stringify(role.labels));
+ok(role.boxRole === "button" && role.boxTab === 0, "the coordinate is a real button (role + keyboard focusable)", `${role.boxRole}/${role.boxTab}`);
+ok(role.btnRole === "button" && role.btnTab === 0, "so is the format switch", `${role.btnRole}/${role.btnTab}`);
+ok(role.sideBySide, "the switch sits beside the coordinate, on the same line");
+ok(role.labels === "", "the coordinate box carries no label text, just the number", JSON.stringify(role.labels));
+ok(role.btnText === "DD", "the switch is labelled with the format in force", role.btnText);
 const first = await readout();
 ok(first && /^-?\d+\.\d{5}, -?\d+\.\d{5}$/.test(first), "opens on a decimal-degree coordinate", first);
 
@@ -148,54 +158,71 @@ const centre = await page.evaluate(() => {
 });
 ok(left === centre, "falls back to the map centre", `${left} vs ${centre}`);
 
-console.log("the box is a format button");
+console.log("click the coordinate to copy it");
 await probe(500, 400);
 const dd = await readout();
-// Hovering the box means moving the pointer INTO the map container: if that
-// move were tracked it would change the value under the cursor before the
-// click landed, so this also covers the freeze-over-controls rule.
+// Hovering means moving the pointer INTO the map container: if that move were
+// tracked it would change the value before the click landed, so this also
+// covers the freeze-over-controls rule.
 await page.hover(".coordbox");
 await page.waitForTimeout(120);
 ok((await readout()) === dd, "the value holds while the pointer is over the box itself", await readout());
 await page.click(".coordbox");
+await page.waitForTimeout(150);
+const clip = (await page.evaluate(() => navigator.clipboard.readText().catch(() => ""))).trim();
+ok(clip === dd, "copies exactly what is displayed", `${JSON.stringify(clip)} vs ${dd}`);
+ok(/copied/i.test(await page.evaluate(() => document.getElementById("toast").textContent)),
+   "confirms the copy in the toast");
+const ddPair = dd.split(",").map(Number);
+const ddBack = await page.evaluate(t => { const p = parseCoordinates(t)[0]; return p && !p.invalid ? { lat: p.lat, lon: p.lon } : null; }, dd);
+ok(ddBack && ddBack.lat === ddPair[0] && ddBack.lon === ddPair[1],
+   "the copied text parses back through parseCoordinates", JSON.stringify(ddBack));
+
+console.log("the DD/DMS switch");
+await page.click(".coordfmt");
 await page.waitForTimeout(120);
 const dms = await readout();
-ok(/^\d+°\d{2}'\d{2}\.\d"[NS] \d+°\d{2}'\d{2}\.\d"[EW]$/.test(dms), "one click switches to degrees/minutes/seconds", dms);
-const ddPair = dd.split(",").map(Number);
-const back = await page.evaluate(t => {
-  const p = parseCoordinates(t)[0];
-  return p && !p.invalid ? { lat: p.lat, lon: p.lon } : null;
-}, dms);
+ok(/^\d+°\d{2}'\d{2}\.\d"[NS] \d+°\d{2}'\d{2}\.\d"[EW]$/.test(dms), "one click switches the coordinate to DMS", dms);
+ok((await page.evaluate(() => document.querySelector(".coordfmt").textContent)) === "DMS",
+   "and the switch relabels itself");
+const back = await page.evaluate(t => { const p = parseCoordinates(t)[0]; return p && !p.invalid ? { lat: p.lat, lon: p.lon } : null; }, dms);
 ok(back && Math.abs(back.lat - ddPair[0]) < 0.0001 && Math.abs(back.lon - ddPair[1]) < 0.0001,
-   "the DMS text parses back through parseCoordinates to the same point", `${JSON.stringify(back)} vs ${dd}`);
+   "the DMS text parses back to the same point", `${JSON.stringify(back)} vs ${dd}`);
 await page.click(".coordbox");
+await page.waitForTimeout(150);
+ok((await page.evaluate(() => navigator.clipboard.readText().catch(() => ""))).trim() === dms,
+   "copying still copies what is on screen, now in DMS");
+await page.click(".coordfmt");
 await page.waitForTimeout(120);
 ok((await readout()) === dd, "a second click switches back to decimal degrees", await readout());
-await page.focus(".coordbox");
+await page.focus(".coordfmt");
 await page.keyboard.press("Enter");
 await page.waitForTimeout(120);
-ok(/[NS]/.test(await readout()), "Enter on the focused box toggles it too", await readout());
+ok(/[NS]/.test(await readout()), "Enter on the focused switch toggles it too", await readout());
 
 console.log("the choice sticks");
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(1200);
 ok(/[NS]/.test(await readout()), "DMS survives a reload", await readout());
-await page.click(".coordbox");                      // back to DD for the cost legs
+ok((await page.evaluate(() => document.querySelector(".coordfmt").textContent)) === "DMS",
+   "and the switch comes back labelled DMS");
+await page.click(".coordfmt");                      // back to DD for the cost legs
 await page.waitForTimeout(120);
 ok(/^-?\d+\.\d{5}, -?\d+\.\d{5}$/.test(await readout()), "and switches back off again", await readout());
 const fits = await page.evaluate(async () => {
   // Measure BOTH formats: DMS is the longer string, and the box is fixed-size.
-  const el = document.querySelector(".coordbox");
-  const read = () => ({ sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight, t: el.textContent });
+  const el = document.querySelector(".coordbox"), btn = document.querySelector(".coordfmt");
+  const read = () => ({ sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight,
+                        bw: btn.scrollWidth, bcw: btn.clientWidth, t: el.textContent });
   const a = read();
-  el.click();
+  btn.click();
   await new Promise(r => requestAnimationFrame(r));
   const b = read();
-  el.click();
+  btn.click();
   await new Promise(r => requestAnimationFrame(r));
   return [a, b];
 });
-ok(fits.every(f => f.sw <= f.cw && f.sh <= f.ch), "the fixed-size box clips neither format",
+ok(fits.every(f => f.sw <= f.cw && f.sh <= f.ch && f.bw <= f.bcw), "neither fixed-size box clips its text",
    fits.map(f => `${f.t.trim()} ${f.sw}/${f.cw}`).join(" | "));
 
 console.log("cost: per-event dispatch");

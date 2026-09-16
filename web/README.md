@@ -88,12 +88,14 @@ pointer off the map (and on a phone, where there is no pointer) it shows the
 map centre instead, so it is never blank. There is no label: the number is
 the readout.
 
-The box is a **button**. Clicking it (or pressing Enter/Space while it has
-focus) switches between decimal degrees and degrees/minutes/seconds, and the
-choice is remembered in that browser. The DMS form is written the way the
-page's own parser reads it back, so a value copied off the map still pastes
-into the coordinates box. Tracking freezes while the pointer is over the box
-itself, so the value can't change out from under the click.
+Both pieces are buttons. **Clicking the coordinate copies it** to the
+clipboard, and the small **DD / DMS** box beside it switches the format
+between decimal degrees and degrees/minutes/seconds — it is labelled with the
+format in force, and the choice is remembered in that browser. Either format
+is written the way the page's own parser reads it back, so a value copied off
+the map pastes straight into the coordinates box. Both answer Enter/Space from
+the keyboard. Tracking freezes while the pointer is over either box, so what
+you click is what you copy.
 
 It is cheap by construction, and the cost is measured rather than assumed
 (`build/web-tests/verify-coord-readout.mjs` prints the numbers): the listener
@@ -615,8 +617,8 @@ cd build/web-tests && npm install && node verify-review-ui.mjs
 ```
 
 And the pointer coordinate readout (placement, tracking accuracy against
-Leaflet's own projection, re-projection on pan, the DD↔DMS button, plus the
-cost measurements described above):
+Leaflet's own projection, re-projection on pan, copy-on-click, the DD/DMS
+switch, plus the cost measurements described above):
 
 ```
 cd build/web-tests && npm install && node verify-coord-readout.mjs

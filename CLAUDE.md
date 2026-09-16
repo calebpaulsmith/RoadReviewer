@@ -1150,28 +1150,30 @@ live services. Full design narrative + verification history:
   map view" checkbox, compact one-line rows, "⧉ Expand table"). The map is
   locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
 - **Pointer coordinate readout (2026-09-16).** A Leaflet `bottomright`
-  control (`.coordbox`) showing the lat/lon under the pointer, ArcGIS-style;
-  the map centre whenever the pointer is off the map or the device has no
-  pointer. **No label — the number is the whole readout**, and the box itself
-  is the BUTTON: click (or Enter/Space, it carries `role="button"` +
-  `tabIndex`) switches decimal degrees ↔ DMS, stored in
-  `localStorage["rr_coord_fmt"]`. The DMS form is written the way
-  `parseCoordinates` reads it back (`42°17'07.3"N 85°34'12.9"W`), so a copied
-  value still pastes into the coordinates box; `fmtDms` rolls seconds up at
+  control showing the lat/lon under the pointer, ArcGIS-style; the map centre
+  whenever the pointer is off the map or the device has no pointer. **No
+  label — the number is the whole readout.** TWO buttons side by side in one
+  `.coordwrap` control (one gesture can't do two jobs): clicking `.coordbox`
+  COPIES what is displayed (`copyText` + toast), and the small `.coordfmt` box
+  beside it switches DD ↔ DMS, labelling itself with the format in force and
+  storing the choice in `localStorage["rr_coord_fmt"]`. Both carry
+  `role="button"` + `tabIndex` and answer Enter/Space. The DMS form is written
+  the way `parseCoordinates` reads it back (`42°17'07.3"N 85°34'12.9"W`), so
+  either format pastes into the coordinates box; `fmtDms` rolls seconds up at
   59.95 so rounding can't print `60.0"`. Three load-bearing choices, all
   measured by `build/web-tests/verify-coord-readout.mjs`: a NATIVE listener on
   the map container (`map.on("mousemove")` makes Leaflet walk for event
   targets on every event, and reports a hovered MARKER's latlng instead of the
   pointer's); the handler only stashes the point and schedules a rAF, so 600
-  events in one frame = 1 DOM write; the box is fixed-size +
+  events in one frame = 1 DOM write; both boxes are fixed-size +
   `contain: layout paint size`, because that same handler READS the map
   container's rect and an unconstrained per-frame write in that corner would
   turn every read into a forced reflow. It also freezes while the pointer is
   over any in-container control or popup — those mousemoves bubble to the
-  container, so without it, reaching for the box would change the value you
-  are about to click. Measured cost ~3–6 µs/event (well under 1 ms per second
-  of continuous movement at a 120 Hz polling rate); `#siteLegend`'s `bottom`
-  moved 26px → 56px to clear it.
+  container, so without it, reaching for the box would copy a different point
+  than the one you saw. Measured cost ~2–6 µs/event (well under 1 ms per
+  second of continuous movement at a 120 Hz polling rate); `#siteLegend`'s
+  `bottom` moved 26px → 56px to clear it.
 - **Accepted input formats (2026-09-15).** Both input paths share
   `parseCoordinates`: decimal degrees in either order, and **DMS /
   degrees-decimal-minutes** (`42°17'07.3"N 85°34'12.9"W`, `N42°…`,
