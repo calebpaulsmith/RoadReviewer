@@ -150,21 +150,23 @@ Portage Rd, Portage MI
 ## 8. Pointer coordinate readout (~3 min) — newest work
 
 - [ ] **8.1** Fresh load, don't touch the mouse. → A box in the map's
-  bottom-right corner, above the attribution line, shows a coordinate tagged
-  **center**.
-- [ ] **8.2** Move over the map. → The value follows the pointer continuously
-  and the tag reads **pointer**; motion stays smooth at street zoom with
-  imagery on.
+  bottom-right corner, above the attribution line, showing the centre
+  coordinate and nothing else (no label).
+- [ ] **8.2** Move over the map. → The value follows the pointer continuously;
+  motion stays smooth at street zoom with imagery on.
 - [ ] **8.3** Park the pointer on a known feature and compare against the pin
   of a site you already classified. → Same coordinate to ~5 decimals.
 - [ ] **8.4** Hold the pointer still and drag the map with the keyboard arrows
   (or scroll-zoom). → The value updates as the ground moves under the cursor.
-- [ ] **8.5** Move off the map (over the left panel). → Falls back to the
-  centre, tagged **center**.
-- [ ] **8.6** Move onto the box itself, then click. → The value **freezes** as
-  you approach it, and the toast confirms the copy. Paste into the coordinates
-  box → it parses as a point at exactly that spot.
-- [ ] **8.7** With a site legend showing, check the corner. → Legend sits above
+- [ ] **8.5** Move off the map (over the left panel). → Falls back to the map
+  centre.
+- [ ] **8.6** Move onto the box, then click. → The value **freezes** as you
+  approach it, and the click switches it to `42°17'07.3"N 85°34'12.9"W`.
+  Click again → back to decimal.
+- [ ] **8.7** Copy the DMS text and paste it into the coordinates box. → It
+  parses to the same point.
+- [ ] **8.8** Reload the page. → It comes back in whichever format you left it.
+- [ ] **8.9** With a site legend showing, check the corner. → Legend sits above
   the readout; neither covers the attribution.
-- [ ] **8.8** On a phone. → The box shows the map centre and updates as you
-  pan; nothing overlaps the attribution.
+- [ ] **8.10** On a phone. → The box shows the map centre and updates as you
+  pan; tapping it still switches format.

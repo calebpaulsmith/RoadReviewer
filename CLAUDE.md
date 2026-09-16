@@ -891,6 +891,30 @@ These came up reading the prototypes; capturing them so they aren't lost.
   spreadsheet); the AGOL view is a read-only or write-on-top layer.
   This sidesteps any limitation of "only public maps" because AGOL is
   already licensed for the user's organisation.
+- **Polygon measurement on the web map — REQUESTED 2026-09-16, DEFERRED, NOT
+  BUILT.** Per Caleb: draw a polygon on the map and read back its **area**
+  (and, for a drawn line, its length) — the ArcGIS "Measure" tool. The PA use
+  is sizing a thing on the spot: a damage footprint, a debris pile, a washed
+  out shoulder, a pond. Units should be the ones a PA write-up wants — square
+  feet / acres / square miles for area, feet / miles for a line — with a way
+  to switch, the same way the coordinate readout's own units now toggle by
+  clicking it (§7b). Notes for whoever picks this up:
+  - **Geodesic area, never planar.** Computing area on the Web-Mercator
+    projected coordinates over-reports by roughly 1/cos²φ — about 2× at 45°N,
+    the middle of Region V — and the wrong number looks completely plausible.
+    Use the spherical-excess formula on the lat/lons (what Esri calls geodesic
+    area); at these sizes the sphere-vs-ellipsoid difference is negligible.
+  - **Drawing:** Leaflet ships no editor. Either vendor one (leaflet-draw /
+    leaflet-geoman — this repo vendors everything locally, no CDN, §7 layout)
+    or hand-roll click-to-add-vertex + drag-a-handle over an `L.Polygon`,
+    which is ~100 lines and no new dependency. The readout's freeze-over-
+    controls rule already keeps map chrome from stealing pointer events.
+  - **Open questions for Caleb before building:** does a measured polygon
+    become a row that exports (KMZ and GeoJSON already carry geometry, so a
+    polygon would ride along) or is it a scratch measurement that disappears?
+    Does it need to appear in the PDF report figure? And should the tool also
+    report the FHWA classes of the roads it encloses — which is where it would
+    stop being a measure tool and start being a second kind of query.
 - **Historical Google Earth / Nearmap links** for pre-disaster imagery.
 - **State expansion — DONE for Region V (PR #36).** All six states are
   wired (§4.2-§4.2e); no normalisation function was needed for MN/IL/OH
@@ -1127,21 +1151,27 @@ live services. Full design narrative + verification history:
   locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
 - **Pointer coordinate readout (2026-09-16).** A Leaflet `bottomright`
   control (`.coordbox`) showing the lat/lon under the pointer, ArcGIS-style;
-  map centre (labelled "center") whenever the pointer is off the map or the
-  device has no pointer; click copies `lat, lon`. Three load-bearing choices,
-  all measured by `build/web-tests/verify-coord-readout.mjs`: a NATIVE
-  listener on the map container (`map.on("mousemove")` makes Leaflet walk for
-  event targets on every event, and reports a hovered MARKER's latlng instead
-  of the pointer's); the handler only stashes the point and schedules a rAF,
-  so 600 events in one frame = 1 DOM write; the box is fixed-size +
+  the map centre whenever the pointer is off the map or the device has no
+  pointer. **No label — the number is the whole readout**, and the box itself
+  is the BUTTON: click (or Enter/Space, it carries `role="button"` +
+  `tabIndex`) switches decimal degrees ↔ DMS, stored in
+  `localStorage["rr_coord_fmt"]`. The DMS form is written the way
+  `parseCoordinates` reads it back (`42°17'07.3"N 85°34'12.9"W`), so a copied
+  value still pastes into the coordinates box; `fmtDms` rolls seconds up at
+  59.95 so rounding can't print `60.0"`. Three load-bearing choices, all
+  measured by `build/web-tests/verify-coord-readout.mjs`: a NATIVE listener on
+  the map container (`map.on("mousemove")` makes Leaflet walk for event
+  targets on every event, and reports a hovered MARKER's latlng instead of the
+  pointer's); the handler only stashes the point and schedules a rAF, so 600
+  events in one frame = 1 DOM write; the box is fixed-size +
   `contain: layout paint size`, because that same handler READS the map
   container's rect and an unconstrained per-frame write in that corner would
   turn every read into a forced reflow. It also freezes while the pointer is
   over any in-container control or popup — those mousemoves bubble to the
-  container, so without it, reaching for the box overwrites the value you are
-  reaching for. Measured cost ~3–6 µs/event (well under 1 ms per second of continuous
-  movement at a 120 Hz polling rate); `#siteLegend`'s `bottom` moved 26px →
-  56px to clear it.
+  container, so without it, reaching for the box would change the value you
+  are about to click. Measured cost ~3–6 µs/event (well under 1 ms per second
+  of continuous movement at a 120 Hz polling rate); `#siteLegend`'s `bottom`
+  moved 26px → 56px to clear it.
 - **Accepted input formats (2026-09-15).** Both input paths share
   `parseCoordinates`: decimal degrees in either order, and **DMS /
   degrees-decimal-minutes** (`42°17'07.3"N 85°34'12.9"W`, `N42°…`,

@@ -10,9 +10,10 @@
 //     map.containerPointToLatLng() says is under that point (5 dp)
 //   - panning with the pointer held still re-projects the held point
 //     (the geography under a stationary cursor changes during a pan)
-//   - leaving the map falls back to the centre and says so
-//   - clicking the box copies "lat, lon" in the form parseCoordinates()
-//     accepts, and the round-trip through parseCoordinates agrees
+//   - leaving the map falls back to the centre
+//   - the box is a BUTTON: clicking it switches decimal degrees <-> DMS,
+//     the DMS text parses back through parseCoordinates() to the same
+//     point, Enter toggles it too, and the choice survives a reload
 //
 // Cost measured (printed, and budgeted loosely so this fails only on a real
 // regression):
@@ -65,7 +66,6 @@ const ok = (cond, label, detail = "") => {
 
 const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 const page = await context.newPage();
 const pageErrors = [];
 page.on("pageerror", e => pageErrors.push(e.message));
@@ -74,7 +74,7 @@ await page.waitForTimeout(1200);
 
 const readout = () => page.evaluate(() => {
   const el = document.querySelector(".coordbox");
-  return el && { val: el.querySelector(".cr-val").textContent, tag: el.querySelector(".cr-tag").textContent };
+  return el && el.querySelector(".cr-val").textContent;
 });
 
 console.log("placement + initial state");
@@ -93,15 +93,14 @@ ok(!!place, "the readout control is on the map");
 ok(place && /leaflet-bottom/.test(place.corner) && /leaflet-right/.test(place.corner), "sits in the bottom-RIGHT corner", place && place.corner);
 ok(place && place.sameCorner && place.aboveAttrib, "stacks above the attribution line rather than over it");
 ok(place && place.clearsLegend, "the site legend clears it (legend bottom is above the box)");
-const fits = await page.evaluate(() => {
+const role = await page.evaluate(() => {
   const el = document.querySelector(".coordbox");
-  return { sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight };
+  return { role: el.getAttribute("role"), tab: el.tabIndex, labels: el.textContent.replace(/[-\d.,\u00b0'"\sNSEW]/g, "") };
 });
-ok(fits.sw <= fits.cw && fits.sh <= fits.ch, "the fixed-size box does not clip its own text",
-   `${fits.sw}x${fits.sh} in ${fits.cw}x${fits.ch}`);
+ok(role.role === "button" && role.tab === 0, "is a real button (role + keyboard focusable)", `${role.role}/${role.tab}`);
+ok(role.labels === "", "carries no label text, just the coordinate", JSON.stringify(role.labels));
 const first = await readout();
-ok(first && /^-?\d+\.\d{5}, -?\d+\.\d{5}$/.test(first.val), "opens on a formatted coordinate", first && first.val);
-ok(first && first.tag === "center", "labels the opening value as the map centre", first && first.tag);
+ok(first && /^-?\d+\.\d{5}, -?\d+\.\d{5}$/.test(first), "opens on a decimal-degree coordinate", first);
 
 console.log("pointer tracking");
 const mapBox = await page.evaluate(() => {
@@ -119,17 +118,16 @@ const probe = async (cx, cy) => {
   return { shown, truth };
 };
 const p1 = await probe(400, 300);
-ok(p1.shown.val === p1.truth, "prints the latlng Leaflet projects for that pixel", `${p1.shown.val} vs ${p1.truth}`);
-ok(p1.shown.tag === "pointer", "labels it as the pointer position", p1.shown.tag);
+ok(p1.shown === p1.truth, "prints the latlng Leaflet projects for that pixel", `${p1.shown} vs ${p1.truth}`);
 const p2 = await probe(900, 620);
-ok(p2.shown.val === p2.truth && p2.shown.val !== p1.shown.val, "follows the pointer to a second point", `${p2.shown.val} vs ${p2.truth}`);
+ok(p2.shown === p2.truth && p2.shown !== p1.shown, "follows the pointer to a second point", `${p2.shown} vs ${p2.truth}`);
 
 console.log("pan / zoom with the pointer held still");
 // Zoom in first: at the opening region view maxBoundsViscosity pins the map,
 // so a pan there would move nothing and prove nothing.
 await page.evaluate(() => map.setView([43.0389, -87.9065], 12, { animate: false }));
 await probe(900, 620);
-const before = (await readout()).val;
+const before = await readout();
 await page.evaluate(() => map.panBy([260, 180], { animate: false }));
 await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 const afterPan = await readout();
@@ -137,8 +135,8 @@ const panTruth = await page.evaluate(([cx, cy]) => {
   const ll = map.containerPointToLatLng(L.point(cx, cy));
   return ll.lat.toFixed(5) + ", " + ll.lng.toFixed(5);
 }, [900, 620]);
-ok(afterPan.val !== before, "the value changes when the map moves under a stationary pointer", `${before} -> ${afterPan.val}`);
-ok(afterPan.val === panTruth, "and it is re-projected correctly, not stale", `${afterPan.val} vs ${panTruth}`);
+ok(afterPan !== before, "the value changes when the map moves under a stationary pointer", `${before} -> ${afterPan}`);
+ok(afterPan === panTruth, "and it is re-projected correctly, not stale", `${afterPan} vs ${panTruth}`);
 
 console.log("leaving the map");
 await page.mouse.move(mapBox.x - 40, mapBox.y + 20);   // over the left sidebar
@@ -148,28 +146,57 @@ const centre = await page.evaluate(() => {
   const c = map.getCenter();
   return c.lat.toFixed(5) + ", " + c.lng.toFixed(5);
 });
-ok(left.tag === "center" && left.val === centre, "falls back to the map centre, labelled", `${left.val} / ${left.tag}`);
+ok(left === centre, "falls back to the map centre", `${left} vs ${centre}`);
 
-console.log("click to copy");
+console.log("the box is a format button");
 await probe(500, 400);
-const want = (await readout()).val;
-// Clicking means moving the pointer ONTO the box, which sits inside the map
-// container: if that move were tracked it would overwrite the value being
-// clicked, so this also covers the freeze-over-controls rule.
+const dd = await readout();
+// Hovering the box means moving the pointer INTO the map container: if that
+// move were tracked it would change the value under the cursor before the
+// click landed, so this also covers the freeze-over-controls rule.
+await page.hover(".coordbox");
+await page.waitForTimeout(120);
+ok((await readout()) === dd, "the value holds while the pointer is over the box itself", await readout());
 await page.click(".coordbox");
-await page.waitForTimeout(150);
-const held = await readout();
-ok(held.val === want, "the value holds while the pointer is over the box itself", `${held.val} vs ${want}`);
-const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ""));
-ok(clip.trim() === want, "copies exactly what is displayed", `${JSON.stringify(clip)} vs ${want}`);
-const parsed = await page.evaluate(t => {
+await page.waitForTimeout(120);
+const dms = await readout();
+ok(/^\d+°\d{2}'\d{2}\.\d"[NS] \d+°\d{2}'\d{2}\.\d"[EW]$/.test(dms), "one click switches to degrees/minutes/seconds", dms);
+const ddPair = dd.split(",").map(Number);
+const back = await page.evaluate(t => {
   const p = parseCoordinates(t)[0];
-  return p && { lat: p.lat, lon: p.lon };
-}, want);
-ok(parsed && Math.abs(parsed.lat - +want.split(",")[0]) < 1e-9 && Math.abs(parsed.lon - +want.split(",")[1]) < 1e-9,
-   "the copied text parses back through parseCoordinates", JSON.stringify(parsed));
-const toastSeen = await page.evaluate(() => document.getElementById("toast").textContent);
-ok(/copied/i.test(toastSeen), "confirms the copy in the toast", toastSeen);
+  return p && !p.invalid ? { lat: p.lat, lon: p.lon } : null;
+}, dms);
+ok(back && Math.abs(back.lat - ddPair[0]) < 0.0001 && Math.abs(back.lon - ddPair[1]) < 0.0001,
+   "the DMS text parses back through parseCoordinates to the same point", `${JSON.stringify(back)} vs ${dd}`);
+await page.click(".coordbox");
+await page.waitForTimeout(120);
+ok((await readout()) === dd, "a second click switches back to decimal degrees", await readout());
+await page.focus(".coordbox");
+await page.keyboard.press("Enter");
+await page.waitForTimeout(120);
+ok(/[NS]/.test(await readout()), "Enter on the focused box toggles it too", await readout());
+
+console.log("the choice sticks");
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(1200);
+ok(/[NS]/.test(await readout()), "DMS survives a reload", await readout());
+await page.click(".coordbox");                      // back to DD for the cost legs
+await page.waitForTimeout(120);
+ok(/^-?\d+\.\d{5}, -?\d+\.\d{5}$/.test(await readout()), "and switches back off again", await readout());
+const fits = await page.evaluate(async () => {
+  // Measure BOTH formats: DMS is the longer string, and the box is fixed-size.
+  const el = document.querySelector(".coordbox");
+  const read = () => ({ sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight, t: el.textContent });
+  const a = read();
+  el.click();
+  await new Promise(r => requestAnimationFrame(r));
+  const b = read();
+  el.click();
+  await new Promise(r => requestAnimationFrame(r));
+  return [a, b];
+});
+ok(fits.every(f => f.sw <= f.cw && f.sh <= f.ch), "the fixed-size box clips neither format",
+   fits.map(f => `${f.t.trim()} ${f.sw}/${f.cw}`).join(" | "));
 
 console.log("cost: per-event dispatch");
 // Dispatch identical synthetic mousemove bursts at the map container and at
