@@ -1,6 +1,11 @@
 # NEXT: bare road names, county identifiers, and the place search
 
-**Status: planned, not built. Nothing in this file has shipped.**
+**Status (2026-09-17): §4.1 Default Area and §4.2 the picker SHIPPED in
+`web/index.html` (the area is picked in the search box rather than typed —
+county / city / township — and the picker labels stretches by city/township
+through TIGERweb point-in-polygon queries). §4.3 — baking COUNTY_ID /
+URBAN_ID / OWNERSHIP into the tiles — is still NOT built; §5–§7 below stay
+the plan for that part.**
 Written 2026-09-16 to hand off to a desktop session. Everything below was
 measured live on that date; the commands to re-measure are in §7.
 

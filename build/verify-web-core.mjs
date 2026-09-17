@@ -112,7 +112,7 @@ console.log("parseCoordinates — addresses and road names (detected locally):")
     ["100 S Rose Dr", "address"], ["2200 S 1700 W, Salt Lake City UT", "address"],
     ["Portage Rd, Portage MI", "road"], ["M-43, Kalamazoo County", "road"], ["CR 550 N, Hamilton County IN", "road"],
     ["US 131, Kalamazoo", "road"], ["County Road 12, Iosco County MI", "road"],
-    ["Q Ave", "unknown"], ["Portage Rd", "unknown"], ["garbage line", "unknown"], ["Kalamazoo culvert", "unknown"], ["100 Q", "unknown"],
+    ["Q Ave", "road"], ["Portage Rd", "road"], ["garbage line", "unknown"], ["Kalamazoo culvert", "unknown"], ["100 Q", "unknown"],
   ]) check(`${k.padEnd(7)} <- ${JSON.stringify(l)}`, kind(l) === k, "got " + kind(l));
   const a = core.parseAddressLine("8500 N 32nd St, Richland, MI");
   check("address parts: house, preDir, base, type, city, state", a && a.house === "8500" && a.street.preDir === "N" && a.street.base === "32ND"

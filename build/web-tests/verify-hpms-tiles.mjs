@@ -96,6 +96,12 @@ checks.push(["legend lists all 7 FHWA classes", await page.evaluate(() => {
   const t = document.getElementById("liveLegend").textContent;
   return t.includes("Interstate") && t.includes("Local") && t.includes("verdicts") || t.includes("Verdicts");
 })]);
+// Source provenance (2026-09-17): every class row in the HPMS legend section
+// is a link to FHWA's public HPMS page with a hover title naming the source.
+checks.push(["HPMS legend rows link to FHWA's public HPMS page with a source tooltip", await page.evaluate(() => {
+  const rows = [...document.querySelectorAll("#liveLegend a.lrow")].filter(a => /fhwa\.dot\.gov/.test(a.href));
+  return rows.length >= 7 && rows.every(a => /HPMS/.test(a.title) && a.target === "_blank" && !/\/rest\//.test(a.href));
+})]);
 
 // tiles actually painted: wait for a browse-pane canvas with non-blank pixels
 await page.waitForFunction(() => {
@@ -145,14 +151,55 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
   await page.fill("#coordsIn", `Cached check,${tLat},${tLon}`);
   await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("1 point(s) classified"), { timeout: 30000 });
   const rowText = await page.evaluate(() => document.querySelector("#resultsBody .row").textContent);
-  const cachedOk = /federal aid/i.test(rowText) && rowText.includes("cached data")
+  const cachedOk = /federal aid/i.test(rowText) && rowText.includes("Source: FHWA HPMS")
     && rowText.includes("State route") && !rowText.includes("Failed");   // linkage chip from the R/B/E attrs
   if (!cachedOk) console.log("  row text was:", rowText.slice(0, 300));
   checks.push(["cached classification returns the known Federal-aid verdict from the tiles", cachedOk]);
+  checks.push(["row Source chip links to FHWA's public HPMS page (not a REST URL)", await page.evaluate(() => {
+    const a = document.querySelector("#resultsBody .row a.srcchip");
+    return !!a && /fhwa\.dot\.gov/.test(a.href) && !/\/rest\//.test(a.href) && /Data source/.test(a.title);
+  })]);
+  checks.push(["exports carry a Data Source column naming the HPMS tiles", await page.evaluate(() =>
+    EXPORT_HEADERS.includes("Data Source") && exportRows().every(r => /FHWA HPMS/.test(r[EX.source])))]);
+
   checks.push(["no live class/ACUB point query fired for the cached verdict",
     !reqUrls.slice(before).some(u =>
       /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer|NTAD_Adjusted_Urban_Areas/.test(u)
       && u.includes("esriGeometryPoint"))]);
+  // --- source outage -> HPMS fallback (2026-09-17). Live verdicts ON, the
+  // state's class server answering an HTML 500: the verdict still comes
+  // (from the tiles), the row + export say which source was down, the
+  // strip reports it, the down host is never queried again, and a JSON
+  // probe brings it back with a re-run offer. ---
+  const ST = st.toUpperCase();
+  const stHost = await page.evaluate(S => new URL(svc(STATE_SVC_KEY[S])).host, ST);
+  const dot = await page.evaluate(S => DOT_NAME[S], ST);
+  await page.route(`**/${stHost}/**`, route => route.fulfill({ status: 500, contentType: "text/html", body: "<html>500</html>" }));
+  await page.evaluate(() => { document.getElementById("liveVerdicts").checked = true; });
+  await page.fill("#coordsIn", `Outage check,${tLat + 0.0002},${tLon}`);
+  await page.waitForFunction(() => { const a = document.querySelector("#resultsBody .row a.srcchip"); return !!a && /down/.test(a.textContent); }, { timeout: 30000 });
+  checks.push([`outage: live verdict falls back to the HPMS tiles and names ${dot} as down on the row`, await page.evaluate(d => {
+    const a = document.querySelector("#resultsBody .row a.srcchip"), r = document.querySelector("#resultsBody .row");
+    return !!a && /FHWA HPMS/.test(a.textContent) && a.textContent.includes(`${d} live layer down`) && /FALLBACK/.test(a.title)
+      && !r.className.includes("v-failed") && /federal aid/i.test(r.textContent);
+  }, dot)]);
+  checks.push(["outage: status strip reports the source down (HTTP 500) with a recheck", await page.evaluate(d => {
+    const s = document.getElementById("sourceStatus");
+    return !s.hidden && s.textContent.includes(`${d} live layer`) && /HTTP 500/.test(s.textContent) && /rechecked/.test(s.textContent);
+  }, dot)]);
+  checks.push(["outage: exports' Data Source column carries the fallback note", await page.evaluate(d =>
+    exportRows().every(r => /FHWA HPMS/.test(r[EX.source]) && r[EX.source].includes(`${d} live layer down`)), dot)]);
+  checks.push(["outage: the down host is not queried again (fast-fail, no request)", await page.evaluate(async h => {
+    const before = netLines.filter(l => l.includes("GET ") && l.includes(h)).length;
+    try { await httpGetJson("https://" + h + "/x/query?f=json"); return false; } catch (e) { if (!e.sourceDown) return false; }
+    return netLines.filter(l => l.includes("GET ") && l.includes(h)).length === before;
+  }, stHost)]);
+  await page.route(`**/${stHost}/**`, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ name: "Functional Class" }) }));
+  await page.evaluate(h => probeSource(h), stHost);
+  await page.waitForFunction(() => /back up/.test(document.getElementById("sourceStatus").textContent), { timeout: 10000 });
+  checks.push(["outage: recovered source reported back up with a re-run offer for the fallback row", await page.evaluate(() =>
+    /re-run 1 row/.test(document.getElementById("sourceStatus").textContent))]);
+  await page.evaluate(() => { document.getElementById("liveVerdicts").checked = false; });
 } else {
   console.log("  (skip) web/tiles/acub.pmtiles not present — cached-classification check skipped");
 }

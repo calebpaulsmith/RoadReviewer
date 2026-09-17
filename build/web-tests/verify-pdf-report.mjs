@@ -101,7 +101,7 @@ await page.waitForFunction(() => (document.getElementById("statusCount").textCon
 const verdictRowOk = (await page.locator("#resultsBody .row.v-fed").first().textContent())?.includes("Kalamazoo");
 
 // Exports now live in the export dialogue's PDF tab.
-await page.click("#exportBtn");
+await page.click("#viewExportBtn");
 await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 30000 }),

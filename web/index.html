@@ -331,28 +331,12 @@ details.howcolors { margin-top: 8px; }
   max-height: 60%; max-width: min(280px, 40%);
 }
 
-/* ---- pop-out: the full-detail table over the map ---- */
-#popoutWrap { position: fixed; inset: 0; z-index: 3000; background: rgba(15,25,35,.45);
-  display: flex; align-items: center; justify-content: center; padding: 24px; }
-#popoutWrap[hidden] { display: none; }
-#popoutCard { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
-  width: min(1500px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+/* ---- table-card chrome (the View and Export card) ---- */
 .po-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
   border-bottom: 1px solid var(--line); flex: none; }
 .po-head b { font-size: 15px; }
 .po-head .count { margin-right: auto; }
 .po-body { overflow: auto; }
-#popoutTable { border-collapse: collapse; width: 100%; font-size: 12.5px; }
-#popoutTable th, #popoutTable td { text-align: left; padding: 6px 9px;
-  border-bottom: 1px solid var(--line); vertical-align: top; }
-#popoutTable th { position: sticky; top: 0; background: #f4f7fa; z-index: 1;
-  font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); white-space: nowrap; }
-#popoutTable td:first-child { border-left: 4px solid #b9c4cd; font-weight: 600; }
-#popoutTable tr.v-fed td:first-child { border-left-color: var(--fed-border); background: var(--fed); }
-#popoutTable tr.v-nonfed td:first-child { border-left-color: var(--nonfed-border); background: var(--nonfed); }
-#popoutTable tr.v-review td:first-child { border-left-color: var(--review-border); background: var(--review); }
-#popoutTable tr.v-failed td:first-child { border-left-color: var(--failed-border); background: var(--failed); }
-#popoutTable td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; white-space: nowrap; }
 
 /* Live-layer legend (a Leaflet bottom-left control) — same visual language
    as #siteLegend, whose .hdr/.sw/.swp/.note/.src styles it reuses. */
@@ -366,6 +350,20 @@ details.howcolors { margin-top: 8px; }
 .livelegend .src { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 11px; }
 .livelegend .sw { display: inline-block; width: 16px; height: 5px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .livelegend .swp { display: inline-block; width: 12px; height: 12px; border: 1px solid #7c8b98; margin-right: 6px; vertical-align: middle; }
+/* legend rows / headers are links to the source's public product page; hover = source, click = open it */
+.livelegend a.lrow, .legend a.lrow { display: block; margin: 2px 0; color: inherit; text-decoration: none; cursor: help; border-radius: 3px; }
+.livelegend a.lrow:hover, .legend a.lrow:hover { background: #eef3f8; text-decoration: underline dotted; }
+.livelegend a.lsrc, .legend a.lsrc { color: inherit; text-decoration: underline dotted; cursor: help; }
+.livelegend a.lsrc:hover, .legend a.lsrc:hover { color: var(--blue, #1a5fb4); }
+.chip.srcchip { text-decoration: none; color: inherit; cursor: pointer; }
+.chip.srcchip:hover { border-color: #8aa0b6; text-decoration: underline dotted; }
+/* source outage strip (under the Auto-Detect header) + legend note */
+.srcstatus { margin: 0 0 8px; font-size: 11.5px; line-height: 1.4; }
+.srcstatus > div { padding: 5px 8px; border-radius: 6px; margin-bottom: 4px; }
+.srcstatus .down { background: #fff4e0; border: 1px solid #f0c98a; color: #6b4a00; }
+.srcstatus .up { background: #e9f7ec; border: 1px solid #9fd3ad; color: #1f5b30; }
+.srcstatus a { color: inherit; font-weight: 600; }
+.livelegend .note.down { color: #8a5a00; font-style: normal; }
 
 /* Find-on-map search (state / county / township / road via Census TIGERweb) */
 .findbox { margin-bottom: 8px; }
@@ -383,6 +381,23 @@ details.howcolors { margin-top: 8px; }
 #findResults .cw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
   border: 1px solid rgba(0,0,0,.3); vertical-align: middle; margin-right: 4px; }
 #findResults .note { color: var(--muted); font-style: italic; font-size: 12px; margin: 3px 0; }
+#findResults .findhdr { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 7px 0 2px; font-weight: 700; }
+/* the selected default area (county / city / township) — scopes place-less addresses and bare road names */
+.areabar { margin-top: 6px; font-size: 12.5px; }
+.areabar .areachip { display: inline-flex; align-items: center; gap: 6px; background: #e8f1fb; border: 1px solid #b9cde4; border-radius: 999px; padding: 3px 6px 3px 10px; }
+.areabar .areachip button { border: none; background: none; box-shadow: none; padding: 0 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.areabar .areachip button:hover { color: #b42318; }
+.areabar .hint { color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+/* pickers on unresolved rows (ambiguous address / road stretches) */
+.row .picker { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 2px; }
+.row .picker button.pick { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; background: #fff; border: 1px solid #b9cde4; box-shadow: none; }
+.row .picker button.pick:hover { background: #e8f1fb; }
+.row .picker button.pick.out { border-style: dashed; color: var(--muted); }
+/* pin right-click menu + the drag-to-move pin */
+.pinmenu { display: flex; gap: 6px; margin-top: 6px; }
+.pinmenu button { font-size: 12px; padding: 4px 9px; }
+.pin-dot.moving { background: #1a5fb4; cursor: grab; width: 22px; height: 22px; }
+.pin-dot.moving:active { cursor: grabbing; }
 
 /* ---- Export: one split pill + dropdown, under the input area ---- */
 .export-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -402,11 +417,16 @@ details.howcolors { margin-top: 8px; }
 .menu button:hover { background: #eef3f9; }
 
 /* ---- Export dialogue: tabs per export type, preview, editable table ---- */
-#exportWrap { position: fixed; inset: 0; z-index: 3000; background: rgba(15,25,35,.45);
-  display: flex; align-items: center; justify-content: center; padding: 24px; }
-#exportWrap[hidden] { display: none; }
-#exportCard { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
-  width: min(1500px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+/* The export card is a child of #sidebar; it shows only while the pane is
+   expanded (View and Export), filling the pane below the header. */
+#exportCard { display: none; flex: 1 1 auto; min-height: 0; background: #fff; flex-direction: column; overflow: hidden; }
+body.expanded #exportCard:not([hidden]) { display: flex; }
+body.expanded .sb-scroll, body.expanded .sb-cta { display: none; }
+#exportCard .po-body { flex: 1 1 auto; min-height: 0; }
+#exportTable tr[data-k] { cursor: pointer; }
+#exportTable tr.selected td { background: #e8f1fb; border-top: 2px solid #2c6ca8; border-bottom: 2px solid #2c6ca8; }
+#exportTable tr.selected td:first-child { border-left: 4px solid #2c6ca8; }
+#exportTable tr.selected td:last-child { border-right: 2px solid #2c6ca8; }
 .ex-tabs { display: flex; gap: 4px; padding: 8px 14px 0; border-bottom: 1px solid var(--line);
   flex: none; flex-wrap: wrap; }
 .extab { background: none; border: 1px solid transparent; border-bottom: none; box-shadow: none;
@@ -457,6 +477,41 @@ details.howcolors { margin-top: 8px; }
 #rowFilter { font: inherit; font-size: 12.5px; padding: 5px 9px; width: 170px;
   border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 
+/* ---- View and Export: the left pane stretches over the map (2026-09-17, per user) ----
+   Only the sidebar's flex-basis animates; the map area (flex 1 1 auto) follows.
+   The map is re-measured on every frame of the transition (expandTransition). */
+:root { --mini-map: clamp(220px, 17vw, 420px); }
+#sidebar { transition: flex-basis .28s cubic-bezier(.4, 0, .2, 1); will-change: flex-basis; }
+body.expanded #sidebar { flex-basis: calc(100% - var(--mini-map)); max-width: none; }
+body.expanded .mapbar label, body.expanded .mapbar #plotAllSites, body.expanded .mapbar .rinfo { display: none; }
+body.expanded #siteLegend, body.expanded .livelegend { display: none !important; }
+.sb-cta { flex: none; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--bg); }
+.sb-cta button { width: 100%; font-size: 14px; padding: 9px 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.sb-cta .arr { font-weight: 700; transition: transform .15s; }
+.sb-cta button:hover .arr { transform: translateX(4px); }
+.pinhint { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.45; }
+
+/* ---- the pin button (top right of the map) + the dropped-pin name editor ---- */
+.leaflet-bar.pinctl { border: none; }
+.pinctl button { width: 34px; height: 34px; border: none; border-radius: 6px; background: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; box-shadow: none; position: relative; }
+.pinctl button svg { width: 21px; height: 21px; fill: #1c4066; }
+.pinctl button.armed { background: #1a5fb4; }
+.pinctl button.armed svg { fill: #fff; }
+.pinctl button.multi { background: #d9480f; }
+.pinctl button .badge { position: absolute; top: -6px; right: -6px; background: #fff; color: #d9480f; border: 1px solid #d9480f;
+  border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 4px; display: none; }
+.pinctl button.multi .badge { display: block; }
+#map.pin-mode { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='32' viewBox='0 0 24 28'><path d='M12 1a8 8 0 0 0-8 8c0 6 8 16 8 16s8-10 8-16a8 8 0 0 0-8-8z' fill='%231a5fb4' stroke='white' stroke-width='1.5'/><circle cx='12' cy='9' r='3' fill='white'/></svg>") 14 30, crosshair; }
+.pin-drop-icon { background: none; border: none; }
+.pin-dot { width: 18px; height: 18px; border-radius: 50%; background: #8a97a6; border: 3px solid #fff; box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+.pin-drop { animation: pinDrop .38s cubic-bezier(.2, .8, .2, 1); }
+@keyframes pinDrop { 0% { transform: translateY(-46px) scale(.5); opacity: 0; } 65% { transform: translateY(3px) scale(1.08); opacity: 1; } 100% { transform: none; } }
+.site-label.editing { border-color: #2c6ca8; box-shadow: 0 0 0 2px rgba(44,108,168,.28); }
+.site-label .pinname { outline: none; min-width: 3ch; display: inline-block; caret-color: #2c6ca8; }
+@media (prefers-reduced-motion: reduce) { #sidebar { transition: none; } .pin-drop { animation: none; } .sb-cta .arr { transition: none; } }
+
 /* Narrow screens: the pane can't hold a 440px column — let it shrink. */
 @media (max-width: 760px) {
   #sidebar { flex-basis: 78vw; max-width: 85vw; }
@@ -471,11 +526,15 @@ details.howcolors { margin-top: 8px; }
     <a href="sources.html" target="_blank" rel="noopener">Data sources</a> · <a href="flow.html" target="_blank" rel="noopener" title="When the verdict comes from the HPMS tiles vs the state DOT layer, and where every item on screen comes from">How it decides</a>
   </div>
   <div class="sb-scroll">
-    <div class="sb-tabs">
-      <button id="tabBtnCoords" class="tabbtn active" title="Paste a batch of coordinates and classify them all at once">Coordinate Input</button>
-      <button id="tabBtnCollect" class="tabbtn" title="Search for a state, county, town or city, zoom there, and add GPS points one at a time with a name and note">Search &amp; Collect</button>
-    </div>
     <div class="input-col" id="inputPanel">
+      <div class="findbox">
+        <div class="findrow">
+          <input id="findText" type="search" spellcheck="false" placeholder="Find a state, county, city, township or road… (results appear as you type)"
+            title="Start typing part of a state, county, city / village, township or road name. Results are grouped by kind; clicking one zooms the map there. Picking a county, city or township also makes it the AREA that addresses without a city and road names without a place are looked up in. Roads are searched inside the area (or the visible map when no area is set).">
+        </div>
+        <div id="findResults"></div>
+        <div id="areaBar" class="areabar" hidden></div>
+      </div>
       <div class="controls">
         <span class="count" id="parseCount"></span>
       </div>
@@ -509,27 +568,6 @@ Portage Rd, Portage MI"></textarea>
       </details>
     </div>
 
-    <div id="collectPanel" hidden>
-      <div class="findbox">
-        <div class="findrow">
-          <input id="findText" type="search" spellcheck="false" placeholder="State, county, town, city or road… (suggests as you type)"
-            title="Start typing part of a county, township (county-subdivision), city or road name — suggestions appear below as you type and clicking one zooms the map there. Counties and townships are searched statewide via Census TIGERweb; road names are searched within the visible map area — find the place first, then the road.">
-          <button id="findBtn" title="Search Census TIGERweb for matching counties, townships and roads">Find</button>
-        </div>
-        <div id="findResults"></div>
-      </div>
-      <div class="addbox">
-        <div class="addrow"><input id="addName" type="text" spellcheck="false" placeholder="Site name (e.g. Culvert on Q Ave)"></div>
-        <div class="addrow"><input id="addCoords" type="text" spellcheck="false" placeholder="GPS coordinates — 42.28536, -85.57025 or 42°17'07.3&quot;N 85°34'12.9&quot;W"></div>
-        <div class="addrow"><input id="addNote" type="text" spellcheck="false" placeholder="Note (optional — goes into the export)"></div>
-        <div class="addrow">
-          <button id="addPointBtn" class="primary" title="Adds the point to the results table below, classifies it, and zooms the map to it. Points are kept in this browser until removed.">＋ Add point</button>
-          <span class="count" id="collectCount"></span>
-          <span style="flex:1"></span>
-          <a href="#" id="clearCollected" title="Remove every collected point">clear collected</a>
-        </div>
-      </div>
-    </div>
 
     <!-- Export lives with the INPUT, not under Auto-Detect (user direction):
          one split pill — the button opens the dialogue, the caret drops the
@@ -537,8 +575,7 @@ Portage Rd, Portage MI"></textarea>
          from Coordinate Input and Search & Collect alike. -->
     <div class="export-row">
       <span class="btn-split">
-        <button id="exportBtn" class="primary" title="Open the export dialogue — preview and edit every site's data, then download or copy it">Export</button>
-        <button id="exportCaret" class="primary" aria-haspopup="menu" aria-expanded="false" title="Pick an export format">▾</button>
+        <button id="exportBtn" class="primary" aria-haspopup="menu" aria-expanded="false" title="Quick export — copy or download every classified site straight away. To preview and edit first, use View and Export at the bottom of this pane.">Quick Export ▾</button>
       </span>
       <button id="clearBtn" title="Empty the coordinates box">Clear</button>
       <span class="count" id="exportCount"></span>
@@ -546,13 +583,13 @@ Portage Rd, Portage MI"></textarea>
         <div class="mgrp">Excel / clipboard</div>
         <button data-act="copy-coords" role="menuitem">Copy site + coordinates</button>
         <button data-act="copy-results" role="menuitem">Copy Auto-Detect results</button>
-        <button data-act="tab-excel" role="menuitem">CSV file…</button>
+        <button data-act="dl-csv" role="menuitem">Download CSV</button>
         <div class="mgrp">Maps</div>
-        <button data-act="tab-kmz" role="menuitem">KMZ for Google Earth…</button>
-        <button data-act="tab-geojson" role="menuitem">GeoJSON for GIS…</button>
+        <button data-act="dl-kmz" role="menuitem">Download KMZ (Google Earth)</button>
+        <button data-act="dl-geojson" role="menuitem">Download GeoJSON (GIS)</button>
         <div class="mgrp">PDF</div>
-        <button data-act="tab-pdf" role="menuitem">PDF report…</button>
-        <button data-act="tab-pdf" role="menuitem">FIRMettes (ZIP)…</button>
+        <button data-act="pdf-report" role="menuitem">PDF report</button>
+        <button data-act="firm-zip" role="menuitem">FIRMettes (ZIP)</button>
       </div>
     </div>
 
@@ -561,9 +598,10 @@ Portage Rd, Portage MI"></textarea>
         <h2>Auto-Detect</h2>
         <span class="count" id="statusCount"></span>
         <span style="flex:1"></span>
-        <button id="popoutBtn" title="Open every site's full detail — verdict, class, urban area, roads — as one big table">⧉ Expand table</button>
+        <button id="popoutBtn" title="Expand this pane over the map: every site's full detail in one editable table, with the map alongside">⧉ View and Export</button>
       </div>
       <p class="disclaim">Screening aid only — results may be incorrect. Verify every site with the responsible governing agency.</p>
+      <div id="sourceStatus" class="srcstatus" hidden></div>
       <div class="results-bar">
         <label title="How far from each point to look for roads. The state is always auto-detected from the point's location.">Detection Buffer:
           <select id="bufferSel">
@@ -615,6 +653,9 @@ Portage Rd, Portage MI"></textarea>
     &copy; OpenStreetMap contributors.
   </div>
   </div>
+  <div class="sb-cta">
+    <button id="viewExportBtn" class="primary" title="Expand this pane over the map: preview every export format, edit any cell (site name, coordinates, notes), and download — the map stays alongside and zooms to the row you select">View and Export <span class="arr">→</span></button>
+  </div>
 </div>
 
 <div id="mapArea">
@@ -638,9 +679,9 @@ Portage Rd, Portage MI"></textarea>
 <div id="exportWrap" hidden>
   <div id="exportCard">
     <div class="po-head">
-      <b>Export</b>
+      <b>View and Export</b>
       <span class="count" id="exportDlgCount"></span>
-      <button id="exportClose">✕ Close</button>
+      <button id="exportClose" title="Shrink the pane back and return to the map">← Back to map</button>
     </div>
     <div class="ex-tabs" id="exportTabs">
       <button class="extab active" data-tab="excel">Excel</button>
@@ -701,16 +742,6 @@ Portage Rd, Portage MI"></textarea>
 
 <div id="toast" role="status" aria-live="polite"></div>
 
-<div id="popoutWrap" hidden>
-  <div id="popoutCard">
-    <div class="po-head">
-      <b>All results</b>
-      <span class="count" id="popoutCount"></span>
-      <button id="popoutClose">✕ Close</button>
-    </div>
-    <div class="po-body"><table id="popoutTable"></table></div>
-  </div>
-</div>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/jspdf/jspdf.umd.min.js"></script>
@@ -1154,7 +1185,8 @@ async function determineAcub(lat, lon, bufferFt) {
 async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET) {
   const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", acubBoundary: false,
                 classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
-                verdict: "", reviewReason: "", failed: false, segments: [], bufferFt };
+                verdict: "", reviewReason: "", failed: false, segments: [], bufferFt,
+                sourceKind: "state" };   // "state" = the state DOT's live layer; "hpms" = the tiles; "acub" = urban boundary only
 
   let acub;
   try {
@@ -1169,6 +1201,7 @@ async function classifyPoint(lat, lon, stateCode, bufferFt = DEFAULT_BUFFER_FEET
   const nfcQuery = NFC_WIRED[stateCode];
   if (!nfcQuery) {
     out.verdict = "ACUB only - class lookup not wired for this state";
+    out.sourceKind = "acub";
     return out;
   }
 
@@ -1396,15 +1429,17 @@ function parseAddressLine(line) {
 }
 
 // "Portage Rd, Portage MI" -> a road plus somewhere to look for it. A road
-// with no place is deliberately NOT a road line: "Q Ave" alone would mean a
-// six-state search.
+// with no place ("Q Ave") is a road line too, flagged `bare`: the page looks
+// it up inside the selected default area (county / city / township) and
+// refuses with a message when none is selected — never a six-state search.
 function parseRoadLine(line) {
   const s = String(line).trim();
   if (/^\d/.test(s)) return null;                       // house numbers are addresses
   const parts = s.split(",").map(x => x.trim()).filter(Boolean);
-  if (parts.length < 2) return null;
+  if (!parts.length) return null;
   const street = parseStreetParts(parts[0]);
   if (!street) return null;
+  if (parts.length < 2) return { street, place: "", state: "", text: s, bare: true };
   const tail = splitStateZip(parts.slice(1).join(", "));
   if (!tail.place && !tail.state) return null;
   return { street, place: tail.place, state: tail.state, text: s };
@@ -1657,12 +1692,140 @@ function logNet(line) {
   if (netLines.length > 400) netLines = netLines.slice(-400);
   netLogEl.textContent = netLines.join("\n");
 }
-async function httpGetJson(url) {
-  logNet("GET " + url);
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
+/* ---- Live-service transport: per-host throttle + outage tracking (2026-09-17, per user) ----
+   Every live request — rr-core's point queries, the frame/mirror queries,
+   FIRMette polling — funnels through httpGetJson. Two things happen here:
+   1. THROTTLE: at most HOST_MAX_INFLIGHT requests are in flight per host.
+      Pasting 40 points used to fire 40 x (class + route + ACUB + TIGER)
+      queries at the same instant, which is exactly how a state server gets
+      tipped over or starts rate-limiting. Extra requests wait their turn;
+      nothing is dropped.
+   2. HEALTH: a hard failure — network error, timeout, HTTP 5xx / 429, or a
+      non-JSON body (MDOT's HTML 500 page) — marks the host DOWN. Further
+      requests to it fail instantly (no piling on), classifyPointSmart
+      classifies from the HPMS tiles instead and stamps the row with the
+      outage, and the status strip + legend say which source is out. A probe
+      re-checks the host every OUTAGE_RECHECK_MS; once it answers JSON again
+      it is UP and the strip offers to re-run the rows that fell back. */
+const HOST_MAX_INFLIGHT = 3, FETCH_TIMEOUT_MS = 40000, OUTAGE_RECHECK_MS = 60000;
+const hostSlots = new Map();     // host -> { active, queue }
+async function withHostSlot(host, fn) {
+  let s = hostSlots.get(host);
+  if (!s) { s = { active: 0, queue: [] }; hostSlots.set(host, s); }
+  if (s.active >= HOST_MAX_INFLIGHT) await new Promise(r => s.queue.push(r));
+  s.active++;
+  try { return await fn(); }
+  finally { s.active--; const next = s.queue.shift(); if (next) next(); }
 }
+const sourceHealth = new Map();  // host -> { down, since, reason, probeUrl, timer, upAt }
+function hostOf(url) { try { return new URL(url, location.href).host; } catch { return ""; } }
+function healthOf(host) {
+  let h = sourceHealth.get(host);
+  if (!h) { h = { down: false, since: 0, reason: "", probeUrl: "", timer: null, upAt: 0 }; sourceHealth.set(host, h); }
+  return h;
+}
+// Friendly name for a host, derived from the service-URL table (so a pasted
+// override URL is named correctly too).
+const SOURCE_KEY_NAME = { MI_NFC: "MDOT live layer", MI_ROUTE: "MDOT live layer", IN_NFC: "INDOT live layer",
+  IN_ROADNAME: "Indiana road-name layer", WI_LOCAL_ROADS: "WisDOT live layer", WI_STATE_TRUNK: "WisDOT live layer",
+  MN_NFC: "MnDOT live layer", IL_NFC: "IDOT live layer", OH_NFC: "ODOT live layer",
+  ACUB: "USDOT NTAD urban areas", TIGER_ROADS: "Census TIGER street names" };
+const STATE_SVC_KEY = { MI: "MI_NFC", IN: "IN_NFC", WI: "WI_LOCAL_ROADS", MN: "MN_NFC", IL: "IL_NFC", OH: "OH_NFC" };
+function sourceNameForHost(host) {
+  for (const k of Object.keys(SOURCE_KEY_NAME)) { const u = svc(k); if (u && hostOf(u) === host) return SOURCE_KEY_NAME[k]; }
+  if (/fema\.gov$/.test(host)) return "FEMA FIRMette service";
+  if (/census\.gov$/.test(host)) return "Census Bureau";
+  return host;
+}
+class SourceDownError extends Error {
+  constructor(host, h) {
+    super(`${sourceNameForHost(host)} is down (${h.reason}) — using the FHWA HPMS tiles until it answers again`);
+    this.host = host; this.sourceDown = true;
+  }
+}
+function markSourceDown(host, url, reason) {
+  const h = healthOf(host), was = h.down;
+  h.down = true; h.reason = reason;
+  if (!was) h.since = Date.now();
+  h.probeUrl = String(url).replace(/\/query\?[\s\S]*$/, "").replace(/\?[\s\S]*$/, "") + "?f=json";
+  if (!h.timer) h.timer = setTimeout(() => probeSource(host), OUTAGE_RECHECK_MS);
+  if (!was) { logNet(`SOURCE DOWN: ${sourceNameForHost(host)} (${host}) — ${reason}; rechecking every ${OUTAGE_RECHECK_MS / 1000} s`); sourceHealthChanged(); }
+}
+function markSourceUp(host) {
+  const h = healthOf(host);
+  if (!h.down) return;
+  h.down = false; h.upAt = Date.now(); clearTimeout(h.timer); h.timer = null;
+  logNet(`SOURCE UP: ${sourceNameForHost(host)} (${host}) answered again`);
+  sourceHealthChanged();
+}
+// One small metadata request (the layer's ?f=json), outside the down gate.
+async function probeSource(host) {
+  const h = healthOf(host);
+  clearTimeout(h.timer); h.timer = null;
+  if (!h.down) return;
+  logNet("PROBE " + h.probeUrl);
+  try {
+    const r = await fetch(h.probeUrl, fetchOpts(15000));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j && j.error && Number(j.error.code) >= 500) throw new Error("service error " + j.error.code);
+    markSourceUp(host);
+  } catch (e) {
+    h.reason = e && e.name === "TimeoutError" ? "no answer in 15 s" : (e && e.message) || "unreachable";
+    h.timer = setTimeout(() => probeSource(host), OUTAGE_RECHECK_MS);
+    sourceHealthChanged();
+  }
+}
+function fetchOpts(ms) { return (typeof AbortSignal !== "undefined" && AbortSignal.timeout) ? { signal: AbortSignal.timeout(ms) } : {}; }
+async function httpGetJson(url) {
+  const host = hostOf(url), h = healthOf(host);
+  if (h.down) throw new SourceDownError(host, h);
+  return withHostSlot(host, async () => {
+    logNet("GET " + url);
+    let r;
+    try { r = await fetch(url, fetchOpts(FETCH_TIMEOUT_MS)); }
+    catch (e) {
+      const why = e && e.name === "TimeoutError" ? `no answer in ${FETCH_TIMEOUT_MS / 1000} s` : "network error";
+      markSourceDown(host, url, why); throw new Error(why);
+    }
+    if (!r.ok) {
+      if (r.status >= 500 || r.status === 429) markSourceDown(host, url, "HTTP " + r.status);
+      throw new Error("HTTP " + r.status);
+    }
+    let j;
+    try { j = await r.json(); }
+    catch { markSourceDown(host, url, "non-JSON reply (error page)"); throw new Error("non-JSON reply from " + host); }
+    if (j && j.error && Number(j.error.code) >= 500) markSourceDown(host, url, "service error " + j.error.code);
+    return j;
+  });
+}
+// The strip under the Auto-Detect header: which sources are out (and since
+// when), and which came back with rows still on the HPMS fallback.
+function fallbackRowCount(host) { return (typeof currentPoints !== "undefined" ? currentPoints : []).filter(p => p.result && (p.result.fallbackHost === host || p.result.failedHost === host)).length; }
+function sourceHealthChanged() {
+  const el = $("sourceStatus");
+  if (!el) return;
+  const parts = [];
+  for (const [host, h] of sourceHealth) {
+    const name = esc(sourceNameForHost(host));
+    if (h.down) parts.push(`<div class="down">⚠ <b>${name}</b> is not answering (${esc(h.reason)}, since ${new Date(h.since).toLocaleTimeString()}) — verdicts and map layers fall back to the FHWA HPMS tiles until it answers again; rechecked every ${OUTAGE_RECHECK_MS / 1000} s. <a href="#" data-probe="${esc(host)}">check now</a></div>`);
+    else if (h.upAt && fallbackRowCount(host)) parts.push(`<div class="up">✓ <b>${name}</b> is back up — <a href="#" data-rerun="${esc(host)}">re-run ${fallbackRowCount(host)} row(s)</a> that failed or used the HPMS fallback.</div>`);
+  }
+  el.innerHTML = parts.join("");
+  el.hidden = !parts.length;
+  if (typeof scheduleBrowseRefresh === "function") scheduleBrowseRefresh();
+}
+async function rerunFallbackRows(host) {
+  await Promise.all([...cache].map(async ([k, pr]) => { const r = await pr.catch(() => null); if (r && r.fallbackHost === host) cache.delete(k); }));
+  for (const p of currentPoints) if (p.result && (p.result.fallbackHost === host || p.result.failedHost === host)) p.result = null;
+  render(); sourceHealthChanged();
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest("#sourceStatus a[data-probe], #sourceStatus a[data-rerun]");
+  if (!a) return;
+  e.preventDefault();
+  if (a.dataset.probe) probeSource(a.dataset.probe); else rerunFallbackRows(a.dataset.rerun);
+});
 
 /* ---- map: locked to Region V; offline road basemap, live satellite ---- */
 // zoomAnimation off: Leaflet silently swallows setView() while a zoom
@@ -2012,7 +2175,7 @@ function render() {
     const state = detectState(p.lat, p.lon) || "??";   // always auto-detected (the State dropdown is gone)
     const buffer = bufferFeet();
     const key = (p.geo ? "a:" : p.roadInfo ? "r:" : "") + p.lat + "," + p.lon + "," + state + "," + buffer;
-    p._state = state;   // shown again in the pop-out table
+    p._state = state;   // shown again in the View and Export table
     const headHtml = `<span class="site-name">${esc(p.name)}</span>` +
       `<span class="coords">${p.lat}, ${p.lon} · ${state}</span>`;
     const linksHtml = `<div class="row-links">` +
@@ -2035,8 +2198,10 @@ function render() {
     marker.bindPopup(`<b>${esc(p.name)}</b><br>${p.lat}, ${p.lon}<br><i>querying…</i>`);
     // Surface the pasted site name right on the map. Labels stay permanent up
     // to 25 sites; past that they'd shingle, so they become hover tooltips.
-    marker.bindTooltip(esc(p.name), { permanent: totalValid <= 25, direction: "top", offset: [0, -10], className: "site-label" });
-    marker.on("click", () => selectSiteByPoint(p));
+    if (!(pinEditor && pinEditor.key === fmt5(p.lat) + "," + fmt5(p.lon)))   // its label IS the open name editor
+      marker.bindTooltip(esc(p.name), { permanent: totalValid <= 25, direction: "top", offset: [0, -10], className: "site-label" });
+    marker.on("click", () => { siteMarkerClickAt = Date.now(); selectSiteByPoint(p); });
+    marker.on("contextmenu", e => { L.DomEvent.stop(e); openPinMenu(p, e.latlng); });
     p._marker = marker; p._tr = tr;
     bounds.push([p.lat, p.lon]);
 
@@ -2062,9 +2227,7 @@ function render() {
       const segChip = seg0
         ? `<span class="chip" title="The closest segment's identifiers in the STATE's own linear referencing system, as submitted to FHWA (HPMS ${HPMS_TILE_YEAR}) — e.g. an MDOT PR number. Use it to look the segment up in the state's inventory. Included in the CSV / GeoJSON / KMZ exports."><i class="cw" style="background:#c8b6e2"></i>State route ${esc(seg0.routeId)}${seg0.mp ? " \u00b7 MP " + esc(seg0.mp) : ""}</span>`
         : "";
-      const srcChip = res.srcNote
-        ? `<span class="chip" title="Classified from the tilesets hosted with this site — FHWA HPMS ${HPMS_TILE_YEAR} classes + the 2020 Adjusted Urban Boundaries — with no live state-DOT queries. Tick 'Live verdicts' under Data service URLs to query the live layers instead."><i class="cw" style="background:#9fb6cc"></i>cached data</span>`
-        : "";
+      const srcChip = sourceChipHtml(res);
       const provChip = window.provenanceChipHtml ? provenanceChipHtml(p, res) : "";
       const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, provChip, extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
@@ -2077,6 +2240,7 @@ function render() {
         `${esc(res.urbanRural)}${res.acubName ? " (" + esc(res.acubName) + ")" : ""}<br>` +
         `<b>${esc(res.verdict)}</b>` +
         (res.reviewReason && REASON_EXPLAIN[res.reviewReason] ? `<br><i>${esc(REASON_EXPLAIN[res.reviewReason])}</i>` : "") +
+        (verdictSource(res) ? `<br>Source: ${sourceLinkHtml(verdictSource(res), esc(verdictSource(res).short), "")}` : "") +
         `<br>${pointLinks(p.lat, p.lon, state)}`);
       done++;
       $("statusCount").textContent = done < total ? `classifying ${done} of ${total}…` : `${total} point(s) classified`;
@@ -2090,7 +2254,8 @@ function render() {
 
   $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
   $("exportCount").textContent = total ? `${total} site(s)` : "";
-  if (bounds.length === 1) map.setView(bounds[0], 15);
+  if (keepMapView) keepMapView = false;          // a pin drop / name edit: stay where the user is working
+  else if (bounds.length === 1) map.setView(bounds[0], 15);
   else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
   // The re-fit is the new baseline: every site is in view, so nothing is
   // filtered out until the user moves the map again.
@@ -2106,10 +2271,7 @@ function render() {
 let collectedPoints = [];
 try { collectedPoints = JSON.parse(localStorage.getItem("rr_collected") || "[]") || []; } catch { collectedPoints = []; }
 function saveCollected() { try { localStorage.setItem("rr_collected", JSON.stringify(collectedPoints)); } catch { /* private mode etc. */ } }
-function updateCollectCount() {
-  $("collectCount").textContent = collectedPoints.length
-    ? `${collectedPoints.length} point(s) — saved in this browser` : "";
-}
+function updateCollectCount() { /* points saved by the old add-a-point form still load; their rows carry a remove link */ }
 function rebuildPoints() {
   const pasted = parseCoordinates($("coordsIn").value);
   // Geocoded addresses and looked-up roads become points here (later block).
@@ -2140,6 +2302,8 @@ function onInput() {
 }
 $("coordsIn").addEventListener("input", onInput);
 $("resultsBody").addEventListener("click", e => {
+  const pk = e.target.closest("button.pick");
+  if (pk) { e.preventDefault(); if (window.applyPick) applyPick(pk.dataset.kind, pk.dataset.key, +pk.dataset.i); return; }
   if (e.target.classList.contains("retry")) { e.preventDefault(); render(); }
   if (e.target.classList.contains("rmpt")) {
     e.preventDefault();
@@ -2150,38 +2314,165 @@ $("resultsBody").addEventListener("click", e => {
 $("bufferSel").addEventListener("change", () => { rebuildPoints(); render(); });
 $("clearBtn").addEventListener("click", () => { $("coordsIn").value = ""; onInput(); });
 
-/* ---- the two input tabs ---- */
-function setTab(which) {
-  const collect = which === "collect";
-  $("collectPanel").hidden = false;                      // the attr only hides it pre-JS
-  $("inputPanel").style.display = collect ? "none" : "";
-  $("collectPanel").style.display = collect ? "" : "none";
-  $("tabBtnCoords").classList.toggle("active", !collect);
-  $("tabBtnCollect").classList.toggle("active", collect);
-}
-$("tabBtnCoords").addEventListener("click", () => setTab("coords"));
-$("tabBtnCollect").addEventListener("click", () => setTab("collect"));
-setTab("coords");
 
-/* ---- the point adder ---- */
-function addCollectedPoint() {
-  const coordsTxt = $("addCoords").value.trim();
-  const parsed = coordsTxt ? parseCoordinates(coordsTxt)[0] : null;
-  if (!parsed || parsed.invalid) { alert("Enter GPS coordinates as lat, lon — e.g. 42.28536, -85.57025 — or degrees/minutes/seconds, e.g. 42\u00b017'07.3\"N 85\u00b034'12.9\"W.\n\nStreet addresses aren't accepted yet."); return; }
-  const name = $("addName").value.trim() || parsed.name || `Point ${collectedPoints.length + 1}`;
-  collectedPoints.push({ name, lat: parsed.lat, lon: parsed.lon, note: $("addNote").value.trim() });
-  saveCollected(); rebuildPoints(); render();
-  focusMapOnSite(parsed.lat, parsed.lon, Math.max(map.getZoom(), 16));
-  $("addName").value = ""; $("addCoords").value = ""; $("addNote").value = "";
+/* ---- the pin button: drop sites straight onto the map (2026-09-17, per user) ----
+   One click arms it for ONE pin; a second click keeps it on (drop many);
+   a third turns it off (Escape also does). Scroll/drag still navigate. A
+   map click writes "Point N, lat, lon" onto the end of the coordinates box
+   — so the pin goes through the normal parse -> classify flow — and drops
+   a pin on the spot with its label already open as a name editor: the
+   default name is selected, so typing replaces it; Enter (or clicking
+   elsewhere) finishes; typing is optional. The dropped pin is temporary:
+   render() draws the real marker ~0.5 s later and skips that site's label
+   while the editor is open, so the two never show together. */
+let pinMode = 0;            // 0 off · 1 one pin · 2 keep dropping
+let pinEditor = null;       // { marker, key, lineIdx, name } while a dropped pin is being named
+let keepMapView = false;    // one-shot: the next render() must NOT refit the map (pin drops / name typing)
+let siteMarkerClickAt = 0;  // set by a site marker's click handler; the map click that follows is not a pin drop
+const PIN_TITLE = {
+  0: "Drop a site pin: click once, then click the map to add one site. Click twice to keep dropping pins until you turn it off. Scroll and drag still move the map.",
+  1: "Pin mode — click the map to add one site. Click this button again to keep dropping pins; Escape cancels.",
+  2: "Pin mode (stays on) — every map click adds a site. Click this button or press Escape to turn it off.",
+};
+const pinCtl = L.control({ position: "topright" });
+pinCtl.onAdd = () => {
+  const div = L.DomUtil.create("div", "leaflet-bar pinctl");
+  div.innerHTML = `<button id="pinBtn" type="button" aria-pressed="false" title="${PIN_TITLE[0]}">` +
+    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>` +
+    `<span class="badge" aria-hidden="true">∞</span></button>`;
+  L.DomEvent.disableClickPropagation(div); L.DomEvent.disableScrollPropagation(div);
+  return div;
+};
+pinCtl.addTo(map);
+{ const c = pinCtl.getContainer(); c.parentNode.insertBefore(c, c.parentNode.firstChild); }   // above the zoom control
+function setPinMode(m) {
+  pinMode = m;
+  const b = $("pinBtn");
+  b.classList.toggle("armed", m > 0); b.classList.toggle("multi", m === 2);
+  b.setAttribute("aria-pressed", m > 0 ? "true" : "false"); b.title = PIN_TITLE[m];
+  $("map").classList.toggle("pin-mode", m > 0);
+  $("reviewInfo").textContent = m === 0 ? "" : m === 1 ? "Click the map to drop a site pin" : "Dropping pins — click the map once per site";
 }
-$("addPointBtn").addEventListener("click", addCollectedPoint);
-for (const id of ["addName", "addCoords", "addNote"])
-  $(id).addEventListener("keydown", e => { if (e.key === "Enter") addCollectedPoint(); });
-$("clearCollected").addEventListener("click", e => {
-  e.preventDefault();
-  if (!collectedPoints.length) return;
-  collectedPoints = []; saveCollected(); rebuildPoints(); render();
+$("pinBtn").addEventListener("click", () => setPinMode((pinMode + 1) % 3));
+const fmt5 = v => (Math.round(v * 1e5) / 1e5).toFixed(5);
+map.on("click", e => {
+  if (!pinMode) return;
+  if (pinEditor) finishPinEdit();
+  // A click on an existing site marker (canvas circles bubble up to the map's
+  // click, marker first) is a selection, not a new pin.
+  if (Date.now() - siteMarkerClickAt < 150) return;
+  dropPin(e.latlng.lat, e.latlng.lng);
+  if (pinMode === 1) setPinMode(0);
 });
+function dropPin(lat, lon) {
+  // Same default-name rule as an unnamed pasted line: "Point <n>" by position.
+  const name = "Point " + (currentPoints.filter(p => !p.invalid).length + 1);
+  const box = $("coordsIn"), cur = box.value;
+  box.value = cur + (cur && !cur.endsWith("\n") ? "\n" : "") + `${name}, ${fmt5(lat)}, ${fmt5(lon)}`;
+  const lineIdx = box.value.split("\n").length - 1;
+  keepMapView = true;
+  box.dispatchEvent(new Event("input", { bubbles: true }));   // the normal flow: parse -> classify
+  const marker = L.marker([lat, lon], { interactive: false, zIndexOffset: 1000,
+    icon: L.divIcon({ className: "pin-drop-icon", html: '<div class="pin-dot pin-drop"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map);
+  marker.bindTooltip(`<span class="pinname" contenteditable="true" spellcheck="false" role="textbox" aria-label="Site name">${esc(name)}</span>`,
+    { permanent: true, direction: "top", offset: [0, -10], className: "site-label editing", interactive: true }).openTooltip();
+  pinEditor = { marker, key: fmt5(lat) + "," + fmt5(lon), lineIdx, name };
+  const tipEl = marker.getTooltip().getElement(), span = tipEl.querySelector(".pinname");
+  L.DomEvent.disableClickPropagation(tipEl);
+  map.keyboard.disable();                        // arrows/+/- type into the name, not the map
+  span.addEventListener("keydown", ev => {
+    ev.stopPropagation();
+    if (ev.key === "Enter" || ev.key === "Escape") { ev.preventDefault(); finishPinEdit(); }
+  });
+  span.addEventListener("input", () => setPinLineName(span.textContent.replace(/[\r\n]/g, "").trim()));
+  span.addEventListener("blur", () => { if (pinEditor && pinEditor.marker === marker) finishPinEdit(); });
+  span.focus();
+  const range = document.createRange(); range.selectNodeContents(span);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+function setPinLineName(name) {
+  if (!pinEditor) return;
+  const box = $("coordsIn"), lines = box.value.split("\n");
+  if (pinEditor.lineIdx >= lines.length) return;
+  const parts = lines[pinEditor.lineIdx].split(",");
+  if (parts.length < 3) return;
+  lines[pinEditor.lineIdx] = `${(name || pinEditor.name).replace(/,/g, " ")}, ${parts[parts.length - 2].trim()}, ${parts[parts.length - 1].trim()}`;
+  box.value = lines.join("\n");
+  keepMapView = true;
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+}
+/* ---- right-click a pin: Move (drag it) or Delete (line + pin) ---- */
+let pinMove = null;   // { p, marker } while a pin is being dragged to a new spot
+function openPinMenu(p, latlng) {
+  const pop = L.popup({ closeButton: true, autoClose: true, className: "pinmenu-pop" })
+    .setLatLng(latlng)
+    .setContent(`<b>${esc(p.name)}</b><br><span class="count">${p.lat}, ${p.lon}</span>` +
+      `<div class="pinmenu"><button type="button" data-act="move" title="Drag the pin to a new spot — the coordinates in the box and the verdict follow">Move pin</button>` +
+      `<button type="button" data-act="delete" title="Remove this site: its line in the coordinates box and its pin">Delete pin</button></div>`)
+    .openOn(map);
+  const el = pop.getElement();
+  if (!el) return;
+  el.querySelector(".pinmenu").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-act]");
+    if (!b) return;
+    map.closePopup(pop);
+    if (b.dataset.act === "delete") deletePoint(p); else startPinMove(p);
+  });
+}
+function deletePoint(p) {
+  if (p.collected) {
+    collectedPoints.splice(p.cIdx, 1); saveCollected();
+  } else {
+    const box = $("coordsIn"), lines = box.value.split(/\r?\n/), idx = p.line - 1;
+    if (!(idx >= 0 && idx < lines.length)) return;
+    lines.splice(idx, 1);
+    box.value = lines.join("\n");
+  }
+  keepMapView = true;
+  $("coordsIn").dispatchEvent(new Event("input", { bubbles: true }));
+  rebuildPoints(); render();
+  toast(`Removed ${p.name}`);
+}
+function startPinMove(p) {
+  cancelPinMove();
+  const marker = L.marker([p.lat, p.lon], { draggable: true, autoPan: true, zIndexOffset: 1000,
+    icon: L.divIcon({ className: "pin-drop-icon", html: '<div class="pin-dot moving"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
+  pinMove = { p, marker };
+  $("reviewInfo").textContent = `Drag the pin for ${p.name} to its new spot — Escape cancels`;
+  marker.on("dragend", () => {
+    const ll = marker.getLatLng();
+    applyPinMove(p, ll.lat, ll.lng);
+  });
+}
+function applyPinMove(p, lat, lon) {
+  const edits = { lat: fmt5(lat), lon: fmt5(lon) };
+  const ok = p.collected ? writeCollectedIdentity(p, edits) : rewritePastedLine(p, edits);
+  cancelPinMove();
+  if (!ok) { toast("Could not find that site's line to update"); return; }
+  keepMapView = true;
+  $("coordsIn").dispatchEvent(new Event("input", { bubbles: true }));
+  rebuildPoints(); render();
+  toast(`Moved ${p.name} — re-checking at the new coordinates`);
+}
+function cancelPinMove() {
+  if (!pinMove) return;
+  try { map.removeLayer(pinMove.marker); } catch { /* gone */ }
+  pinMove = null;
+  $("reviewInfo").textContent = "";
+}
+function finishPinEdit() {
+  if (!pinEditor) return;
+  const ed = pinEditor; pinEditor = null;
+  map.keyboard.enable();
+  try {
+    const tip = ed.marker.getTooltip(), el = tip && tip.getElement();
+    map.removeLayer(ed.marker);
+    if (el) el.remove();        // Leaflet fades a removed tooltip for 200 ms; the editor must go at once
+  } catch { /* already gone */ }
+  keepMapView = true;
+  rebuildPoints(); render();                     // the real marker now carries the final label
+}
+
 // Points saved in an earlier visit come back classified on load.
 if (collectedPoints.length) { rebuildPoints(); render(); } else updateCollectCount();
 
@@ -2203,13 +2494,13 @@ function closestStateSeg(res) {
 }
 const EXPORT_HEADERS = ["Site Name", "Latitude", "Longitude", "State", "FHWA Class", "Urban/Rural",
                         "Urban Area (ACUB)", "Road Name(s), nearest first", "Street(s)", "Federal Aid Status", "Review Reason",
-                        "State Route ID (closest segment)", "Milepost Range (closest segment)", "Note"];
+                        "State Route ID (closest segment)", "Milepost Range (closest segment)", "Data Source", "Note"];
 // Column positions, by name, so the KMZ/GeoJSON builders can read an edited
 // row instead of the raw result object.
 const EXCOL = {};
 EXPORT_HEADERS.forEach((h, i) => { EXCOL[h] = i; });
 const EX = { name: 0, lat: 1, lon: 2, state: 3, cls: 4, urbanRural: 5, acub: 6, roads: 7,
-             streets: 8, verdict: 9, reason: 10, routeId: 11, mp: 12, note: 13 };
+             streets: 8, verdict: 9, reason: 10, routeId: 11, mp: 12, source: 13, note: 14 };
 
 // Cells edited in the export dialogue. Keyed by where the point came from
 // plus its coordinates (NOT by object identity): currentPoints is rebuilt
@@ -2226,7 +2517,7 @@ function exportRowFor(p) {
   const base = [
     p.name, p.lat, p.lon, r.state, r.classLabel, r.urbanRural,
     r.acubName, r.roadName, r.streets, r.verdict, r.reviewReason,
-    seg ? seg.routeId : "", seg ? seg.mp : "", p.note || "",
+    seg ? seg.routeId : "", seg ? seg.mp : "", (verdictSource(r) || {}).short || "", p.note || "",
   ].map(v => v === undefined || v === null ? "" : v);
   const ed = rowEdits.get(editKey(p));
   return ed ? base.map((v, i) => (ed[i] !== undefined ? ed[i] : v)) : base;
@@ -2306,6 +2597,7 @@ function buildGeojson() {
     add("ReviewNote", row[EX.reason]);
     add("StateRouteID", row[EX.routeId]);
     add("MilepostRange", row[EX.mp]);
+    add("DataSource", row[EX.source]);
     add("Note", row[EX.note]);
     props.Latitude = p.lat; props.Longitude = p.lon;
     return { type: "Feature", properties: props,
@@ -2337,7 +2629,7 @@ function buildKml() {
       ["FHWA Class", row[EX.cls]], ["Urban/Rural", row[EX.urbanRural]], ["Urban Area (ACUB)", row[EX.acub]],
       ["Road Name(s)", row[EX.roads]], ["Street(s)", row[EX.streets]],
       ["State Route ID (closest segment)", row[EX.routeId]],
-      ["Milepost Range", row[EX.mp]],
+      ["Milepost Range", row[EX.mp]], ["Data Source", row[EX.source]],
       ["Note", row[EX.note]], ["Coordinates", p.lat + ", " + p.lon]]
       .filter(([, v]) => v != null && String(v).trim() !== "")
       .map(([k, v]) => `<b>${ex(k)}:</b> ${ex(v)}`).join("<br/>");
@@ -2534,6 +2826,58 @@ const STATE_APP = {
 function officialAppLink(state) {
   const app = STATE_APP[state];
   return app ? { label: app.label + " (official public map)", url: app.url, official: true } : null;
+}
+
+// ---- Data-source provenance (per user, 2026-09-17) ----
+// Every verdict says where its road class came from — the FHWA HPMS tiles
+// hosted with this site, or the state DOT's live layer — and links to that
+// source's PUBLIC product page (FHWA's HPMS page, the state's official map
+// app), never to a REST endpoint. The same registry drives the row chip,
+// the marker popup, the exports' "Data Source" column and the legend rows.
+const DOT_NAME = { MI: "MDOT", IN: "INDOT", WI: "WisDOT", MN: "MnDOT", IL: "IDOT", OH: "ODOT" };
+const HPMS_PUBLIC_URL = "https://www.fhwa.dot.gov/policyinformation/hpms.cfm";
+const ACUB_PUBLIC_URL = "https://data-uplan.opendata.arcgis.com/datasets/uplan::2020-adjusted-urban-area-boundaries/about";
+function hpmsSource(states) {
+  const yr = typeof HPMS_TILE_YEAR !== "undefined" ? HPMS_TILE_YEAR : "";
+  const where = states && states.length ? ` (${states.join(", ")})` : "";
+  return { key: "hpms", short: `FHWA HPMS ${yr} tiles`.replace("  ", " "),
+    label: `FHWA Highway Performance Monitoring System, ${yr} submission — road classes pre-built into tiles hosted with this site${where}; no live query`,
+    site: "FHWA's HPMS page", url: HPMS_PUBLIC_URL, color: "#9fb6cc" };
+}
+function stateSource(st) {
+  const dot = DOT_NAME[st];
+  if (!dot) return null;
+  return { key: "state", state: st, short: `${dot} live layer`,
+    label: `${dot}'s published functional-class layer, queried live for this point`,
+    site: STATE_APP[st].label, url: PUBLIC_MAP[st], color: "#f6c990" };
+}
+const ACUB_SOURCE = { key: "acub", short: "USDOT NTAD 2020 urban areas",
+  label: "USDOT / BTS National Transportation Atlas Database — 2020 Adjusted Urban Area boundaries",
+  site: "the NTAD dataset page", url: ACUB_PUBLIC_URL, color: "#e9c6ec" };
+function verdictSource(res) {
+  if (!res) return null;
+  if (res.sourceKind === "hpms") {
+    const s = hpmsSource(res.state ? [res.state] : []);
+    if (res.fallbackFrom) {
+      s.short += ` · ${res.fallbackFrom} down`;
+      s.label += `. Used as the FALLBACK because ${res.fallbackFrom} was not answering (${res.fallbackReason || "no reply"}) when this point was checked with Live verdicts on`;
+      s.color = "#f4d06f";
+    }
+    return s;
+  }
+  if (res.sourceKind === "acub") return { ...ACUB_SOURCE, short: "urban boundary only",
+    label: "No functional-class layer is wired for this state, so only the USDOT NTAD 2020 urban boundary was checked" };
+  return stateSource(res.state);
+}
+function sourceLinkHtml(src, text, cls) {
+  if (!src) return "";
+  const t = `Data source: ${src.label}. Click to open ${src.site}.`;
+  return `<a class="${cls}" href="${src.url}" target="_blank" rel="noopener" title="${esc(t)}">${text}</a>`;
+}
+function sourceChipHtml(res) {
+  const src = verdictSource(res);
+  if (!src) return "";
+  return sourceLinkHtml(src, `<i class="cw" style="background:${src.color}"></i>Source: ${esc(src.short)}`, "chip srcchip");
 }
 
 // Mirrors rr-core's NFC_WIRED dispatch (all six states), but frame-wide and
@@ -3179,6 +3523,7 @@ async function selectSite(i) {
   reviewIdx = ((i % pts.length) + pts.length) % pts.length;   // wrap both directions
   const p = pts[reviewIdx];
   document.querySelectorAll("#resultsBody .row.selected").forEach(tr => tr.classList.remove("selected"));
+  if (window.syncExportSelection) syncExportSelection(p);
   // Highlight + expand the row and keep it visible inside the results pane
   // (the pane scrolls internally, so this never moves the map).
   if (p._tr) {
@@ -3250,7 +3595,9 @@ async function showSiteLayers(p) {
       seen.add(s.label);
     }
     for (const [label, css] of orderedLineLegend(layer.drawingInfo, layer.rendererField, layer.features)) {
-      entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);
+      const ss = stateSource(data.state);
+      const row = `<span class="sw" style="background:${css}"></span>${esc(label)}`;
+      entries.push(ss ? sourceLinkHtml({ ...ss, label: `${label} — ${ss.label.replace("for this point", "around this site")}` }, row, "lrow") : `<div>${row}</div>`);
     }
     if (!layer.features.length) entries.push(`<div class="note">No segments within ${SITE_VIEW_RADIUS_M * 2} m of this site</div>`);
     if (layer.truncated) entries.push(`<div class="note">Record limit hit — some segments not drawn</div>`);
@@ -3263,7 +3610,7 @@ async function showSiteLayers(p) {
   const acubName = data.acub.features.length ? firstString({ features: data.acub.features }, "NAME") : "";
   entries.push(`<div class="hdr">${esc(data.acub.legendHeader)} — <a href="${liveLayerLink(svc("ACUB"), p.lat, p.lon)}" target="_blank" rel="noopener" title="Urban boundary — NTAD 2020 Adjusted Urban Areas, pinned">pinned view</a></div>`);
   entries.push(data.acub.features.length
-    ? `<div><span class="swp" style="background:${pcss};opacity:.55"></span>Adjusted Urban Area: ${esc(acubName)}</div>`
+    ? sourceLinkHtml({ ...ACUB_SOURCE, label: ACUB_SOURCE.label + ", queried live" }, `<span class="swp" style="background:${pcss};opacity:.55"></span>Adjusted Urban Area: ${esc(acubName)}`, "lrow")
     : `<div><span class="swp" style="background:#fff"></span>No Adjusted Urban Area near this site (Rural)</div>`);
 
   entries.push(`<div class="src"><a href="sources.html${SOURCE_ANCHOR[data.state] || "#acub"}" target="_blank" rel="noopener">Citations &amp; schema quirks for these layers</a></div>`);
@@ -3328,7 +3675,7 @@ async function plotAllSites() {
         }
       }
       for (const [label, css] of orderedLineLegend(layer.drawingInfo, layer.rendererField, layer.features)) {
-        if (!classLegend.has(label)) classLegend.set(label, css);
+        if (!classLegend.has(label)) classLegend.set(label, { css, state: data.state });
       }
     }
   }
@@ -3337,11 +3684,15 @@ async function plotAllSites() {
   const entries = [];
   if (classLegend.size) {
     entries.push(`<div class="hdr">${esc(headers.join(" + ") || "Road functional class")}</div>`);
-    for (const [label, css] of classLegend) entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);
+    for (const [label, { css, state: st }] of classLegend) {
+      const ss = stateSource(st);
+      const row = `<span class="sw" style="background:${css}"></span>${esc(label)}`;
+      entries.push(ss ? sourceLinkHtml({ ...ss, label: `${label} — ${ss.label.replace("for this point", "on the map")}` }, row, "lrow") : `<div>${row}</div>`);
+    }
   }
-  entries.push(`<div class="hdr">Urban boundary (USDOT NTAD 2020)</div>`);
+  entries.push(`<div class="hdr">${sourceLinkHtml(ACUB_SOURCE, "Urban boundary (USDOT NTAD 2020)", "lsrc")}</div>`);
   entries.push(acubShown
-    ? `<div><span class="swp" style="background:${acubCss};opacity:.55"></span>Adjusted Urban Area</div>`
+    ? sourceLinkHtml({ ...ACUB_SOURCE, label: ACUB_SOURCE.label + ", queried live" }, `<span class="swp" style="background:${acubCss};opacity:.55"></span>Adjusted Urban Area`, "lrow")
     : `<div><span class="swp" style="background:#fff"></span>No Adjusted Urban Area near these sites</div>`);
   if (pts.length > batch.length)
     entries.push(`<div class="note">Layers drawn around the first ${batch.length} of ${pts.length} sites — click a site to see its own frame</div>`);
@@ -3612,7 +3963,7 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
   const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", acubBoundary: false,
                 classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
                 verdict: "", reviewReason: "", failed: false, segments: [], bufferFt,
-                srcNote: "cached tiles" };
+                srcNote: "cached tiles", sourceKind: "hpms" };
   const acub = await determineAcubTiles(lat, lon, bufferFt);
   out.urbanRural = acub.exactUrban ? "Urban" : "Rural";
   out.acubName = acub.name;
@@ -3662,14 +4013,42 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
 }
 
 // The router render() calls: cached tiles when possible, live otherwise.
+// OUTAGE RULE (2026-09-17, per user): on the live path a source that is
+// already marked down is not queried at all, and a live query that fails
+// hard marks it down — either way, when the tiles are usable the point is
+// classified from the HPMS tiles instead and the row is stamped with which
+// source was out (fallbackFrom / fallbackReason / fallbackHost -> the
+// "Source: FHWA HPMS … · MDOT live layer down" chip and the export column).
 async function classifyPointSmart(lat, lon, stateCode, bufferFt) {
-  try {
-    if (liveVerdictsForced() || stateCode === "XX" || !hpmsTilesUsable()) throw new Error("live");
-    if (!(await ensureHpmsTiles(stateCode)) || !(await acubTilesUsable())) throw new Error("live");
-    return await classifyPointTiles(lat, lon, stateCode, bufferFt);
-  } catch {
-    return classifyPoint(lat, lon, stateCode, bufferFt);
+  let tilesOk = false;
+  try { tilesOk = stateCode !== "XX" && hpmsTilesUsable() && (await ensureHpmsTiles(stateCode)) && (await acubTilesUsable()); }
+  catch { tilesOk = false; }
+  if (!liveVerdictsForced() && tilesOk) return classifyPointTiles(lat, lon, stateCode, bufferFt);
+  const outage = tilesOk ? liveSourceOutage(stateCode) : null;
+  if (outage) return tilesFallback(lat, lon, stateCode, bufferFt, outage);
+  const res = await classifyPoint(lat, lon, stateCode, bufferFt);
+  if (res.failed && tilesOk) {
+    const o = liveSourceOutage(stateCode) || {
+      name: /ACUB/.test(res.verdict) ? SOURCE_KEY_NAME.ACUB : ((stateSource(stateCode) || {}).short || "state layer"),
+      reason: res.verdict.replace(/^Failed - (NFC|ACUB) query \(?/, "").replace(/\)$/, ""), host: "" };
+    return tilesFallback(lat, lon, stateCode, bufferFt, o);
   }
+  if (res.failed) res.failedHost = (liveSourceOutage(stateCode) || {}).host || "";   // no tiles: the row fails, but recovery can re-run it
+  return res;
+}
+// {name, reason, host} for the first down source this state's live verdict needs, else null.
+function liveSourceOutage(st) {
+  for (const k of [STATE_SVC_KEY[st], "ACUB"]) {
+    if (!k || !svc(k)) continue;
+    const host = hostOf(svc(k)), h = healthOf(host);
+    if (h.down) return { name: sourceNameForHost(host), reason: h.reason, host };
+  }
+  return null;
+}
+async function tilesFallback(lat, lon, st, buf, outage) {
+  const r = await classifyPointTiles(lat, lon, st, buf);
+  r.fallbackFrom = outage.name; r.fallbackReason = outage.reason; r.fallbackHost = outage.host || "";
+  return r;
 }
 window.classifyPointSmart = classifyPointSmart;
 
@@ -3744,7 +4123,7 @@ async function refreshBrowseLayers() {
       const layers = await fetchClassLayers(st, bbox,
         (bbox.minLat + bbox.maxLat) / 2, (bbox.minLon + bbox.maxLon) / 2,
         classCap ? { classCap, offset: Math.max(0.0001, degPerPx) } : undefined);
-      return { kind: "roads", layers };
+      return { kind: "roads", layers, state: st };
     }).catch(e => ({ error: e })));
   }
   const results = await Promise.all(jobs);
@@ -3779,7 +4158,7 @@ async function refreshBrowseLayers() {
           }
         }
         for (const [label, css] of orderedLineLegend(layer.drawingInfo, layer.rendererField, layer.features))
-          if (!classLegend.has(label)) classLegend.set(label, css);
+          if (!classLegend.has(label)) classLegend.set(label, { css, state: r.state });
         truncated = truncated || layer.truncated;
         synth = synth || layer.synthSymbology;
       }
@@ -3788,28 +4167,39 @@ async function refreshBrowseLayers() {
   if (seq !== browseSeq) return;
 
   const entries = [];
+  // Every legend row is a link to its source's PUBLIC product page (FHWA's
+  // HPMS page / the state DOT's official map app — never a REST URL) and
+  // says on hover where that line's class came from.
   if (tiled.length) {
-    entries.push(`<div class="hdr">Road functional class — FHWA HPMS ${HPMS_TILE_YEAR} tiles (${tiled.join(", ")})</div>`);
+    const hs = hpmsSource(tiled);
+    entries.push(`<div class="hdr">${sourceLinkHtml(hs, `Road functional class — FHWA HPMS ${HPMS_TILE_YEAR} tiles (${esc(tiled.join(", "))})`, "lsrc")}</div>`);
     for (let c = 1; c <= 7; c++)
-      entries.push(`<div><span class="sw" style="background:${FHWA_CHIP_COLOR[c]}"></span>${esc(functionalSystemLabel(c))}</div>`);
+      entries.push(sourceLinkHtml({ ...hs, label: `${functionalSystemLabel(c)} — ${hs.label}` },
+        `<span class="sw" style="background:${FHWA_CHIP_COLOR[c]}"></span>${esc(functionalSystemLabel(c))}`, "lrow"));
     entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — every road FHWA classifies, incl. local streets; no live queries. Interstates appear from z6, locals from z12. Roads with no class line (private drives, some subdivision streets) have no FHWA class in HPMS. Verdicts use these same tiles unless "live verdicts" is ticked under Data service URLs.</div>`);
   }
   if (untiled.length && !wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes${tiled.length ? " for " + esc(untiled.join(", ")) : ""}</div>`);
   else if (wantRoads && classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up${tiled.length ? " for " + esc(untiled.join(", ")) : ""} — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
   if (classLegend.size) {
     entries.push(`<div class="hdr">${esc(headers.join(" + ") || "Road functional class")}</div>`);
-    for (const [label, css] of classLegend) entries.push(`<div><span class="sw" style="background:${css}"></span>${esc(label)}</div>`);
+    for (const [label, { css, state: st }] of classLegend) {
+      const ss = stateSource(st);
+      const row = `<span class="sw" style="background:${css}"></span>${esc(label)}`;
+      entries.push(ss ? sourceLinkHtml({ ...ss, label: `${label} — ${ss.label.replace("for this point", "on the map")}` }, row, "lrow") : `<div>${row}</div>`);
+    }
   } else if (wantRoads && !failures) {
     entries.push(`<div class="note">No classified roads in view</div>`);
   }
-  entries.push(`<div class="hdr">Urban boundary (USDOT NTAD 2020)</div>`);
-  if (acubTiled) entries.push(`<div><span class="swp" style="background:${acubCss};opacity:.55"></span>2020 Adjusted Urban Area (pink, where present)</div>`);
-  else entries.push(acubDrawn
-    ? `<div><span class="swp" style="background:${acubCss};opacity:.55"></span>2020 Adjusted Urban Area</div>`
-    : `<div class="note">No adjusted urban area in view (rural)</div>`);
+  entries.push(`<div class="hdr">${sourceLinkHtml(ACUB_SOURCE, "Urban boundary (USDOT NTAD 2020)", "lsrc")}</div>`);
+  const acubRow = txt => sourceLinkHtml({ ...ACUB_SOURCE, label: ACUB_SOURCE.label + (acubTiled ? ", pre-built into tiles hosted with this site" : ", queried live") },
+    `<span class="swp" style="background:${acubCss};opacity:.55"></span>${txt}`, "lrow");
+  if (acubTiled) entries.push(acubRow("2020 Adjusted Urban Area (pink, where present)"));
+  else entries.push(acubDrawn ? acubRow("2020 Adjusted Urban Area") : `<div class="note">No adjusted urban area in view (rural)</div>`);
   if (truncated) entries.push(`<div class="note">Record cap hit — zoom in for complete coverage</div>`);
   if (synth) entries.push(`<div class="note">Colors: standard FHWA palette where a source publishes a single-symbol renderer</div>`);
   if (failures) entries.push(`<div class="note">${failures} layer fetch(es) failed — pan or zoom to retry</div>`);
+  for (const [host, h] of sourceHealth)
+    if (h.down) entries.push(`<div class="note down">⚠ ${esc(sourceNameForHost(host))} is down (${esc(h.reason)}) — its live layer is not drawn; the FHWA HPMS tiles stay on the map. Rechecked every ${OUTAGE_RECHECK_MS / 1000} s.</div>`);
   entries.push(`<div class="src"><a href="sources.html" target="_blank" rel="noopener">Sources &amp; citations</a></div>`);
   setLiveLegend(`<b>Live layers — official data</b>${entries.join("")}`);
 }
@@ -3876,22 +4266,62 @@ function buildExportTable() {
   });
   $("exportTable").innerHTML = head + rows.join("");
   $("exportDlgCount").textContent = pts.length ? `${pts.length} site(s)` : "no classified sites yet";
+  if (window.syncExportSelection) syncExportSelection(validPoints()[reviewIdx]);
 }
+/* View and Export (2026-09-17, per user): the export card is no longer a modal.
+   It lives INSIDE #sidebar (moved there below) and opens by EXPANDING the pane
+   over the map — the map keeps ~1/6 of the width on the right, zooms to fit
+   every site (or stays on the selected one), and follows the row you select
+   in the big table. Quick Export is the dropdown for straight downloads. */
+{ const wrap = $("exportWrap"), card = $("exportCard"); $("sidebar").appendChild(card); card.hidden = true; wrap.remove(); }
+function isExpanded() { return document.body.classList.contains("expanded"); }
+function expandTransition(done) {
+  // Only the sidebar's flex-basis animates (CSS); Leaflet must be re-measured
+  // as the map area shrinks/grows, then once more when the transition ends.
+  const sb = $("sidebar");
+  let ticks = 0, finished = false;
+  const finish = () => { if (finished) return; finished = true; sb.removeEventListener("transitionend", onEnd); map.invalidateSize({ animate: false }); done(); };
+  const onEnd = ev => { if (ev.target === sb) finish(); };
+  sb.addEventListener("transitionend", onEnd);
+  const tick = () => { map.invalidateSize({ animate: false }); if (++ticks < 22 && !finished) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  setTimeout(finish, 420);   // no transition (reduced motion) or a missed event
+}
+function zoomForExportView() {
+  const pts = validPoints();
+  if (reviewIdx >= 0 && pts[reviewIdx]) focusMapOnSite(pts[reviewIdx].lat, pts[reviewIdx].lon, 17);
+  else if (pts.length === 1) focusMapOnSite(pts[0].lat, pts[0].lon, 15);
+  else if (pts.length) map.fitBounds(pts.map(p => [p.lat, p.lon]), { padding: [20, 20], animate: false });
+}
+function syncExportSelection(p) {
+  for (const tr of $("exportTable").querySelectorAll("tr.selected")) tr.classList.remove("selected");
+  if (!p) return;
+  const tr = [...$("exportTable").querySelectorAll("tr[data-k]")].find(t => t.dataset.k === editKey(p));
+  if (tr) { tr.classList.add("selected"); if (isExpanded()) tr.scrollIntoView({ block: "nearest" }); }
+}
+window.syncExportSelection = syncExportSelection;
 function openExport(tab) {
   buildExportTable();
   if (tab) setExportTab(tab);
   refreshExportPreviews();
-  $("exportWrap").hidden = false;
+  const was = isExpanded();
+  $("exportCard").hidden = false;
+  document.body.classList.add("expanded");
+  syncExportSelection(validPoints()[reviewIdx]);
+  if (was) zoomForExportView(); else expandTransition(zoomForExportView);
 }
-function closeExportMenu() { $("exportMenu").hidden = true; $("exportCaret").setAttribute("aria-expanded", "false"); }
-
-$("exportBtn").addEventListener("click", () => { closeExportMenu(); openExport(); });
-$("exportCaret").addEventListener("click", e => {
-  e.stopPropagation();
-  const open = $("exportMenu").hidden;
-  $("exportMenu").hidden = !open;
-  $("exportCaret").setAttribute("aria-expanded", open ? "true" : "false");
-});
+function closeExport() {
+  flushAllIdentity();
+  closeExportMenu();
+  if (!isExpanded()) return;
+  document.body.classList.remove("expanded");
+  $("exportCard").hidden = true;
+  expandTransition(() => {});
+}
+function toggleExportMenu(open) { $("exportMenu").hidden = !open; $("exportBtn").setAttribute("aria-expanded", open ? "true" : "false"); }
+function closeExportMenu() { toggleExportMenu(false); }
+$("exportBtn").addEventListener("click", e => { e.stopPropagation(); toggleExportMenu($("exportMenu").hidden); });
+const QUICK_EXPORT = { "dl-csv": "dlCsv", "dl-kmz": "dlKmz", "dl-geojson": "dlGeojson", "pdf-report": "pdfBtn", "firm-zip": "firmZipBtn" };
 $("exportMenu").addEventListener("click", e => {
   const b = e.target.closest("button[data-act]");
   if (!b) return;
@@ -3899,17 +4329,25 @@ $("exportMenu").addEventListener("click", e => {
   const act = b.dataset.act;
   if (act === "copy-coords") { copyText(tsvCoords(), "Site names + coordinates"); return; }
   if (act === "copy-results") { copyText(tsvAll(), "Auto-Detect results"); return; }
-  openExport(EX_MENU_TAB[act]);
+  if (!QUICK_EXPORT[act]) return;
+  if (!exportPoints().length) { toast("Paste or drop at least one site first."); return; }
+  $(QUICK_EXPORT[act]).click();      // the card's own buttons do the work, visible or not
 });
-document.addEventListener("click", e => { if (!e.target.closest("#exportMenu, #exportCaret")) closeExportMenu(); });
+document.addEventListener("click", e => { if (!e.target.closest("#exportMenu, #exportBtn")) closeExportMenu(); });
 $("exportTabs").addEventListener("click", e => {
   const b = e.target.closest(".extab");
   if (b) { setExportTab(b.dataset.tab); refreshExportPreviews(); }
 });
 $("pdfZoom").addEventListener("change", refreshExportPreviews);
-function closeExport() { flushAllIdentity(); $("exportWrap").hidden = true; }
 $("exportClose").addEventListener("click", closeExport);
-$("exportWrap").addEventListener("click", e => { if (e.target === $("exportWrap")) closeExport(); });
+$("viewExportBtn").addEventListener("click", () => openExport());
+// Selecting a row in the big table = selecting the site (same as the small list): blue outline, map zooms in.
+$("exportTable").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-k]");
+  if (!tr || tr.classList.contains("selected")) return;
+  const pt = pointByKey(tr.dataset.k);
+  if (pt) selectSiteByPoint(pt);
+});
 
 // Every cell is editable. Edits land in rowEdits (keyed by the site's
 // coordinates, so they survive the re-render that every keystroke in the
@@ -4091,7 +4529,7 @@ $("exportTable").addEventListener("keydown", e => {
 // shows its new verdict. The table rebuild is skipped while a cell has focus
 // — it would drop the caret mid-edit — but the busy state still updates.
 function refreshExportDialog() {
-  if ($("exportWrap").hidden) return;
+  if (!isExpanded()) return;
   setReclassifying(currentPoints.some(p => !p.invalid && !p.result));
   if (document.activeElement && document.activeElement.closest("#exportTable")) return;
   buildExportTable();
@@ -4099,37 +4537,13 @@ function refreshExportDialog() {
 }
 window.refreshExportDialog = refreshExportDialog;
 
-/* ---------------- pop-out: every site's full detail as one table ---------------- */
-function buildPopoutTable() {
-  const pts = validPoints();
-  const head = "<tr><th>Site</th><th>Lat</th><th>Lon</th><th>State</th><th>Verdict</th>" +
-    "<th>Review reason</th><th>Closest class</th><th>Urban / rural</th><th>Urban area</th>" +
-    "<th>Roads found</th><th>State route ID \u00b7 MP</th><th>Note</th><th>Links</th></tr>";
-  const rows = pts.map(p => {
-    const r = p.result || {};
-    const bucket = verdictBucket(r.verdict);
-    const reason = r.reviewReason
-      ? esc(r.reviewReason) + (REASON_EXPLAIN[r.reviewReason] ? ` <span class="count" title="${esc(REASON_EXPLAIN[r.reviewReason])}">ⓘ</span>` : "")
-      : "";
-    return `<tr class="v-${bucket}"><td>${esc(p.name)}</td>` +
-      `<td class="mono">${p.lat}</td><td class="mono">${p.lon}</td><td>${esc(p._state || "")}</td>` +
-      `<td>${r.verdict ? esc(r.verdict) : "<i>querying…</i>"}</td><td>${reason}</td>` +
-      `<td>${esc(r.classLabel || "")}</td><td>${esc(r.urbanRural || "")}</td><td>${esc(r.acubName || "")}</td>` +
-      `<td>${esc(r.roadName || "")}</td>` +
-      `<td class="mono">${(seg => seg ? esc(seg.routeId) + (seg.mp ? " \u00b7 " + esc(seg.mp) : "") : "")(closestStateSeg(r))}</td>` +
-      `<td>${esc(p.note || "")}</td>` +
-      `<td>${pointLinks(p.lat, p.lon, p._state || "")}</td></tr>`;
-  });
-  $("popoutTable").innerHTML = head + rows.join("");
-  $("popoutCount").textContent = pts.length ? `${pts.length} site(s)` : "no sites yet — paste coordinates first";
-}
-$("popoutBtn").addEventListener("click", () => { buildPopoutTable(); $("popoutWrap").hidden = false; });
-$("popoutClose").addEventListener("click", () => { $("popoutWrap").hidden = true; });
-$("popoutWrap").addEventListener("click", e => { if (e.target === $("popoutWrap")) $("popoutWrap").hidden = true; });
+/* ---------------- "View and Export" from the results header (the old pop-out) ---------------- */
+$("popoutBtn").addEventListener("click", () => openExport());
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  $("popoutWrap").hidden = true;
-  if (!$("exportWrap").hidden) closeExport();
+  if (pinMode) setPinMode(0);
+  if (typeof cancelPinMove === "function") cancelPinMove();
+  if (isExpanded()) closeExport();
   closeExportMenu();
 });
 
@@ -4145,6 +4559,7 @@ const TIGER_FIND = {
   states:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0",
   counties: "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1",
   cousubs:  "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/1",
+  places:   "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer/4",   // incorporated cities / villages
   // Full-detail scale variants (confirmed live 2026-09-14): 2 = Primary
   // (interstates), 6 = Secondary (state/US highways), 8 = Local Roads (the
   // layer classification already reads street names from).
@@ -4156,7 +4571,7 @@ const TIGER_FIND = {
 };
 const FIPS_ABBR = { "55": "WI", "18": "IN", "26": "MI", "27": "MN", "17": "IL", "39": "OH" };
 const FIND_ROAD_MIN_ZOOM = 11;
-const FIND_MAX_PER_KIND = 8;
+const FIND_MAX_PER_KIND = 10;
 const findOverlay = L.layerGroup().addTo(map);
 let findSeq = 0;
 
@@ -4192,8 +4607,10 @@ async function findShowPolygon(url, where, offset, label) {
   if (json.error || !(json.features || []).length) throw new Error("boundary fetch failed");
   findOverlay.clearLayers();
   let bounds = null;
+  const rings = [];
   for (const f of json.features) {
     for (const ring of ((f.geometry && f.geometry.rings) || [])) {
+      rings.push(ring);
       const pl = L.polyline(ring.map(([x, y]) => [y, x]),
         { color: "#1f6feb", weight: 2.5, dashArray: "6 4", opacity: 0.9, interactive: false }).addTo(findOverlay);
       bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
@@ -4201,7 +4618,71 @@ async function findShowPolygon(url, where, offset, label) {
   }
   if (bounds) map.fitBounds(bounds, { padding: [20, 20] });
   $("reviewInfo").textContent = "Showing " + label;
+  return { rings, extent: bounds ? { xmin: bounds.getWest(), ymin: bounds.getSouth(), xmax: bounds.getEast(), ymax: bounds.getNorth() } : null };
 }
+
+/* ---- the DEFAULT AREA (2026-09-17, per user) ----
+   Picking a county, city or township in the search box makes it the area
+   that (a) addresses typed WITHOUT a city / state / ZIP are geocoded within
+   (the state is appended to the query; the matches are then filtered to the
+   area's boundary), (b) bare road names ("Q Ave") are looked up in, and
+   (c) the road-name search runs over. Anything ambiguous inside the area —
+   several geocoder matches, several separate stretches of a road — becomes
+   a picker on that row. Remembered in this browser; the ✕ clears it. */
+let defaultArea = null;
+try { defaultArea = JSON.parse(localStorage.getItem("rr_default_area") || "null"); } catch { defaultArea = null; }
+window.defaultArea = defaultArea;
+function areaLabelOf(a) { return a.name + (a.state ? ", " + a.state : ""); }
+function renderAreaBar() {
+  const el = $("areaBar");
+  if (!defaultArea) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = `<span class="chip areachip" title="Addresses without a city and road names without a place are looked up inside this ${esc(defaultArea.kind)}; the road-name search runs inside it too. Click ✕ to clear it (a state click also clears it).">` +
+    `Area: <b>${esc(areaLabelOf(defaultArea))}</b> <button type="button" id="areaClear" title="Clear the area">✕</button></span>` +
+    `<span class="hint">scopes place-less addresses and bare road names</span>`;
+}
+function setDefaultArea(area) {
+  defaultArea = area; window.defaultArea = area;
+  try { if (area) localStorage.setItem("rr_default_area", JSON.stringify({ ...area, rings: undefined })); else localStorage.removeItem("rr_default_area"); } catch { /* private mode */ }
+  renderAreaBar();
+  if (window.onDefaultAreaChanged) onDefaultAreaChanged();
+}
+function clearDefaultArea() { setDefaultArea(null); }
+$("areaBar").addEventListener("click", e => { if (e.target.closest("#areaClear")) clearDefaultArea(); });
+async function ensureAreaRings() {
+  if (!defaultArea || defaultArea.rings) return;
+  const u = defaultArea.url + "/query?where=" + encodeURIComponent(defaultArea.where) +
+    "&outFields=NAME&returnGeometry=true&outSR=4326&maxAllowableOffset=" + (defaultArea.offset || 0.001) + "&f=json";
+  try {
+    const json = await httpGetJson(u);
+    defaultArea.rings = [];
+    for (const f of (json.features || [])) for (const ring of ((f.geometry && f.geometry.rings) || [])) defaultArea.rings.push(ring);
+  } catch { /* keep the extent-only fallback */ }
+}
+function pointInRing(lon, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function pointInArea(lat, lon) {
+  if (!defaultArea) return true;
+  if (defaultArea.rings && defaultArea.rings.length) return defaultArea.rings.some(r => pointInRing(lon, lat, r));
+  const e = defaultArea.extent;
+  return !e || (lon >= e.xmin && lon <= e.xmax && lat >= e.ymin && lat <= e.ymax);
+}
+// A search click: a county / city / township draws its outline, zooms there
+// AND becomes the default area; a state just zooms (and clears the area).
+async function selectFindArea(area, showState) {
+  if (!area) { await showState(); clearDefaultArea(); return; }
+  const label = areaLabelOf(area);
+  const poly = await findShowPolygon(area.url, area.where, area.offset, label);
+  setDefaultArea({ ...area, label, extent: poly.extent, rings: poly.rings });
+  if ($("findText").value.trim().length >= 2) runFind();   // the list now searches roads inside the area
+}
+renderAreaBar();
 
 // Road-name search in the current view: all three TIGER road layers in
 // parallel, segments grouped by full name.
@@ -4276,7 +4757,9 @@ function findShowRoad(g) {
 }
 
 // Searches cover the six Region V states — there is no state picker;
-// typing a state's name matches it directly.
+// typing a state's name matches it directly. Results are GROUPED by kind
+// (State · County · City · Township · Road) under small headings, the
+// best (prefix) matches first in each group.
 const R5_STATE_NAMES = { 26: "Michigan", 55: "Wisconsin", 18: "Indiana",
                          27: "Minnesota", 17: "Illinois", 39: "Ohio" };
 const R5_FIPS_CLAUSE = "STATE IN ('17','18','26','27','39','55')";
@@ -4290,71 +4773,84 @@ async function runFind() {
   try {
     const stClause = R5_FIPS_CLAUSE + " AND ";
     const like = "UPPER(BASENAME) LIKE '%" + sqlSafe(term.toUpperCase()) + "%'";
-    const z = map.getZoom();
-    const b = map.getBounds();
-    const bbox = { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
-    const [counties, cousubs, roadGroups] = await Promise.all([
+    const area = defaultArea && defaultArea.extent ? defaultArea : null;
+    const z = map.getZoom(), b = map.getBounds();
+    // Roads: inside the default area when one is set, else the visible map (zoomed in).
+    const bbox = area ? { minLon: area.extent.xmin, minLat: area.extent.ymin, maxLon: area.extent.xmax, maxLat: area.extent.ymax }
+                      : { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
+    const [counties, cities, cousubs, roadGroups] = await Promise.all([
       tigerNameQuery(TIGER_FIND.counties, stClause + like, "NAME,GEOID,STATE").catch(() => null),
+      tigerNameQuery(TIGER_FIND.places, stClause + like, "NAME,GEOID,STATE").catch(() => null),
       tigerNameQuery(TIGER_FIND.cousubs, stClause + like, "NAME,GEOID,STATE").catch(() => null),
-      z >= FIND_ROAD_MIN_ZOOM ? findRoads(term, bbox).catch(() => null) : Promise.resolve("zoomed-out"),
+      (area || z >= FIND_ROAD_MIN_ZOOM) ? findRoads(term, bbox).catch(() => null) : Promise.resolve("zoomed-out"),
     ]);
     if (seq !== findSeq) return;
 
+    const T = term.toUpperCase();
+    const rank = feats => (feats || []).slice().sort((x, y) => {
+      const a = x.attributes.NAME.toUpperCase().startsWith(T), c = y.attributes.NAME.toUpperCase().startsWith(T);
+      return a === c ? x.attributes.NAME.localeCompare(y.attributes.NAME) : (a ? -1 : 1);
+    });
     const frag = document.createDocumentFragment();
-    const addItem = (label, sub, fn) => {
-      const d = document.createElement("div");
-      d.className = "finditem";
-      d.innerHTML = `<b>${esc(label)}</b><span>${esc(sub)}</span>`;
-      d.addEventListener("click", () => fn().catch(fail));
-      frag.appendChild(d);
-      return d;
-    };
     const addNote = txt => { const d = document.createElement("div"); d.className = "note"; d.textContent = txt; frag.appendChild(d); };
     let hits = 0;
-    for (const [fips, name] of Object.entries(R5_STATE_NAMES)) {
-      if (!name.toUpperCase().includes(term.toUpperCase())) continue;
-      hits++;
-      addItem(name, "state", () => findShowPolygon(TIGER_FIND.states, `STATE='${fips}'`, 0.01, name));
-    }
-    for (const c of (counties || []).slice(0, FIND_MAX_PER_KIND)) {
-      const a = c.attributes; hits++;
-      addItem(a.NAME, "county · " + (FIPS_ABBR[a.STATE] || a.STATE),
-        () => findShowPolygon(TIGER_FIND.counties, `GEOID='${a.GEOID}'`, 0.002, a.NAME + (FIPS_ABBR[a.STATE] ? ", " + FIPS_ABBR[a.STATE] : "")));
-    }
-    for (const t of (cousubs || []).slice(0, FIND_MAX_PER_KIND)) {
-      const a = t.attributes; hits++;
-      addItem(a.NAME, "township / county subdivision · " + (FIPS_ABBR[a.STATE] || a.STATE),
-        () => findShowPolygon(TIGER_FIND.cousubs, `GEOID='${a.GEOID}'`, 0.001, a.NAME + (FIPS_ABBR[a.STATE] ? ", " + FIPS_ABBR[a.STATE] : "")));
-    }
-    if (roadGroups === "zoomed-out") {
-      addNote("Road-name search covers the visible map area — zoom in (or click a county/township match first), then Find again.");
-    } else if (roadGroups) {
-      for (const g of roadGroups.slice(0, FIND_MAX_PER_KIND)) {
+    const group = (title, items, total) => {
+      if (!items.length) return;
+      const h = document.createElement("div"); h.className = "findhdr";
+      h.textContent = title + (total > items.length ? ` · ${items.length} of ${total}` : ""); frag.appendChild(h);
+      for (const it of items) {
         hits++;
-        const segsTxt = `${g.paths.length} segment(s) in view`;
-        const el = addItem(g.name, `road · ${segsTxt}`, async () => findShowRoad(g));
-        // Annotate with the state's FHWA functional class, async so the
-        // suggestion list never waits on the class layers.
-        roadGroupClassCode(g).then(code => {
-          if (seq !== findSeq || code == null || !el.isConnected) return;
-          const sub = el.querySelector("span");
-          if (sub) sub.innerHTML = `<i class="cw" style="background:${FHWA_CHIP_COLOR[code] || FHWA_CHIP_COLOR[0]}"></i>` +
-            `${esc(functionalSystemLabel(code))} · road · ${esc(segsTxt)}`;
-        });
+        const d = document.createElement("div");
+        d.className = "finditem";
+        d.innerHTML = `<b>${esc(it.label)}</b><span>${esc(it.sub)}</span>`;
+        d.addEventListener("click", () => it.fn().catch(fail));
+        frag.appendChild(d);
+        if (it.after) it.after(d);
       }
+      if (total > items.length) addNote(`${total - items.length} more — keep typing to narrow`);
+    };
+    const st = a => FIPS_ABBR[a.STATE] || a.STATE;
+    const states = Object.entries(R5_STATE_NAMES).filter(([, name]) => name.toUpperCase().includes(T));
+    group("State", states.map(([fips, name]) => ({ label: name, sub: "state",
+      fn: () => selectFindArea(null, () => findShowPolygon(TIGER_FIND.states, `STATE='${fips}'`, 0.01, name)) })), states.length);
+    const placeItems = (feats, kind, url, offset, word) => rank(feats).slice(0, FIND_MAX_PER_KIND).map(f => {
+      const a = f.attributes;
+      return { label: a.NAME, sub: `${word} · ${st(a)}`,
+        fn: () => selectFindArea({ kind, name: a.NAME, geoid: a.GEOID, state: st(a), url, where: `GEOID='${a.GEOID}'`, offset }) };
+    });
+    group("County", placeItems(counties, "county", TIGER_FIND.counties, 0.002, "county"), (counties || []).length);
+    group("City", placeItems(cities, "city", TIGER_FIND.places, 0.001, "city / village"), (cities || []).length);
+    // TIGERweb also carries many cities as county subdivisions ("Rockford
+    // city" under both) — keep those under City only.
+    const cityNames = new Set((cities || []).map(f => f.attributes.NAME.toUpperCase() + "|" + f.attributes.STATE));
+    const twps = (cousubs || []).filter(f => !cityNames.has(f.attributes.NAME.toUpperCase() + "|" + f.attributes.STATE));
+    group("Township", placeItems(twps, "township", TIGER_FIND.cousubs, 0.001, "township / county subdivision"), twps.length);
+    if (roadGroups === "zoomed-out") {
+      addNote("Road-name search covers the visible map area — zoom in, or pick a county / city / township above to search roads inside it.");
+    } else if (roadGroups) {
+      group("Road", roadGroups.slice(0, FIND_MAX_PER_KIND).map(g => {
+        const segsTxt = `${g.paths.length} segment(s) ${area ? "in " + area.label : "in view"}`;
+        return { label: g.name, sub: `road · ${segsTxt}`, fn: async () => findShowRoad(g),
+          // Annotate with the state's FHWA functional class, async so the
+          // suggestion list never waits on the class layers.
+          after: el => roadGroupClassCode(g).then(code => {
+            if (seq !== findSeq || code == null || !el.isConnected) return;
+            const sub = el.querySelector("span");
+            if (sub) sub.innerHTML = `<i class="cw" style="background:${FHWA_CHIP_COLOR[code] || FHWA_CHIP_COLOR[0]}"></i>` +
+              `${esc(functionalSystemLabel(code))} · road · ${esc(segsTxt)}`;
+          }) };
+      }), roadGroups.length);
     }
-    if (!hits && roadGroups !== "zoomed-out") addNote("No matching state, county, township or road found.");
-    if (counties === null || cousubs === null || roadGroups === null) addNote("Some searches failed (service unreachable) — try Find again.");
+    if (!hits && roadGroups !== "zoomed-out") addNote("No matching state, county, city, township or road found.");
+    if (counties === null || cities === null || cousubs === null || roadGroups === null) addNote("Some searches failed (service unreachable) — edit the search to retry.");
     out.innerHTML = "";
     out.appendChild(frag);
   } catch (e) { fail(e); }
 }
-$("findBtn").addEventListener("click", runFind);
 $("findText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); runFind(); } });
-// Type-ahead: suggestions appear as you type (debounced; 2+ characters).
-// Clearing the box just clears the suggestion list — it never zooms the map
-// the way an explicit state-only Find does. Fetches are URL-cached above, so
-// backspacing through a term costs nothing.
+// Type-ahead: suggestions appear as you type (debounced; 2+ characters) —
+// there is no Find button. Clearing the box just clears the suggestion list.
+// Fetches are URL-cached above, so backspacing through a term costs nothing.
 let findTypeTimer = null;
 $("findText").addEventListener("input", () => {
   clearTimeout(findTypeTimer);
@@ -4718,39 +5214,161 @@ async function snapToStreet(match) {
 async function resolveAddressLine(raw) {
   const key = lineKey(raw);
   geocodeStore.set(key, { status: "pending" });
-  const r = await geocodeSandboxed(raw);
+  // An address with no state / ZIP borrows the default area's state for the
+  // query, and — when it names no city either — its matches are kept to the
+  // area's boundary. An explicit city, state or ZIP always wins.
+  const addr = parseAddressLine(raw), area = window.defaultArea;
+  const scoped = !!(addr && area && area.state && !addr.state && !addr.zip);
+  const r = await geocodeSandboxed(scoped ? raw + ", " + area.state : raw);
   if (!r.ok) { geocodeStore.set(key, { status: "failed", error: r.error }); return; }
-  if (!r.matches.length) { geocodeStore.set(key, { status: "nomatch" }); return; }
+  if (!r.matches.length) { geocodeStore.set(key, { status: "nomatch", area: scoped ? area.label : "" }); return; }
+  let matches = r.matches, inArea = null;
+  if (scoped && !addr.city) {
+    await ensureAreaRings();
+    inArea = matches.filter(m => pointInArea(m.lat, m.lon));
+    if (inArea.length) matches = inArea;
+  }
   // Several matches that all sit within ~60 m are one place (an address
   // range straddling two TIGER edges); several far apart are a real
-  // ambiguity the user has to resolve with a city, state or ZIP.
-  const m0 = r.matches[0];
-  const spread = r.matches.some(m => minDistanceFt({ x: m.lon, y: m.lat }, m0.lat, m0.lon) > 200);
-  if (spread) { geocodeStore.set(key, { status: "ambiguous", count: r.matches.length, matches: r.matches }); return; }
+  // ambiguity — offered as a picker on the row.
+  const m0 = matches[0];
+  const spread = matches.some(m => minDistanceFt({ x: m.lon, y: m.lat }, m0.lat, m0.lon) > 200);
+  if (spread) {
+    geocodeStore.set(key, { status: "ambiguous", count: matches.length, matches, area: scoped ? area.label : "",
+      noneInArea: !!(inArea && !inArea.length) });
+    return;
+  }
+  await finishAddressMatch(key, m0, false);
+}
+async function finishAddressMatch(key, m0, picked) {
   let snap;
   try { snap = await snapToStreet(m0); }
   catch { snap = { snapped: false, lat: m0.lat, lon: m0.lon, error: "street lookup failed" }; }
-  geocodeStore.set(key, { status: "ok", match: m0, ...snap });
+  geocodeStore.set(key, { status: "ok", match: m0, ...snap, picked });
+}
+// Group a road's TIGER edges into SEPARATE stretches (edges chained within
+// ROAD_GAP_M of each other). "Main St" in a county is usually several
+// unrelated roads with one name — each becomes a picker option.
+const ROAD_GAP_M = 600;
+function clusterPaths(paths) {
+  const n = paths.length, parent = Array.from({ length: n }, (_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const ends = paths.map(p => [p[0], p[p.length - 1]]);
+  const near = (a, b) => { const f = localFrame(a[1]); return Math.hypot((a[0] - b[0]) * f.mPerLon, (a[1] - b[1]) * f.mPerLat) <= ROAD_GAP_M; };
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (find(i) === find(j)) continue;
+    if (ends[i].some(a => ends[j].some(b => near(a, b)))) parent[find(i)] = find(j);
+  }
+  const groups = new Map();
+  paths.forEach((p, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+  return [...groups.values()].map(ps => {
+    let longest = null, lenM = 0, total = 0;
+    for (const p of ps) { const L = pathLengthM(p); total += L; if (L > lenM) { lenM = L; longest = p; } }
+    const mid = pointAlongPath(longest, 0, 0, lenM / 2);
+    return { paths: ps, lat: +mid[0].toFixed(6), lon: +mid[1].toFixed(6), lengthM: total };
+  });
+}
+// Name the place each stretch sits in (city / village, else township) —
+// one point-in-polygon query per stretch, cached — and order the stretches
+// by distance from the batch's other sites (else the map centre), so the
+// likely one lands first.
+const placeAtCache = new Map();
+async function placeAt(lat, lon) {
+  const k = lat.toFixed(4) + "," + lon.toFixed(4);
+  if (!placeAtCache.has(k)) placeAtCache.set(k, (async () => {
+    const q = u => httpGetJson(u + "/query?geometry=" + lon.toFixed(6) + "," + lat.toFixed(6) +
+      "&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=NAME&returnGeometry=false&f=json")
+      .then(j => ((j.features || [])[0] || {}).attributes || {}).then(a => a.NAME || "").catch(() => "");
+    const [city, twp] = await Promise.all([q(TIGER_FIND.places), q(TIGER_FIND.cousubs)]);
+    return city || twp || "";
+  })());
+  return placeAtCache.get(k);
+}
+async function labelStretches(clusters) {
+  const others = validPoints();
+  let ref;
+  if (others.length) ref = [others.reduce((a, p) => a + p.lat, 0) / others.length, others.reduce((a, p) => a + p.lon, 0) / others.length];
+  else { const c = map.getCenter(); ref = [c.lat, c.lng]; }
+  const f = localFrame(ref[0]);
+  const dist = c => Math.hypot((c.lon - ref[1]) * f.mPerLon, (c.lat - ref[0]) * f.mPerLat);
+  clusters.sort((a, b) => dist(a) - dist(b));
+  const top = clusters.slice(0, 12);
+  const names = await Promise.all(top.map(c => placeAt(c.lat, c.lon)));
+  top.forEach((c, i) => {
+    const mi = (c.lengthM / 1609.34).toFixed(c.lengthM < 800 ? 2 : 1);
+    c.place = names[i];
+    c.label = (names[i] || `near ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`) + ` · ${mi} mi · ${c.paths.length} seg`;
+  });
+  return top;
 }
 async function resolveRoadLine(raw, road) {
   const key = lineKey(raw);
   roadStore.set(key, { status: "pending" });
   try {
-    const place = await tigerPlaceExtent(road.place, road.state);
-    if (!place) { roadStore.set(key, { status: "noplace" }); return; }
-    if (place.ambiguous) { roadStore.set(key, { status: "ambiguous", count: place.ambiguous }); return; }
+    let place;
+    const area = window.defaultArea;
+    if (road.bare) {
+      if (!area || !area.extent) { roadStore.set(key, { status: "noarea" }); return; }
+      place = { extent: area.extent, kind: area.kind, label: area.label };
+    } else {
+      place = await tigerPlaceExtent(road.place, road.state);
+      if (!place) { roadStore.set(key, { status: "noplace" }); return; }
+      if (place.ambiguous) { roadStore.set(key, { status: "ambiguous", count: place.ambiguous }); return; }
+    }
     const found = await tigerRoadByName(road.street, place.extent);
-    if (!found.paths.length) { roadStore.set(key, { status: "noroad", place: place.label, kind: place.kind }); return; }
-    // The pin sits at the midpoint of the longest matched edge.
-    let longest = null, lenM = 0;
-    for (const p of found.paths) { const L = pathLengthM(p); if (L > lenM) { lenM = L; longest = p; } }
-    const mid = pointAlongPath(longest, 0, 0, lenM / 2);
-    roadStore.set(key, { status: "ok", lat: +mid[0].toFixed(6), lon: +mid[1].toFixed(6), paths: found.paths,
-      name: found.names[0] || road.street.display, names: found.names, place: place.label, kind: place.kind });
+    let paths = found.paths;
+    if (road.bare) {   // the extent is a box; keep only edges whose midpoint is really inside the area
+      await ensureAreaRings();
+      if (area.rings && area.rings.length) paths = paths.filter(p => { const m = p[Math.floor(p.length / 2)]; return pointInArea(m[1], m[0]); });
+    }
+    if (!paths.length) { roadStore.set(key, { status: "noroad", place: place.label, kind: place.kind }); return; }
+    const name = found.names[0] || road.street.display;
+    const clusters = clusterPaths(paths);
+    if (clusters.length > 1) {
+      const options = await labelStretches(clusters);
+      roadStore.set(key, { status: "ambiguous-road", options, total: clusters.length, name, names: found.names, place: place.label, kind: place.kind });
+      return;
+    }
+    const c = clusters[0];
+    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name, names: found.names, place: place.label, kind: place.kind });
   } catch (e) {
     roadStore.set(key, { status: "failed", error: e.message });
   }
 }
+// A picker click on an unresolved row: the user's decision, remembered by line.
+async function applyPick(kind, key, i) {
+  if (kind === "road") {
+    const r = roadStore.get(key), c = r && r.options && r.options[i];
+    if (!c) return;
+    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name: r.name, names: r.names,
+      place: r.place + (c.place ? " · " + c.place : ""), kind: r.kind, picked: c.label });
+  } else {
+    const g = geocodeStore.get(key), m = g && g.matches && g.matches[i];
+    if (!m) return;
+    geocodeStore.set(key, { status: "pending" });
+    rebuildPoints(); render(); updateAddressUi();
+    await finishAddressMatch(key, m, true);
+  }
+  rebuildPoints(); render(); updateAddressUi();
+}
+window.applyPick = applyPick;
+// The area changed: bare road names and area-scoped addresses that could not
+// resolve (or resolved ambiguously) get another go — roads at once (TIGER),
+// addresses via the Geocode button (nothing is sent without a click).
+function onDefaultAreaChanged() {
+  const pasted = parseCoordinates(coordsBox.value);
+  let touched = false;
+  for (const p of pasted) {
+    if (!p.invalid) continue;
+    const k = lineKey(p.raw);
+    if (p.kind === "road" && p.road.bare) { const r = roadStore.get(k); if (r && r.status !== "ok") { roadStore.delete(k); touched = true; } }
+    if (p.kind === "address" && !p.addr.state && !p.addr.zip) { const g = geocodeStore.get(k); if (g && g.status !== "ok") { geocodeStore.delete(k); touched = true; } }
+  }
+  if (touched) { rebuildPoints(); render(); }
+  updateAddressUi();
+  resolveRoadLines();
+}
+window.onDefaultAreaChanged = onDefaultAreaChanged;
 
 /* ---- turning resolved lines into points (rebuildPoints hook) ---- */
 function materializeResolved(pasted) {
@@ -4833,8 +5451,15 @@ function invalidRowHtml(p) {
     let msg, cls = "v-address";
     if (!g) msg = `Address — not sent anywhere yet. Click <b>Geocode</b> above the box to look it up.`;
     else if (g.status === "pending") msg = `geocoding…`;
-    else if (g.status === "nomatch") { cls = "v-failed"; msg = `No match from the Census geocoder — check the spelling, or add the city and ZIP, then Geocode again.`; }
-    else if (g.status === "ambiguous") { cls = "v-failed"; msg = `${g.count} possible matches — add the city, state or ZIP to pick one, then Geocode again.`; }
+    else if (g.status === "nomatch") { cls = "v-failed"; msg = `No match from the Census geocoder${g.area ? " in " + esc(g.area) : ""} — check the spelling, or add the city and ZIP, then Geocode again.`; }
+    else if (g.status === "ambiguous") {
+      cls = "v-review";
+      msg = `${g.count} possible matches${g.area ? (g.noneInArea ? " — none inside " + esc(g.area) : " inside " + esc(g.area)) : ""} — pick one, or add the city / ZIP and Geocode again:`;
+      const key = lineKey(p.raw);
+      const picker = `<div class="picker">` + g.matches.map((m, i) =>
+        `<button type="button" class="pick${g.noneInArea ? " out" : ""}" data-kind="address" data-key="${esc(key)}" data-i="${i}" title="${esc(m.lat + ", " + m.lon)}">${esc(m.matchedAddress || (m.lat + ", " + m.lon))}</button>`).join("") + `</div>`;
+      return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div>${picker}<div class="row-links">${code}</div>`];
+    }
     else { cls = "v-failed"; msg = `Geocoder ${esc(g.error || "failed")} — Geocode again to retry.`; }
     return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div><div class="row-links">${code}</div>`];
   }
@@ -4842,6 +5467,15 @@ function invalidRowHtml(p) {
     const r = p.roadState;
     let msg, cls = "v-pending";
     if (!r || r.status === "pending") msg = `looking the road up in Census TIGER…`;
+    else if (r.status === "noarea") { cls = "v-failed"; msg = `Road name without a place — pick a county, city or township in the search box above, or add one to the line (e.g. “, Kalamazoo County MI”).`; }
+    else if (r.status === "ambiguous-road") {
+      cls = "v-review";
+      msg = `“${esc(r.name)}” — ${r.total} separate stretches in ${esc(r.place)}${r.total > r.options.length ? ` (nearest ${r.options.length} shown)` : ""} — pick one:`;
+      const key = lineKey(p.raw);
+      const picker = `<div class="picker">` + r.options.map((c, i) =>
+        `<button type="button" class="pick" data-kind="road" data-key="${esc(key)}" data-i="${i}" title="${esc(c.lat + ", " + c.lon)}">${esc(c.label)}</button>`).join("") + `</div>`;
+      return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div>${picker}<div class="row-links">${code}</div>`];
+    }
     else if (r.status === "noplace") { cls = "v-failed"; msg = `Place “${esc(p.road.place)}” not found — use a county, township, city or village name${p.road.state ? "" : ", and add the state"}.`; }
     else if (r.status === "ambiguous") { cls = "v-failed"; msg = `“${esc(p.road.place)}” matches ${r.count} places — add the state (e.g. “, MI”).`; }
     else if (r.status === "noroad") { cls = "v-failed"; msg = `No road named “${esc(p.road.street.display)}” in ${esc(r.place)} (Census TIGER).`; }
@@ -4862,7 +5496,7 @@ function provenanceChipHtml(p, res) {
       (g.snapped ? ` · snapped to ${esc(g.tigerName)}` : " · street not matched") + `</span>`;
   }
   if (p.roadInfo && res) {
-    const t = `Looked up by name in Census TIGER (${p.roadInfo.kind}: ${p.roadInfo.place}); ${res.roadSampled} of ${p.roadInfo.paths.length} segment(s) classified at their midpoints. The pin marks the midpoint of the longest segment.`;
+    const t = `Looked up by name in Census TIGER (${p.roadInfo.kind}: ${p.roadInfo.place})${p.roadInfo.picked ? " — the stretch YOU picked: " + p.roadInfo.picked : ""}; ${res.roadSampled} of ${p.roadInfo.paths.length} segment(s) classified at their midpoints. The pin marks the midpoint of the longest segment.`;
     return `<span class="chip" title="${esc(t)}"><i class="cw" style="background:#c4b5fd"></i>whole road · ${res.roadSampled}/${p.roadInfo.paths.length} segments</span>` +
       (res.roadSummary ? `<span class="chip" title="Functional class by length along the sampled segments">${esc(res.roadSummary)}</span>` : "");
   }

@@ -1115,10 +1115,14 @@ live services. Full design narrative + verification history:
   artifacts — recover with a FRESH run, or re-run only the deploy job.
 - **Current shape of the page (2026-09-15).** Full-viewport Leaflet map as
   the hero (no page scroll), with a full-height LEFT PANE carrying, top to
-  bottom: title, two input tabs (**Coordinate Input** — paste flow, no State
-  dropdown, always auto-detect — and **Search & Collect** — TIGERweb find box
-  + an add-a-point form with Site name / GPS / Note), the **Export** split
-  pill, and the **Auto-Detect** results panel (disclaimer line + **Detection
+  bottom: title, ONE column (no tabs since 2026-09-17): the TIGERweb **search box**
+  (type-ahead only, no Find button; results grouped State / County / City /
+  Township / Road — cities come from `Places_CouSub_ConCity_SubMCD/4`, the
+  incorporated-places layer the old search never queried, which is why
+  "Rockford" listed townships but not the city), the **Area** chip, the
+  coordinates box (paste flow, no State dropdown, always auto-detect; sites
+  are also added with the map's pin button), the **Quick Export** dropdown,
+  the **Auto-Detect** results panel (disclaimer line + **Detection
   Buffer** select with an ⓘ explainer, text row filter, opt-in "filter by
   map view" checkbox, compact one-line rows, "⧉ Expand table"). The map is
   locked to Region V (maxBounds + a resize-recomputed minZoom, floor z6).
@@ -1216,10 +1220,88 @@ live services. Full design narrative + verification history:
   TIGER road names stay live (non-fatal). Cached segments carry the state LRS
   keys baked into the tiles (route id, mileposts, name), which feed the row's
   "State route … · MP" chip and the exports.
-- **Exports live in ONE dialogue** behind the blue split pill (placed with the
-  INPUT, not under Auto-Detect): a tab per FORMAT (Excel / KMZ / GeoJSON /
-  PDF), each with its own actions, options and a live preview, over ONE
-  editable table of every site. Cell edits live in `rowEdits` keyed by
+- **Every verdict names its source (2026-09-17, per user).** rr-core tags each
+  result with `sourceKind` (`"state"` = the DOT's live layer, `"hpms"` = the
+  tiles, `"acub"` = unwired state, urban boundary only); `verdictSource()` /
+  `stateSource()` / `hpmsSource()` (next to `STATE_APP`) turn that into a
+  short name + PUBLIC product-page URL — FHWA's HPMS page, the state's
+  official map app (`PUBLIC_MAP`), the NTAD dataset page — **never a REST
+  endpoint**. Surfaces: the row's "Source: FHWA HPMS 2024 tiles" /
+  "Source: MDOT live layer" chip (a link; replaced the old "cached data"
+  chip), the pin popup, a "Data Source" column in CSV/TSV/GeoJSON/KMZ
+  (`EX.source`, before Note), and every legend row (browse mirror, single
+  site, all sites) is an `a.lrow` with a hover title naming the source and
+  the same public link. Asserted by verify-hpms-tiles + verify-review-ui.
+- **Source outages fall back to HPMS and are marked (2026-09-17, per user).**
+  All live requests go through the UI's `httpGetJson`, which now (a)
+  throttles to `HOST_MAX_INFLIGHT` (3) requests per host with a 40 s
+  timeout — a 40-point paste used to fire every query at once at the state
+  server — and (b) tracks host health: network error / timeout / HTTP 5xx or
+  429 / non-JSON body marks the host DOWN (`sourceHealth`), later requests
+  fail instantly with `SourceDownError`, a `?f=json` probe re-checks every
+  60 s (`probeSource`) and marks it UP. `classifyPointSmart` on the live
+  path skips a down source (or catches the first hard failure) and
+  classifies from the HPMS tiles, stamping `fallbackFrom/Reason/Host` on
+  the result → chip/export read "FHWA HPMS 2024 tiles · MDOT live layer
+  down". The `#sourceStatus` strip under Auto-Detect lists down sources
+  (with "check now") and, once a source is back, offers "re-run N row(s)"
+  (`rerunFallbackRows` drops their cache entries and re-renders). The browse
+  legend adds a "⚠ … is down" note. Verified by the outage leg in
+  verify-review-ui (MDOT stubbed to an HTML 500, then a JSON probe).
+- **Default area + pickers (2026-09-17, per user; the §4.1/4.2 design of
+  `docs/NEXT-road-name-lookup.md`, minus the tile-baked county fields).**
+  Clicking a county / city / township in the search box calls
+  `selectFindArea` → `setDefaultArea` (`defaultArea`, persisted as
+  `rr_default_area`, `#areaBar` chip with ✕; a state click clears it). Uses:
+  (1) `parseRoadLine` now returns `{bare:true}` for a road name with no
+  place (verify-web-core expects `"road"` for `Q Ave`); `resolveRoadLine`
+  looks a bare name up in the area's extent, keeps edges whose midpoint is
+  inside the area polygon (`ensureAreaRings` / `pointInArea`), and with no
+  area sets status `noarea` (row: "pick a county, city or township"). (2)
+  Every road line's edges are grouped into separate stretches
+  (`clusterPaths`, `ROAD_GAP_M` 600 m); >1 → status `ambiguous-road` with
+  up to 12 options labelled by `placeAt` (city else township) and ordered
+  by distance from the batch's other sites (`labelStretches`) → a picker
+  on the row (`applyPick`, remembered by line, chip says "the stretch YOU
+  picked"). (3) `resolveAddressLine`: an address with no state/ZIP gets the
+  area's state appended to the geocoder query, and with no city its matches
+  are filtered to the area; spread matches → status `ambiguous` with a
+  picker of the matched addresses (dashed when none is inside the area).
+  `onDefaultAreaChanged` re-resolves bare roads at once and re-offers
+  area-scoped addresses to the Geocode button. Road-name SEARCH runs inside
+  the area when set (else the visible map at z≥11).
+- **Pin right-click menu (2026-09-17, per user).** `openPinMenu` (a Leaflet
+  popup on the marker's `contextmenu`): **Move pin** → `startPinMove` drops
+  a draggable marker; `dragend` → `applyPinMove` rewrites the line via
+  `rewritePastedLine` (collected: `writeCollectedIdentity`) and re-checks;
+  **Delete pin** → `deletePoint` splices the line out of the box (or the
+  collected record) and re-renders. Escape cancels a move.
+- **View and Export + Quick Export (2026-09-17, per user).** The export card
+  is no longer a modal and the pop-out table is gone: `#exportCard` is moved
+  into `#sidebar` at load and **"View and Export →"** (pinned `.sb-cta` at the
+  bottom of the pane, also "⧉ View and Export" in the results header) sets
+  `body.expanded` — the sidebar's flex-basis animates to `100% - --mini-map`
+  (map keeps ~1/6 on the right; `expandTransition` re-measures Leaflet every
+  frame), the map fits every site or stays on the selected one
+  (`zoomForExportView`), and clicking a `tr[data-k]` in the big table selects
+  that site exactly like the small list (`selectSiteByPoint` → blue
+  `tr.selected` outline, list row highlighted, z17). "← Back to map"
+  (`#exportClose`) / Escape restore the layout. The pill became **"Quick
+  Export ▾"** (`#exportBtn`, no caret): copy actions + direct downloads that
+  click the card's own buttons (`QUICK_EXPORT`). The **Search** tab lost its
+  add-a-point form: sites are dropped with the **pin button** (`#pinBtn`, a
+  Leaflet control placed above the zoom control; `setPinMode` 0/1/2 =
+  off/one pin/keep dropping, orange + ∞ badge when sticky). A map click
+  appends `Point N, lat, lon` to the coordinates box (the normal flow) and
+  drops a temporary bouncing pin whose permanent tooltip is a contenteditable
+  name editor (default selected; Enter/blur/Escape finish; `setPinLineName`
+  rewrites that line as you type). `keepMapView` is a one-shot flag so
+  render() does NOT refit the map after pin-driven inputs, and render() skips
+  the label of the site whose editor is open. The old `collectedPoints`
+  store still loads (rows keep their remove link) but nothing writes to it.
+  Every tab-format pane below is unchanged: a tab per FORMAT (Excel / KMZ /
+  GeoJSON / PDF), each with its own actions, options and a live preview, over
+  ONE editable table of every site. Cell edits live in `rowEdits` keyed by
   origin + `"lat,lon"` — NOT by point identity, because `currentPoints` is
   rebuilt on every keystroke in the coordinates box — and `exportRowFor()`
   applies them, so CSV / clipboard / KMZ / GeoJSON all carry the edits.

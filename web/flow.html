@@ -116,7 +116,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
   <div class="answer">
     <div class="card">
       <h4><span class="tag hpms">HPMS tiles</span> decide the verdict</h4>
-      <p>The red / green / yellow status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"cached data"</b> chip.</p>
+      <p>The red / green / yellow status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"Source: FHWA HPMS 2024 tiles"</b> chip (a live verdict shows <b>"Source: MDOT live layer"</b> etc.); the chip links to that source's public page.</p>
     </div>
     <div class="card">
       <h4><span class="tag state">State layer</span> decides the verdict only when…</h4>
@@ -187,7 +187,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
 
     <h3>4. Where it lands</h3>
     <div class="frow one">
-      <div class="box"><b class="t">Row, pin, exports</b>The verdict, FHWA class, urban/rural + urban-area name, road name(s) with distances, the state route chip, and a "cached data" chip when the tiles were used — on the row, as the pin color, and in every export (CSV, TSV, GeoJSON, KMZ, PDF).</div>
+      <div class="box"><b class="t">Row, pin, exports</b>The verdict, FHWA class, urban/rural + urban-area name, road name(s) with distances, the state route chip, and a "Source:" chip naming where the class came from (FHWA HPMS tiles or the state DOT's live layer) — on the row, in the pin popup, as the pin color, and in every export (CSV, TSV, GeoJSON, KMZ carry a Data Source column).</div>
     </div>
   </div>
 </section>
@@ -204,7 +204,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
     <tr><td class="what">Urban / Rural + urban-area name</td><td>Point-in-polygon against the adjusted urban areas</td><td class="src"><span class="tag hpms">ACUB tiles</span> default · NTAD live if live</td><td>2020 boundaries only. ACUB is the single source of urban/rural; state fields that say urban/rural are deliberately ignored.</td></tr>
     <tr><td class="what">Road name(s) + distance</td><td>HPMS street name on the segment, merged with Census TIGER names nearby</td><td class="src"><span class="tag hpms">HPMS</span> + <span class="tag census">TIGER</span></td><td>HPMS names are missing on a third to two-thirds of rural WI / MN segments; TIGER fills them. Spellings differ and are collapsed.</td></tr>
     <tr><td class="what">"State route 0006904 · MP 3.2–4.1" chip</td><td>The state's LRS route id and mileposts as submitted to HPMS</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Cached path only. Quality follows each state's submission.</td></tr>
-    <tr><td class="what">"cached data" chip</td><td>Marks a verdict from the tiles</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Absent means the live path ran for that point.</td></tr>
+    <tr><td class="what">"Source: …" chip</td><td>Names the road-class source of that verdict and links to its public page</td><td class="src"><span class="tag hpms">HPMS tiles</span> or <span class="tag state">State DOT</span></td><td>"FHWA HPMS 2024 tiles" = cached path; "MDOT live layer" (etc.) = live path; "urban boundary only" = state not wired. The map legend's rows link the same way — hover a swatch to see its source. If a state server is down while Live verdicts is on, the verdict falls back to the tiles and the chip reads "… · MDOT live layer down"; the strip under Auto-Detect shows the outage until the server answers again.</td></tr>
     <tr><td class="what">Geocoded address name, "snapped 18 ft" note</td><td>Census geocoder match + snap onto the TIGER street</td><td class="src"><span class="tag census">Census</span></td><td>Only on the Geocode button. Ambiguous when city / state are missing.</td></tr>
     <tr><td class="what">"whole road · Kalamazoo County" row + class-by-length chip</td><td>TIGER edges of the named road, 12 midpoints classified</td><td class="src"><span class="tag census">TIGER</span> → then the path above</td><td>Same-named townships with a state typed are merged into one huge search box (Portage MI → most of Michigan). 12 samples, not length-weighted.</td></tr>
   </table>
@@ -228,7 +228,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
     <tr><td class="what">State / county / township matches + dashed outline</td><td>TIGERweb boundary layers</td><td class="src"><span class="tag census">Census</span> live</td><td>Cities and tribal areas are not searched yet.</td></tr>
     <tr><td class="what">Road matches in the visible map</td><td>TIGERweb road layers, limited to the map view (zoom 11+)</td><td class="src"><span class="tag census">Census</span> live</td><td>You have to know roughly where the road is first.</td></tr>
     <tr><td class="what">Class swatch on a road suggestion</td><td>One live point query at the longest segment's midpoint</td><td class="src"><span class="tag state">State layer</span> live</td><td>Not the tiles — so it can differ from a cached verdict at the same spot.</td></tr>
-    <tr><td class="what">Search &amp; Collect points and notes</td><td>What you typed, kept in this browser only</td><td class="src">you</td><td>Cleared with site data; never sent anywhere.</td></tr>
+    <tr><td class="what">Dropped pins and notes</td><td>Pins you drop with the map's pin button become lines in the coordinates box; notes typed in View and Export stay in this browser only</td><td class="src">you</td><td>Cleared with site data; never sent anywhere.</td></tr>
   </table>
 
   <h3>PDF report and exports</h3>

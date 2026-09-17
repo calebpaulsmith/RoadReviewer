@@ -51,19 +51,28 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
 - [ ] **2.6** Still ticked, step with Prev/Next. → Same.
 - [ ] **2.7** Untick. → All rows return.
 
-## 3. Export pill and menu (~4 min)
+## 3. Quick Export menu and View and Export (~6 min)
 
-- [ ] **3.1** Locate Export; switch tabs. → Blue split pill with the coordinate
-  input (not under Auto-Detect), reachable from both tabs.
-- [ ] **3.2** Click the caret, then click away. → Grouped menu opens, closes on
-  the outside click.
+- [ ] **3.1** Locate "Quick Export ▾". → One blue dropdown button with the
+  coordinate input (not under Auto-Detect). The pane is ONE column now: search
+  box on top, coordinates box, Quick Export, Auto-Detect — no tabs.
+- [ ] **3.2** Click it, then click away. → Grouped menu opens, closes on the
+  outside click.
 - [ ] **3.3** "Copy site + coordinates" → paste into Excel. → Toast; three
   columns, one row per site, each value in its own cell.
 - [ ] **3.4** "Copy Auto-Detect results" → paste into Excel. → Every column in
   its own cell with the header row.
-- [ ] **3.5** Each format entry. → Dialogue opens on that format's tab.
+- [ ] **3.5** Each download entry. → The file downloads straight away, no
+  dialogue.
+- [ ] **3.6** Blue "View and Export →" pinned at the bottom of the pane (and
+  "⧉ View and Export" in the results header). → The pane stretches across the
+  screen (a short slide); the map keeps a strip on the right and zooms to fit
+  every site — or stays on the selected site if one was selected.
+- [ ] **3.7** Click rows in the big table. → The row gets a blue outline, the
+  same row highlights in the small list, the map zooms right in on that site;
+  Prev/Next on the map strip still steps. "← Back to map" restores the layout.
 
-## 4. Export dialogue and the files it writes (~8 min)
+## 4. View and Export tabs and the files they write (~8 min)
 
 - [ ] **4.1** Click through the four tabs. → Each shows its own actions and a
   preview of real content.
@@ -78,7 +87,7 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
   anything off — this control is the one up for redesign.*
 - [ ] **4.7** FIRMettes (ZIP). → One FEMA FIRMette PDF per site.
 
-## 5. Editing in the dialogue (~10 min) — newest work
+## 5. Editing in View and Export (~10 min)
 
 - [ ] **5.1** Note on row 1 → CSV and KMZ. → Present in both.
 - [ ] **5.2** Row 1 Longitude → `-84.5360`, click outside the row. → First line of
@@ -94,11 +103,41 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
   label follow.
 - [ ] **5.7** Watch during a coordinate re-check. → Export buttons grey out with
   "re-checking the edited site…", then return.
-- [ ] **5.8** Start an edit, press Escape. → Dialogue closes and the edit applies.
-- [ ] **5.9** Collected point: add with name + note, edit coords, reload. → Comes
-  back edited.
-- [ ] **5.10** Collected point on the same coordinates as a pasted one, different
-  notes. → Notes stay separate.
+- [ ] **5.8** Start an edit, press Escape. → The pane shrinks back and the edit
+  applies.
+- [ ] **5.9** Pin button (top right of the map): one click → button turns blue,
+  cursor becomes a pin; click the map. → A pin drops with a bounce, its label is
+  a name box with "Point N" selected, the line "Point N, lat, lon" is at the end
+  of the coordinates box, and the site classifies. Type a name without clicking
+  anything → the line and the label follow; Enter ends it. The map must NOT
+  jump away while you type. Pin mode is off again after the one pin.
+- [ ] **5.10** Click the pin button twice (orange, ∞ badge). → Every map click
+  drops another pin; scroll-zoom and drag still work; clicking an existing pin
+  selects it rather than dropping a new one; Escape or the button turns it off.
+- [ ] **5.11** Right-click a pin → "Move pin", drag it. → Its line in the box
+  gets the new coordinates (name kept), the verdict re-runs. Right-click →
+  "Delete pin". → The line and the pin are gone.
+
+## 5b. Search, default area and pickers (~8 min) — newest work
+
+- [ ] **5b.1** Type `rockford` in the search box (no Find button). → Results
+  grouped under State / County / City / Township / Road headings; "Rockford
+  city" (IL, MI, MN) is listed under City, the townships under Township.
+- [ ] **5b.2** Click "Kalamazoo County". → Map zooms to the dashed outline
+  and a blue chip "Area: Kalamazoo County, MI ✕" appears under the search box;
+  reload → still there.
+- [ ] **5b.3** With the area set, type `main` in the search. → Roads found
+  inside the county even when zoomed out ("in Kalamazoo County, MI").
+- [ ] **5b.4** Paste `Q Ave` alone. → Resolves inside the county as a whole
+  road. Paste `Main St`. → Row says "2 separate stretches in Kalamazoo County,
+  MI — pick one" with township/city-named buttons; a click resolves it and the
+  row's chip says which stretch you picked.
+- [ ] **5b.5** Click ✕ on the area, paste `Q Ave`. → Row says "Road name
+  without a place — pick a county, city or township…"; nothing is searched.
+- [ ] **5b.6** Area set, paste `5201 Portage Rd` (no city), click Geocode. →
+  Located inside the county. Paste an address that exists in several places
+  in the county → "N possible matches inside Kalamazoo County, MI — pick one"
+  with address buttons.
 
 ## 6. Regression sanity (~6 min)
 
@@ -107,11 +146,19 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
 - [ ] **6.2** Zoom region → street and back several times. → No "Page
   Unresponsive" (**known open item**, never reproduced headless).
 - [ ] **6.3** Tick "Live verdicts", re-run the three points. → Same verdicts;
-  rows lose the "cached data" chip.
+  rows' Source chip changes from "FHWA HPMS 2024 tiles" to "<DOT> live layer"
+  and clicking it opens the state's official public map, not a REST page.
 - [ ] **6.4** One point per state from `docs/Region V Test Coordinates.xlsx`. →
   Each matches the sheet.
-- [ ] **6.5** "⧉ Expand table". → Every site with full detail incl. the State
-  route chip.
+- [ ] **6.5** Outage: with "Live verdicts" ticked, block a state server (e.g.
+  DevTools → Network → block `mdotgis.state.mi.us`) and paste a point there. →
+  Verdict still appears; chip reads "Source: FHWA HPMS 2024 tiles · MDOT live
+  layer down"; an amber strip under Auto-Detect names the outage and rechecks
+  every 60 s ("check now" forces it). Unblock → strip turns green "back up —
+  re-run 1 row(s)"; clicking it re-classifies live. With 20+ points pasted the
+  Network log shows at most 3 requests in flight per host.
+- [ ] **6.6** "⧉ View and Export" from the results header. → Same expanded
+  view as the bottom button, every site with the State Route ID column.
 
 ## 7. Addresses and road names (~8 min) — newest work
 

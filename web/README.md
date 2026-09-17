@@ -155,9 +155,9 @@ toggles float in a bar over the map's top-left.
 - **Compact result rows.** Each row shows one line — site name, coords,
   state, verdict badge — and clicking it both selects the site on the
   map and expands the detail (chips, roads, urban area, links).
-  **⧉ Expand table** pops the full-detail table for every site at once
-  over the map (verdict-tinted, with links), closable via ✕ / Esc /
-  backdrop.
+  **⧉ View and Export** (results header) and the blue **View and Export →**
+  button pinned to the bottom of the pane both EXPAND the pane over the map
+  (2026-09-17; see "View and Export" below) — there is no pop-out any more.
 - **Live street-level detail under the roads** (per user direction:
   hosted road map, "the other stuff popped in live underneath"):
   buildings, parks/land use, street names, house numbers and — the
@@ -183,14 +183,30 @@ Per user direction the left pane's input area is two tabs:
 - **Coordinate Input** — the paste-a-batch flow: the Search **buffer**
   select (renamed from "Search radius") and the coordinates box. The
   State dropdown is GONE — the state is always auto-detected per point.
-- **Search & Collect** — the field-collection flow: the Find box
-  (state / county / township / city / road via Census TIGERweb — click
-  a suggestion and the map zooms there), then an **add-a-point form**:
-  Site name, GPS coordinates, and a **Note**. Each added point drops
-  into the same shared results table, classifies exactly like a pasted
-  point, pins on the map, and **persists in localStorage** until
-  removed (per-row "remove" link, or "clear collected"). The note
-  shows in the row detail and the pop-out table.
+- **Search** — since 2026-09-17 there are no tabs: the search box sits at
+  the top of the one pane, above the coordinates box, with no Find button
+  (results appear as you type, grouped under State / County / City /
+  Township / Road headings; cities come from TIGERweb's incorporated-places
+  layer, which the earlier search never queried). Clicking a county, city or
+  township zooms there AND makes it the **default area** (blue chip, ✕ to
+  clear, remembered in this browser): addresses typed without a city/state
+  are geocoded inside it, bare road names (`Q Ave`) are looked up inside it,
+  and the road-name search runs inside it. Anything ambiguous — several
+  geocoder matches, several separate stretches of a road with that name —
+  becomes a picker on the row. Right-clicking a pin offers **Move pin**
+  (drag; the line and verdict follow) and **Delete pin**. The add-a-point form is gone (2026-09-17, per user: it
+  repeated the coordinates box). Sites are added with the **pin button** at
+  the top right of the map: one click arms it for ONE pin (button turns
+  blue, the pointer becomes a pin), a second click keeps it on (orange, ∞)
+  for dropping many, a third — or Escape — turns it off; scroll-zoom and
+  drag still navigate. A map click drops a bouncing pin and appends
+  `Point N, lat, lon` to the coordinates box, so the site goes through the
+  normal parse → classify flow; the pin's label opens as a name box with
+  the default name selected (the same "Point N" rule as an unnamed pasted
+  line) — just type to replace it, Enter or clicking elsewhere finishes,
+  typing is optional. The map does not jump while you name the pin. Points
+  saved by the old form still load from localStorage (their rows keep the
+  "remove" link) but nothing writes there any more.
 - **Exports**: CSV/Copy-for-Excel/GeoJSON gained a **Note** column, and
   a new **KMZ** export (zipped KML via the FIRMette bundle's store-zip
   builder) writes red/green/yellow pushpins by verdict with name,
@@ -199,8 +215,8 @@ Per user direction the left pane's input area is two tabs:
 
 ## Accepted coordinate formats (2026-09-15)
 
-Both input paths — the paste box and Search & Collect's add-a-point field —
-run the same `parseCoordinates`, so they accept the same things:
+The paste box runs `parseCoordinates` (a dropped pin writes a
+`name, lat, lon` line into that same box), so it accepts the following:
 
 - **Decimal degrees**, in either order, with or without a site name, in any
   mix of commas, tabs and spaces: `42.28536, -85.57025` ·
@@ -297,7 +313,10 @@ Areas, 3 MB). The SAME `computeVerdict` logic as the live path — only
 the data source changes — so red/green/yellow rules are identical.
 Instant, and zero per-point queries to the six state DOT servers or
 NTAD; only the non-fatal Census TIGER street-name backfill stays live.
-Rows show a "cached data" chip; a **Live verdicts** checkbox under
+Rows show a "Source: FHWA HPMS 2024 tiles" chip (live rows show
+"Source: MDOT live layer" etc.; every chip links to the source's public
+product page, and the map legend's rows do the same on hover/click); a
+**Live verdicts** checkbox under
 "Data service URLs" restores the per-point live queries (slower, but
 reflects reclassifications newer than the tileset year). The live path
 also remains the automatic fallback (file://, missing tileset, read
@@ -389,14 +408,29 @@ single site (a row click, Prev/Next, or adding a collected point) is
 deliberately exempt from that: it would otherwise collapse the list to
 the one site you just clicked, so those moves re-apply the filter
 against the last view the user chose. All of it is purely visual —
-exports, the pop-out table, Prev/Next stepping and classification
+exports, the View and Export table, Prev/Next stepping and classification
 always cover every site.
 
-## Export (2026-09-15)
+## Quick Export + View and Export (2026-09-17)
 
-Every export sits behind one blue **Export** split pill, placed with the
-coordinate input rather than under Auto-Detect. The button opens the
-export dialogue; the caret drops a menu of formats.
+**Quick Export ▾** (with the coordinate input, not under Auto-Detect) is a
+plain dropdown: copy site + coordinates, copy Auto-Detect results, and one
+DIRECT download per format (CSV, KMZ, GeoJSON, PDF report, FIRMettes ZIP)
+— no dialogue in between. **View and Export →**, pinned to the bottom of
+the pane (and "⧉ View and Export" in the results header), stretches the
+left pane across the screen with a short slide; the map keeps a strip on
+the right (about a sixth of the width) and zooms to fit every site, or
+stays on the selected site if one is selected. The strip keeps Prev/Next.
+Inside is the same format-tabbed, editable table that used to be the
+modal dialogue (everything below still applies): clicking a row selects
+that site exactly like the small list does — blue outline on the row, the
+list row highlighted, the map zoomed right in — and **← Back to map** (or
+Escape) restores the layout, applying any pending edit.
+
+## Export tabs (2026-09-15)
+
+The format tabs and the editable table were built as a modal dialogue and
+now live inside View and Export; the mechanics are unchanged:
 
 - **Tabs per format** — Excel, Google Earth (KMZ), GeoJSON, PDF — each
   with its own actions, its own options, and a **live preview** of what
