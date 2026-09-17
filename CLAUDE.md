@@ -1270,6 +1270,16 @@ live services. Full design narrative + verification history:
   `onDefaultAreaChanged` re-resolves bare roads at once and re-offers
   area-scoped addresses to the Geocode button. Road-name SEARCH runs inside
   the area when set (else the visible map at z≥11).
+- **Verdict bar chart (2026-09-17, per user).** `#verdictChart` under the
+  Auto-Detect header: three status bars in fixed order (Federal aid / Needs
+  review = review + failed / Non-federal aid), counts live from
+  `applyRowFilter` (which every landing verdict calls) via
+  `updateVerdictChart`; a "still checking…" line while results are pending.
+  Each bar toggles `bucketFilter` (a Set, several may be on) which
+  `applyRowFilter` applies alongside the text and map-view filters, and
+  Prev/Next go through `stepSite(dir)`, which steps only the rows currently
+  displayed. Colours are the page's `BUCKET_COLOR` status set with labels +
+  counts as the secondary encoding.
 - **Pin right-click menu (2026-09-17, per user).** `openPinMenu` (a Leaflet
   popup on the marker's `contextmenu`): **Move pin** → `startPinMove` drops
   a draggable marker; `dragend` → `applyPinMove` rewrites the line via

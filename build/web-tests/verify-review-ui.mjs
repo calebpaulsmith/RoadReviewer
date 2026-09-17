@@ -676,6 +676,29 @@ checks.push(["clearing the filter restores all rows and pins", await page.evalua
   [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none")
   && markerLayer.getLayers().length === 2)]);
 
+// --- verdict bar chart: live counts, bars are filter toggles, Next follows the filter ---
+checks.push(["verdict chart: three labelled bars with live counts (1 federal aid, 1 needs review, 0 non-federal)", await page.evaluate(() => {
+  const el = document.getElementById("verdictChart"), bs = [...el.querySelectorAll("button[data-bucket]")];
+  const val = b => +bs.find(x => x.dataset.bucket === b).querySelector(".val").textContent;
+  const lbl = b => bs.find(x => x.dataset.bucket === b).querySelector(".lbl").textContent;
+  return !el.hidden && bs.length === 3 && val("fed") === 1 && val("review") === 1 && val("nonfed") === 0
+    && lbl("fed") === "Federal aid" && lbl("review") === "Needs review" && lbl("nonfed") === "Non-federal aid"
+    && bs.map(b => b.dataset.bucket).join() === "fed,review,nonfed";
+})]);
+await page.click('#verdictChart button[data-bucket="fed"]');
+checks.push(["clicking the Federal aid bar keeps only that site (row + pin) and marks the bar on", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1
+  && document.querySelector("#resultsBody .row:not([style*='none'])").textContent.includes("Kalamazoo culvert")
+  && markerLayer.getLayers().length === 1 && document.querySelector('#verdictChart button[data-bucket="fed"]').classList.contains("on")
+  && document.getElementById("filterCount").textContent.includes("showing 1 of 2"))]);
+await page.click("#nextSite"); await page.click("#nextSite");
+checks.push(["Next steps only through the filtered sites", (await page.locator("#reviewInfo").textContent()).includes("Kalamazoo culvert")]);
+await page.click('#verdictChart button[data-bucket="fed"]');
+checks.push(["clicking the bar again clears the filter", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none") && markerLayer.getLayers().length === 2
+  && !document.querySelector("#verdictChart button.on"))]);
+await page.evaluate(() => selectSite(1));
+
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("1 / 2"), { timeout: 10000 });

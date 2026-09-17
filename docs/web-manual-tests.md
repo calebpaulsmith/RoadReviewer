@@ -50,6 +50,11 @@ Non-federal aid (Urban Local, Lansing) · Tawas = Non-federal aid (Rural Local).
   **not** collapse to it.
 - [ ] **2.6** Still ticked, step with Prev/Next. → Same.
 - [ ] **2.7** Untick. → All rows return.
+- [ ] **2.8** Paste the three coordinates fresh. → A three-bar chart (Federal
+  aid / Needs review / Non-federal aid) appears at once under Auto-Detect and
+  its counts tick up as verdicts land. Click a bar → only those rows and pins
+  stay, the bar is highlighted, Prev/Next step through just those; click it
+  again → everything returns. Two bars can be on at once.
 
 ## 3. Quick Export menu and View and Export (~6 min)
 
