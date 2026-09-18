@@ -102,6 +102,14 @@ await page.route("**/*", async route => {
   }
   // Road-name line "Portage Rd, Portage MI": the place resolves as a county
   // subdivision (count 1, then its extent), then two Portage Rd edges in it.
+  if (url.includes("Places_CouSub_ConCity_SubMCD/MapServer/4/query")) {
+    if (url.includes("returnCountOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ count: url.includes("KALAMAZOO") ? 1 : 0 }) });
+    if (url.includes("returnExtentOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ extent: { xmin: -85.65, ymin: 42.20, xmax: -85.53, ymax: 42.33 } }) });
+    if (url.includes("esriGeometryPoint")) return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Portage city" } }] }) });
+    if (url.includes("returnGeometry=true")) return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "Kalamazoo city" },
+      geometry: { rings: [[[-85.65, 42.20], [-85.53, 42.20], [-85.53, 42.33], [-85.65, 42.33], [-85.65, 42.20]]] } }] }) });
+    return route.fulfill({ ...json, body: JSON.stringify({ features: url.includes("KALAMAZOO") ? [{ attributes: { NAME: "Kalamazoo city", GEOID: "2642160", STATE: "26" } }] : [] }) });
+  }
   if (url.includes("returnCountOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ count: url.includes("Places_CouSub_ConCity_SubMCD/MapServer/1/") ? 1 : 0 }) });
   if (url.includes("returnExtentOnly=true")) return route.fulfill({ ...json, body: JSON.stringify({ extent: { xmin: -85.65, ymin: 42.15, xmax: -85.53, ymax: 42.25 } }) });
   if (url.includes("Transportation/MapServer/") && url.includes("SUFDIRABRV") && url.includes("esriGeometryEnvelope")) {
@@ -241,26 +249,43 @@ checks.push(["changing the radius re-classifies with the new buffer",
 await page.selectOption("#bufferSel", "250");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 
-// --- Export pill + dialogue (every export lives in here now) ---
-checks.push(["export pill sits with the input, not under Auto-Detect", await page.evaluate(() => {
-  const pill = document.getElementById("exportBtn");
-  const results = document.querySelector(".results");
-  return !!pill && !results.contains(pill) && !!document.getElementById("exportCaret")
-    && !document.querySelector(".sb-exports");
+// --- Quick Export menu + View and Export (the pane expands over the map; no modal) ---
+checks.push(["Quick Export button sits with the input, not under Auto-Detect; no split caret, no modal wrappers", await page.evaluate(() => {
+  const b = document.getElementById("exportBtn");
+  return !!b && /Quick Export/.test(b.textContent) && !document.querySelector(".results").contains(b)
+    && !document.getElementById("exportCaret") && !document.getElementById("popoutWrap") && !document.getElementById("exportWrap");
 })]);
-await page.click("#exportCaret");
-checks.push(["dropdown lists both copy actions + one entry per format", await page.evaluate(() => {
+await page.click("#exportBtn");
+checks.push(["Quick Export lists both copy actions + a direct download per format", await page.evaluate(() => {
   const t = [...document.querySelectorAll("#exportMenu button")].map(b => b.textContent).join("|");
-  return !document.getElementById("exportMenu").hidden
-    && t.includes("Copy site + coordinates") && t.includes("Copy Auto-Detect results")
-    && t.includes("CSV file") && t.includes("KMZ") && t.includes("GeoJSON") && t.includes("PDF report");
+  return !document.getElementById("exportMenu").hidden && t.includes("Copy site + coordinates") && t.includes("Copy Auto-Detect results")
+    && t.includes("Download CSV") && t.includes("KMZ") && t.includes("GeoJSON") && t.includes("PDF report") && t.includes("FIRMettes");
 })]);
-await page.click('#exportMenu button[data-act="tab-geojson"]');
-checks.push(["a menu format opens the dialogue on that tab, with a preview", await page.evaluate(() => {
-  const open = !document.getElementById("exportWrap").hidden;
+{
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 15000 }), page.click('#exportMenu button[data-act="dl-geojson"]')]);
+  checks.push(["Quick Export: a format entry downloads straight away, no dialogue", dl.suggestedFilename() === "road-checker-sites.geojson"
+    && await page.evaluate(() => document.getElementById("exportMenu").hidden && !document.body.classList.contains("expanded"))]);
+}
+await page.click("#viewExportBtn");
+await page.waitForFunction(() => document.body.classList.contains("expanded") && document.getElementById("mapArea").offsetWidth < window.innerWidth * 0.3, { timeout: 5000 });
+checks.push(["View and Export expands the pane over the map (map keeps ~1/6, card + table shown)", await page.evaluate(() => {
+  const m = document.getElementById("mapArea").offsetWidth, w = window.innerWidth;
+  return m > 150 && m < w * 0.3 && document.getElementById("exportCard").offsetParent !== null
+    && document.getElementById("exportTable").querySelectorAll("tr").length === 3;
+})]);
+await page.click('.extab[data-tab="geojson"]');
+checks.push(["a format tab shows its preview inside the expanded pane", await page.evaluate(() => {
   const tab = document.querySelector('.extab[data-tab="geojson"]').classList.contains("active");
   const pane = !document.querySelector('.ex-pane[data-pane="geojson"]').hidden;
-  return open && tab && pane && document.getElementById("prevGeojson").textContent.includes("FeatureCollection");
+  return tab && pane && document.getElementById("prevGeojson").textContent.includes("FeatureCollection");
+})]);
+checks.push(["clicking a table row selects the site: blue outline, synced with the list row, map zoomed in", await page.evaluate(async () => {
+  const tr = document.querySelectorAll("#exportTable tr[data-k]")[1];
+  tr.querySelector("td").click();
+  await new Promise(r => setTimeout(r, 80));
+  const p = validPoints()[reviewIdx];
+  return tr.classList.contains("selected") && !!p && editKey(p) === tr.dataset.k && map.getZoom() >= 16
+    && document.querySelector("#resultsBody .row.selected") === p._tr;
 })]);
 checks.push(["dialogue table is editable and carries a Note column", await page.evaluate(() => {
   const ths = [...document.querySelectorAll("#exportTable th")].map(t => t.textContent);
@@ -385,7 +410,7 @@ checks.push(["an edited cell flows into the export rows and the preview", edited
 // --- "How the colors are decided" explainer ---
 checks.push(["how-colors explainer present", await page.evaluate(() => {
   const d = document.querySelector("details.howcolors");
-  return !!d && d.textContent.includes("closest road decides red vs green") && d.textContent.includes("Yellow only downgrades green");
+  return !!d && d.textContent.includes("closest road decides red vs blue") && d.textContent.includes("Amber only downgrades blue");
 })]);
 
 // --- click row -> zoom + select + layers ---
@@ -428,6 +453,16 @@ await page.waitForFunction(() => {
 const liveLegendText = await page.locator("#liveLegend").textContent();
 checks.push(["live mirror legend lists source class labels", liveLegendText.includes("Minor Collector") && liveLegendText.includes("Local")]);
 checks.push(["live mirror legend cites the urban-area layer", liveLegendText.includes("2020 Adjusted Urban Area")]);
+// Source provenance (2026-09-17): live-mirror legend rows link to the state
+// DOT's PUBLIC map app (never the REST layer) and name MDOT on hover.
+checks.push(["live mirror legend rows link to MDOT's official public map with a source tooltip", await page.evaluate(() => {
+  const rows = [...document.querySelectorAll("#liveLegend a.lrow")].filter(a => a.href === PUBLIC_MAP.MI || a.href.startsWith(PUBLIC_MAP.MI));
+  return rows.length >= 2 && rows.every(a => /MDOT/.test(a.title) && a.target === "_blank" && !/\/rest\//.test(a.href));
+})]);
+checks.push(["every classified row shows a Source chip that links to a public site", await page.evaluate(() => {
+  const rows = [...document.querySelectorAll("#resultsBody .row")].filter(r => r.querySelector(".chip"));
+  return rows.length > 0 && rows.every(r => { const a = r.querySelector("a.srcchip"); return a && /^Source: /.test(a.textContent) && /^https:/.test(a.href) && !/\/rest\//.test(a.href); });
+})]);
 checks.push(["live mirror drew into its canvas pane (under pins)", await page.evaluate(() =>
   !!document.querySelector(".leaflet-browse-pane canvas") && browseOverlay.getLayers().length > 50)]);
 // progressive low-zoom band: at z11 the mirror fetches arterials-only
@@ -479,26 +514,25 @@ checks.push(["rows are compact until clicked (detail + links hidden)", await pag
   return collapsedHidden && openShows;
 })]);
 
-// --- pop-out: the full-detail table over the map ---
-checks.push(["pop-out table lists every site with full detail", await page.evaluate(() => {
+// --- the results-header button opens the same expanded View and Export; Back returns the map ---
+checks.push(["results-header 'View and Export' expands the pane with every site; Back restores the map", await page.evaluate(async () => {
   document.getElementById("popoutBtn").click();
-  const wrap = document.getElementById("popoutWrap");
-  const rows = document.querySelectorAll("#popoutTable tr");
-  const txt = document.getElementById("popoutTable").textContent;
-  const ok = !wrap.hidden && rows.length === 3   // header + 2 sites
-    && txt.includes("Kalamazoo culvert") && txt.includes("Federal aid")
-    && txt.includes("Urban area") && txt.includes("42.28536");
-  document.getElementById("popoutClose").click();
-  return ok && wrap.hidden;
+  await new Promise(r => setTimeout(r, 480));
+  const txt = document.getElementById("exportTable").textContent;
+  const open = document.body.classList.contains("expanded") && document.querySelectorAll("#exportTable tr").length === 3
+    && txt.includes("Kalamazoo culvert") && txt.includes("Federal aid") && txt.includes("42.28536");
+  document.getElementById("exportClose").click();
+  await new Promise(r => setTimeout(r, 480));
+  return open && !document.body.classList.contains("expanded") && document.getElementById("mapArea").offsetWidth > window.innerWidth * 0.4;
 })]);
 
 // --- the two input tabs: find + collector live on the second tab ---
-await page.click("#tabBtnCollect");
-checks.push(["tabs: Search & Collect shows find + adder, hides the paste panel", await page.evaluate(() => {
-  const collectShown = document.getElementById("collectPanel").offsetParent !== null
-    && document.getElementById("findText").offsetParent !== null
-    && document.getElementById("addPointBtn").offsetParent !== null;
-  return collectShown && document.getElementById("inputPanel").offsetParent === null;
+checks.push(["one pane: the search box sits above the coordinates box — no tabs, no Find button, no collect form", await page.evaluate(() => {
+  const find = document.getElementById("findText"), box = document.getElementById("coordsIn");
+  return find && box && find.offsetParent !== null && box.offsetParent !== null
+    && find.getBoundingClientRect().top < box.getBoundingClientRect().top
+    && !document.getElementById("tabBtnCoords") && !document.getElementById("tabBtnCollect") && !document.getElementById("collectPanel")
+    && !document.getElementById("findBtn") && !document.getElementById("addPointBtn");
 })]);
 
 // --- find on map: type a state name -> county/township matches -> road search ---
@@ -518,9 +552,11 @@ await page.waitForFunction(() => {
   return t.includes("Kalamazoo County") && t.includes("Road-name search covers the visible map area");
 }, { timeout: 15000 });
 checks.push(["find: suggestions appear as you type (no Find click)", true]);
-checks.push(["find: county + township matches listed with their kinds", await page.evaluate(() => {
+checks.push(["find: results grouped under State / County / City / Township headings, the city included", await page.evaluate(() => {
+  const hdrs = [...document.querySelectorAll("#findResults .findhdr")].map(d => d.textContent.replace(/ ·.*$/, ""));
   const t = [...document.querySelectorAll("#findResults .finditem")].map(d => d.textContent).join("|");
-  return t.includes("Kalamazoo County") && t.includes("county") && t.includes("Oshtemo charter township") && t.includes("township");
+  return hdrs.indexOf("County") < hdrs.indexOf("City") && hdrs.indexOf("City") < hdrs.indexOf("Township")
+    && t.includes("Kalamazoo County") && t.includes("Kalamazoo city") && t.includes("Oshtemo charter township");
 })]);
 {
   const frTxt = await page.locator("#findResults").textContent();
@@ -532,6 +568,11 @@ await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).cl
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
   const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
+checks.push(["find: the county becomes the default area (chip with ✕, remembered in this browser)", await page.evaluate(() => {
+  const bar = document.getElementById("areaBar");
+  return !bar.hidden && bar.textContent.includes("Kalamazoo County, MI") && !!document.getElementById("areaClear")
+    && defaultArea && defaultArea.kind === "county" && defaultArea.extent && (localStorage.getItem("rr_default_area") || "").includes("Kalamazoo");
+})]);
 checks.push(["'filter by map view' ships unchecked — the county view alone hides nothing",
   await page.evaluate(() => {
     const cb = document.getElementById("rowFilterView");
@@ -547,8 +588,7 @@ await page.evaluate(() => selectSite(0));
 checks.push(["zooming to one site under review keeps the other sites listed", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 2)]);
 await page.uncheck("#rowFilterView");
-await page.fill("#findText", "pitcher");
-await page.click("#findBtn");
+await page.fill("#findText", "pitcher");   // type-ahead: no Find button
 await page.waitForFunction(() => [...document.querySelectorAll("#findResults .finditem")].some(d => d.textContent.includes("S Pitcher St")), { timeout: 15000 });
 // road suggestions get annotated (async) with the state's FHWA class from
 // the stubbed MDOT 353 point query (Minor Collector), swatched in class color
@@ -560,37 +600,67 @@ checks.push(["find: road suggestion carries FHWA class + color swatch", true]);
 await page.locator("#findResults .finditem", { hasText: "S Pitcher St" }).first().click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing road: S Pitcher St"), { timeout: 15000 });
 
-// --- Search & Collect: add a named+noted GPS point, it classifies like any row ---
-await page.fill("#addName", "Washout site");
-await page.fill("#addCoords", "42.28536, -85.57025");
-await page.fill("#addNote", "north shoulder undercut");
-await page.click("#addPointBtn");
-await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("3 point(s) classified"), { timeout: 15000 });
-checks.push(["collector: added point classifies into the shared table", await page.evaluate(() => {
-  const rows = [...document.querySelectorAll("#resultsBody .row")];
-  const row = rows.find(r => r.textContent.includes("Washout site"));
-  return rows.length === 3 && !!row && row.textContent.includes("north shoulder undercut")
-    && !!row.querySelector("a.rmpt");
+// --- the pin button: drop a site on the map, name it at the pin, it classifies like any row ---
+await page.click("#pinBtn");
+checks.push(["pin: one click arms single-pin mode (button lit, pin cursor)", await page.evaluate(() =>
+  pinMode === 1 && document.getElementById("pinBtn").classList.contains("armed") && document.getElementById("map").classList.contains("pin-mode"))]);
+await page.evaluate(() => map.fire("click", { latlng: L.latLng(42.29, -85.56), originalEvent: {} }));
+checks.push(["pin: the map click appends 'Point N, lat, lon' to the coordinates box and opens the name editor with the default selected", await page.evaluate(() => {
+  const last = document.getElementById("coordsIn").value.split("\n").pop();
+  const ed = document.querySelector(".site-label.editing .pinname");
+  const sel = window.getSelection();
+  return last === "Point 3, 42.29000, -85.56000" && !!ed && document.activeElement === ed && sel && sel.toString() === "Point 3" && pinMode === 0;
 })]);
-checks.push(["collector: note flows into CSV rows + pop-out table", await page.evaluate(() => {
-  const csvRow = exportRows().find(r => r[0] === "Washout site");
-  document.getElementById("popoutBtn").click();
-  const po = document.getElementById("popoutTable").textContent;
-  document.getElementById("popoutClose").click();
-  return EXPORT_HEADERS[EXPORT_HEADERS.length - 1] === "Note"
-    && csvRow && csvRow[csvRow.length - 1] === "north shoulder undercut"
-    && po.includes("north shoulder undercut");
+await page.keyboard.type("Washout site");
+await page.keyboard.press("Enter");
+await page.waitForFunction(() => !pinEditor && !document.querySelector(".site-label.editing"), { timeout: 5000 }).catch(() => {});
+{
+  const st = await page.evaluate(() => ({ last: document.getElementById("coordsIn").value.split("\n").pop(), editing: !!document.querySelector(".site-label.editing"), pinMode }));
+  const ok = st.last === "Washout site, 42.29000, -85.56000" && !st.editing;
+  if (!ok) console.log("  pin state was:", JSON.stringify(st));
+  checks.push(["pin: typing replaces the default name in the box; Enter finishes the editor", ok]);
+}
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("3 point(s) classified"), { timeout: 15000 });
+checks.push(["pin: the dropped site classifies into the shared table and carries its label on the map", await page.evaluate(() => {
+  const row = [...document.querySelectorAll("#resultsBody .row")].find(r => r.textContent.includes("Washout site"));
+  return !!row && [...document.querySelectorAll(".site-label")].some(t => t.textContent === "Washout site");
+})]);
+// right-click the new pin: Move (drag) rewrites its line, Delete removes line + pin
+await page.evaluate(() => { const p = currentPoints.find(q => q.name === "Washout site"); p._marker.fire("contextmenu", { latlng: L.latLng(p.lat, p.lon), originalEvent: new MouseEvent("contextmenu") }); });
+checks.push(["pin menu: right-click opens Move / Delete next to the pin", await page.evaluate(() =>
+  !!document.querySelector(".pinmenu button[data-act=move]") && !!document.querySelector(".pinmenu button[data-act=delete]"))]);
+await page.evaluate(() => document.querySelector(".pinmenu button[data-act=move]").click());
+await page.evaluate(() => { pinMove.marker.setLatLng([42.2955, -85.5605]); pinMove.marker.fire("dragend"); });
+checks.push(["pin menu: Move rewrites that line's coordinates in the box (name kept)", await page.evaluate(() =>
+  document.getElementById("coordsIn").value.split("\n").pop() === "Washout site, 42.29550, -85.56050" && !pinMove)]);
+await page.waitForFunction(() => { const p = currentPoints.find(q => q.name === "Washout site"); return !!p && p.lat === 42.2955 && !!p.result; }, { timeout: 15000 });
+await page.evaluate(() => { const p = currentPoints.find(q => q.name === "Washout site"); p._marker.fire("contextmenu", { latlng: L.latLng(p.lat, p.lon), originalEvent: new MouseEvent("contextmenu") }); });
+await page.evaluate(() => document.querySelector(".pinmenu button[data-act=delete]").click());
+// (Leaflet fades a removed tooltip for ~200 ms before dropping its element)
+await page.waitForFunction(() => ![...document.querySelectorAll(".site-label")].some(t => t.textContent === "Washout site"), { timeout: 5000 }).catch(() => {});
+checks.push(["pin menu: Delete removes the line from the box and the pin from the map", await page.evaluate(() =>
+  document.getElementById("coordsIn").value.split("\n").length === 2 && !currentPoints.some(q => q.name === "Washout site")
+  && ![...document.querySelectorAll(".site-label")].some(t => t.textContent === "Washout site"))]);
+await page.click("#pinBtn"); await page.click("#pinBtn");
+await page.evaluate(() => map.fire("click", { latlng: L.latLng(42.30, -85.55), originalEvent: {} }));
+await page.keyboard.press("Enter");
+await page.evaluate(() => map.fire("click", { latlng: L.latLng(42.31, -85.54), originalEvent: {} }));
+await page.keyboard.press("Enter");
+checks.push(["pin: two clicks arm keep-dropping mode — several pins, mode stays on; Escape turns it off", await page.evaluate(() => {
+  const lines = document.getElementById("coordsIn").value.split("\n");
+  const on = pinMode === 2 && document.getElementById("pinBtn").classList.contains("multi") && lines.length === 4;
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  return on && pinMode === 0 && !document.getElementById("map").classList.contains("pin-mode");
 })]);
 checks.push(["collector: KMZ machinery present (button + store-zip builder)", await page.evaluate(async () => {
   const zip = makeZip([{ name: "doc.kml", data: new TextEncoder().encode("<kml/>") }]);
   const head = new Uint8Array(await zip.slice(0, 2).arrayBuffer());
   return !!document.getElementById("dlKmz") && head[0] === 0x50 && head[1] === 0x4b;   // "PK"
 })]);
-await page.evaluate(() => { document.querySelector("#resultsBody a.rmpt").click(); });
+await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025\nSite B,42.6911,-84.5360");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
 checks.push(["collector: remove takes the point back out", await page.evaluate(() =>
   document.querySelectorAll("#resultsBody .row").length === 2)]);
-await page.click("#tabBtnCoords");
 checks.push(["find: road click highlights the matched segments", await page.evaluate(() => findOverlay.getLayers().length >= 1)]);
 
 // --- results-row text filter ---
@@ -605,6 +675,29 @@ await page.fill("#rowFilter", "");
 checks.push(["clearing the filter restores all rows and pins", await page.evaluate(() =>
   [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none")
   && markerLayer.getLayers().length === 2)]);
+
+// --- verdict bar chart: live counts, bars are filter toggles, Next follows the filter ---
+checks.push(["verdict chart: three labelled bars with live counts (1 federal aid, 1 needs review, 0 non-federal)", await page.evaluate(() => {
+  const el = document.getElementById("verdictChart"), bs = [...el.querySelectorAll("button[data-bucket]")];
+  const val = b => +bs.find(x => x.dataset.bucket === b).querySelector(".val").textContent;
+  const lbl = b => bs.find(x => x.dataset.bucket === b).querySelector(".lbl").textContent;
+  return !el.hidden && bs.length === 3 && val("fed") === 1 && val("review") === 1 && val("nonfed") === 0
+    && lbl("fed") === "Federal aid" && lbl("review") === "Needs review" && lbl("nonfed") === "Non-federal aid"
+    && bs.map(b => b.dataset.bucket).join() === "fed,review,nonfed";
+})]);
+await page.click('#verdictChart button[data-bucket="fed"]');
+checks.push(["clicking the Federal aid bar keeps only that site (row + pin) and marks the bar on", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].filter(r => r.style.display !== "none").length === 1
+  && document.querySelector("#resultsBody .row:not([style*='none'])").textContent.includes("Kalamazoo culvert")
+  && markerLayer.getLayers().length === 1 && document.querySelector('#verdictChart button[data-bucket="fed"]').classList.contains("on")
+  && document.getElementById("filterCount").textContent.includes("showing 1 of 2"))]);
+await page.click("#nextSite"); await page.click("#nextSite");
+checks.push(["Next steps only through the filtered sites", (await page.locator("#reviewInfo").textContent()).includes("Kalamazoo culvert")]);
+await page.click('#verdictChart button[data-bucket="fed"]');
+checks.push(["clicking the bar again clears the filter", await page.evaluate(() =>
+  [...document.querySelectorAll("#resultsBody .row")].every(r => r.style.display !== "none") && markerLayer.getLayers().length === 2
+  && !document.querySelector("#verdictChart button.on"))]);
+await page.evaluate(() => selectSite(1));
 
 // --- next/prev stepping with wrap ---
 await page.click("#nextSite");
@@ -628,8 +721,8 @@ checks.push(["plot-all legend combines class labels + ACUB", allLegend.includes(
 checks.push(["rows link to sources.html#mi", await page.locator('#resultsBody a[href="sources.html#mi"]').count() >= 2]);
 
 // --- FIRMette ZIP (PDF tab of the export dialogue) ---
-await page.evaluate(() => { document.getElementById("exportWrap").hidden = true; });
-await page.click("#exportBtn");
+await page.evaluate(() => closeExport());
+await page.click("#viewExportBtn");
 await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 60000 }),
@@ -717,12 +810,56 @@ checks.push(["exports carry the snapped coordinates under the matched address", 
   const r = exportRows().find(x => String(x[0]).startsWith("5201 PORTAGE RD"));
   return !!r && r[1] === 42.24177 && r[2] === -85.5601;
 })]);
+// --- a bare road name resolves inside the default area; without one it says what to pick ---
+await page.fill("#coordsIn", "Portage Rd");
+await page.waitForFunction(() => [...document.querySelectorAll("#resultsBody .row")].some(r => r.textContent.includes("Kalamazoo County, MI")), { timeout: 20000 });
+checks.push(["bare road name: looked up inside the default area and classified as a whole road", await page.evaluate(() => {
+  const r = [...document.querySelectorAll("#resultsBody .row")].find(x => x.textContent.includes("Portage Rd (Kalamazoo County, MI)"));
+  return !!r && r.textContent.includes("whole road");
+})]);
+await page.click("#areaClear");
+await page.fill("#coordsIn", "Q Ave");   // a resolved line keeps its result; a NEW bare name has no area to look in
+await page.waitForFunction(() => [...document.querySelectorAll("#resultsBody .row")].some(r => r.textContent.includes("Road name without a place")), { timeout: 10000 });
+checks.push(["bare road name with no area: the row asks for a county / city / township, nothing is searched", await page.evaluate(() =>
+  document.getElementById("areaBar").hidden && !localStorage.getItem("rr_default_area"))]);
+await page.fill("#coordsIn", ADDR_TEXT);
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("5 point(s) classified"), { timeout: 20000 });
 checks.push(["clearing the addresses hides the button", await (async () => {
   await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025");
   return await page.waitForFunction(() => document.getElementById("geoBar").hidden, { timeout: 5000 }).then(() => true).catch(() => false);
 })()]);
 await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025\nSite B,42.6911,-84.5360");
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 15000 });
+
+// --- source outage (2026-09-17). This harness opens the page from file://,
+// where the tilesets are never usable, so there is nothing to fall back to:
+// the row fails, but the host is marked DOWN (strip + fast-fail) and, once
+// the probe gets JSON again, the strip says it is back and offers to re-run
+// the failed row. The tiles FALLBACK itself is covered by verify-hpms-tiles.
+// (A route registered later is matched first, so this overrides the fixture.)
+await page.route("**/mdotgis.state.mi.us/**", route => route.fulfill({ status: 500, contentType: "text/html", body: "<html>500</html>" }));
+await page.fill("#coordsIn", "Outage check,42.28540,-85.57030");
+await page.waitForFunction(() => /MDOT live layer/.test(document.getElementById("sourceStatus").textContent), { timeout: 20000 });
+checks.push(["outage: status strip reports MDOT down with the reason and a recheck", await page.evaluate(() => {
+  const s = document.getElementById("sourceStatus");
+  const line = [...s.querySelectorAll("div")].map(d => d.textContent).find(t => /MDOT live layer/.test(t)) || "";
+  return /HTTP 500/.test(line) && /rechecked/.test(line);
+})]);
+checks.push(["outage: a down host is not queried again (fast-fail, no request)", await page.evaluate(async () => {
+  const before = netLines.filter(l => /GET .*mdotgis/.test(l)).length;
+  try { await httpGetJson(svc("MI_NFC") + "/query?f=json"); return false; } catch (e) { if (!e.sourceDown) return false; }
+  return netLines.filter(l => /GET .*mdotgis/.test(l)).length === before;
+})]);
+await page.waitForFunction(() => /1 point\(s\) classified/.test(document.getElementById("statusCount").textContent || ""), { timeout: 20000 });
+checks.push(["outage (no tiles available): the row fails visibly with a retry link", await page.evaluate(() => {
+  const r = document.querySelector("#resultsBody .row");
+  return !!r && r.className.includes("v-failed") && !!r.querySelector("a.retry");
+})]);
+await page.route("**/mdotgis.state.mi.us/**", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ name: "Functional System" }) }));
+await page.evaluate(() => probeSource([...sourceHealth.keys()].find(h => /mdotgis/.test(h))));
+await page.waitForFunction(() => /back up/.test(document.getElementById("sourceStatus").textContent), { timeout: 10000 });
+checks.push(["outage: recovered source reported back up with a re-run offer for the failed row", await page.evaluate(() =>
+  [...document.querySelectorAll("#sourceStatus div")].some(d => /MDOT live layer/.test(d.textContent) && /back up/.test(d.textContent) && /re-run 1 row/.test(d.textContent)))]);
 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });
@@ -735,7 +872,7 @@ checks.push(["sources page: geocoder section says explicit-click only + interpol
   src.includes('id="geocoder"') && src.includes("only when the") && src.includes("interpolation")]);
 checks.push(["sources page: verdict-logic section (closest road, 30 ft rule, boundary edge)",
   src.includes('id="verdict"') && src.includes("Second road close") && src.includes("Urban boundary edge")
-  && src.includes("closest road decides red vs green")]);
+  && src.includes("closest road decides red vs blue")]);
 
 let fail = 0;
 for (const [label, ok] of checks) { console.log((ok ? "  ok   " : "  FAIL ") + label); if (!ok) fail++; }

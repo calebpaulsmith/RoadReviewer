@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How the Road Checker Decides — FHWA Road Checker</title>
+<meta name="description" content="How the FHWA Road Checker decides a road's federal-aid status: when it reads the HPMS tiles hosted with the site and when it queries the state DOT layers live, and where every item on the screen comes from. Not endorsed by FEMA, FHWA or the Census Bureau." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,600;0,700;0,800;0,900&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --navy:#162e51;--navy-2:#0b1f3a;--blue:#005ea2;--blue-dark:#1a4480;--blue-light:#d9e8f6;
+  --gold:#ffbe2e;--gold-dark:#e5a000;--red:#b50909;--red-vivid:#e41d3d;--green:#00a91c;--green-dark:#008817;
+  --ink:#1b1b1b;--ink-2:#3d4551;--ink-3:#565c65;--line:#dfe1e2;--line-2:#c6cace;--bg:#f0f0ee;--bg-2:#f9f9f7;--white:#fff;
+  --hpms:#1a7a3a;--hpms-bg:#e8f4ea;--state:#7b4ea0;--state-bg:#f1eaf7;--census:#005ea2;--census-bg:#e3eef8;--other:#8a6d1c;--other-bg:#fbf3dc;
+  --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+a{color:var(--blue);}
+.masthead{background:linear-gradient(120deg,var(--navy-2),var(--navy) 55%,var(--blue-dark) 130%);color:#fff;border-bottom:4px solid var(--gold);}
+.masthead__inner{max-width:1180px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.masthead h1{font-size:20px;margin:0;font-weight:900;letter-spacing:-.01em;}
+.eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);}
+.masthead__sub{margin:2px 0 0;font-size:13px;color:#cdd9ea;}
+.masthead a.back{color:#fff;text-decoration:none;font-weight:700;font-size:13px;background:rgba(255,255,255,.12);padding:8px 13px;border-radius:8px;border:1px solid rgba(255,255,255,.18);}
+.masthead .mlinks{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;}
+.masthead a.back:hover{background:rgba(255,255,255,.2);}
+.toolbar{position:sticky;top:0;z-index:30;background:var(--white);border-bottom:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.toolbar__inner{max-width:1180px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;font-size:13px;}
+.toolbar a{font-weight:700;text-decoration:none;}
+.legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2);margin-left:auto;}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);vertical-align:-2px;margin-right:4px;}
+.sw.hpms{background:var(--hpms);}.sw.state{background:var(--state);}.sw.census{background:var(--census);}.sw.other{background:var(--other);}
+main{max-width:1180px;margin:0 auto;padding:18px 20px 40px;}
+section{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:18px;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+h2{font-size:18px;margin:0 0 6px;font-weight:800;}
+h3{font-size:14.5px;margin:18px 0 6px;font-weight:800;color:var(--ink-2);}
+p{margin:6px 0;}
+.lead{font-size:15px;color:var(--ink-2);}
+.answer{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px;}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg-2);}
+.card h4{margin:0 0 6px;font-size:13.5px;font-weight:800;}
+.card p{font-size:13.5px;margin:4px 0;}
+.tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;color:#fff;white-space:nowrap;}
+.tag.hpms{background:var(--hpms);}.tag.state{background:var(--state);}.tag.census{background:var(--census);}.tag.other{background:var(--other);}
+/* the flow */
+.flow{display:grid;gap:10px;margin-top:10px;}
+.frow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch;}
+.frow.two{grid-template-columns:1fr 1fr;}
+.frow.one{grid-template-columns:1fr;}
+.box{border:1.5px solid var(--line-2);border-radius:10px;padding:10px 13px;background:var(--white);font-size:13.5px;}
+.box b.t{display:block;font-size:13.5px;margin-bottom:3px;}
+.box.hpms{border-color:var(--hpms);background:var(--hpms-bg);}
+.box.state{border-color:var(--state);background:var(--state-bg);}
+.box.census{border-color:var(--census);background:var(--census-bg);}
+.box.rule{border-color:var(--navy);background:#eef2f8;}
+.box.decide{border-color:var(--gold-dark);background:#fff8e6;}
+.box ul{margin:4px 0 0;padding-left:18px;}
+.box li{margin:2px 0;}
+.arrow{text-align:center;color:var(--ink-3);font-size:22px;line-height:1;margin:-2px 0;}
+.arrow.split{display:grid;grid-template-columns:1fr 1fr;}
+.arrow small{display:block;font-size:12px;font-weight:700;color:var(--ink-2);}
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:13px;margin:6px 0 4px;}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;}
+th{background:#f1f3f5;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3);}
+td.src{white-space:nowrap;}
+td.what{font-weight:700;width:24%;}
+.note{font-size:12.5px;color:var(--ink-3);}
+.gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin-top:10px;}
+.gloss .card{border-left:5px solid var(--line-2);}
+.gloss .card.hpms{border-left-color:var(--hpms);}.gloss .card.state{border-left-color:var(--state);}.gloss .card.census{border-left-color:var(--census);}.gloss .card.other{border-left-color:var(--other);}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1f3f5;padding:1px 5px;border-radius:3px;}
+.warn{background:#fdf5e2;border-left:4px solid var(--gold-dark);padding:8px 12px;border-radius:0 6px 6px 0;font-size:13.5px;margin:10px 0;}
+.footer{max-width:1180px;margin:0 auto;padding:0 20px 36px;font-size:12px;color:var(--ink-3);}
+.footer .disc{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:11px 14px;}
+@media(max-width:820px){.frow,.frow.two{grid-template-columns:1fr;}.arrow.split{grid-template-columns:1fr;}td.what{width:auto;}td.src{white-space:normal;}}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead__inner">
+    <div>
+      <div class="eyebrow">Behind the verdict</div>
+      <h1>How the Road Checker decides</h1>
+      <p class="masthead__sub">When it reads the HPMS tiles hosted with this site, when it asks the state DOT live, and where every item on the screen comes from.</p>
+    </div>
+    <div class="mlinks"><a class="back" href="index.html">← Back to the Road Checker</a> <a class="back" href="sources.html">Sources &amp; citations</a></div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar__inner">
+    <a href="#answer">The short answer</a>
+    <a href="#flow">How a verdict is decided</a>
+    <a href="#screen">What's on screen, and its source</a>
+    <a href="#sources">The sources in plain words</a>
+    <a href="#planned">Planned street search</a>
+    <div class="legend">
+      <span><span class="sw hpms"></span>HPMS tiles (hosted here)</span>
+      <span><span class="sw state"></span>State DOT layer (live)</span>
+      <span><span class="sw census"></span>Census (live)</span>
+      <span><span class="sw other"></span>Esri / OSM / FEMA</span>
+    </div>
+  </div>
+</div>
+
+<main>
+
+<section id="answer">
+  <h2>The short answer: HPMS or the state?</h2>
+  <p class="lead">Two different jobs use two different sources, and they can sit side by side on the same screen.</p>
+  <div class="answer">
+    <div class="card">
+      <h4><span class="tag hpms">HPMS tiles</span> decide the verdict</h4>
+      <p>The red / blue / amber status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"Source: FHWA HPMS 2024 tiles"</b> chip (a live verdict shows <b>"Source: MDOT live layer"</b> etc.); the chip links to that source's public page.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag state">State layer</span> decides the verdict only when…</h4>
+      <p>…any one of these is true: the <b>"Live verdicts"</b> box (under Data service URLs) is ticked; the point is <b>outside the six states</b>; the tiles <b>cannot be read</b> (opened from a file, a state's tile file missing, a read error). Then that state's own functional-class layer and the live NTAD urban boundaries are queried per point.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag hpms">HPMS tiles</span> draw the class lines while you browse</h4>
+      <p>The colored road-class lines that appear from zoom 9 and the urban-boundary outlines are the same tiles. Nothing live is fetched for them.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag state">State layer</span> draws the lines around a selected site and in the PDF</h4>
+      <p>Click a row, step Prev / Next, or export the PDF report and the "Source layers at this site" lines come from the <b>state DOT layer, live, in that state's own published colors</b>, with the urban boundary from the live NTAD service. Same for the class swatch on Find-box road suggestions.</p>
+    </div>
+  </div>
+  <div class="warn"><b>What this means in practice.</b> The verdict and the site overlay can disagree. The tiles are one HPMS year old; the state layer is current. If a collector was reclassified since the 2024 submission, the row may say one thing and the lines around the pin another. Ticking "Live verdicts" makes both use the state layer.</div>
+</section>
+
+<section id="flow">
+  <h2>How a verdict is decided, step by step</h2>
+  <p class="lead">Every kind of input ends up as one or more points, every point goes down one of two paths, and both paths finish with the same rule.</p>
+
+  <div class="flow">
+    <h3>1. What you typed becomes points</h3>
+    <div class="frow">
+      <div class="box"><b class="t">Coordinates</b>Decimal or DMS, optional site name in front. Used exactly as typed, never rewritten. → <b>one point</b>.</div>
+      <div class="box census"><b class="t">Address (house number + street)</b>Waits for the <b>Geocode</b> button. The Census geocoder returns a point, and the tool <b>snaps it onto the named street</b> in Census TIGER (the raw geocode can land 20 ft from the wrong street). → <b>three points</b>: the snap and 150 ft either way along the street. Disagree → "Review - Class change nearby".</div>
+      <div class="box census"><b class="t">Road name + place</b>("Portage Rd, Portage MI"). The place is looked up in Census TIGER (county → township → city), the road's edges are fetched inside that area, and the <b>12 longest edges</b> are sampled at their midpoints. → <b>up to 12 points</b>. Different classes along the road → "Review - Mixed classes on road" with a length-by-class summary.</div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>2. Each point picks a path</h3>
+    <div class="frow one">
+      <div class="box decide"><b class="t">Go live (state layer) if any of these hold — otherwise use the tiles</b>
+        <ul>
+          <li>"Live verdicts" is ticked (remembered in this browser).</li>
+          <li>The point is not inside one of the six states.</li>
+          <li>The page was opened as a file, the state's tile file is missing, or a tile read fails.</li>
+        </ul></div>
+    </div>
+    <div class="arrow split"><span>↓ <small>default</small></span><span>↓ <small>live</small></span></div>
+    <div class="frow two">
+      <div class="box hpms"><b class="t"><span class="tag hpms">Cached path</span> &nbsp;HPMS tiles hosted with this site</b>
+        <ul>
+          <li><b>Roads within 250 ft</b> from <code>web/tiles/&lt;state&gt;.pmtiles</code>: FHWA class 1–7, the HPMS street name, and the state's own route id + mileposts (the "State route · MP" chip).</li>
+          <li><b>Urban or rural</b> from <code>web/tiles/acub.pmtiles</code> (NTAD 2020 adjusted urban areas), plus "on the boundary" when the point is outside every polygon but within 250 ft of one.</li>
+          <li><b>Street names</b> from Census TIGER, live, if reachable. Names never change the verdict.</li>
+        </ul></div>
+      <div class="box state"><b class="t"><span class="tag state">Live path</span> &nbsp;That state's DOT layer, per point</b>
+        <ul>
+          <li><b>Roads within 250 ft</b> from the state's functional-class layer: MDOT 353, INDOT 22, WisDOT local then trunk, MnDOT 11, IDOT 0, ODOT 0. Michigan filters retired segments; Wisconsin decodes its urban/rural-encoded codes back to bare FHWA.</li>
+          <li><b>Urban or rural</b> from the NTAD urban-area service, live.</li>
+          <li><b>Names</b> from the state's own name layer where one exists (MDOT trunklines, INDOT centerlines, WisDOT, ODOT route numbers) plus Census TIGER.</li>
+        </ul></div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>3. The same rule, whichever path</h3>
+    <div class="frow one">
+      <div class="box rule"><b class="t">The closest road decides</b>
+        <ul>
+          <li><b>Federal aid</b> — class 1–5 anywhere; class 6 (Minor Collector) when urban.</li>
+          <li><b>Non-federal aid</b> — class 7 (Local) anywhere; class 6 when rural.</li>
+          <li><b>Review</b> — no road within the buffer; a named road that the layer gives no class; class 0 (non-certified); a second road within 30 ft that is federal aid; any other federal-aid road nearby; a Minor Collector on the urban boundary.</li>
+        </ul>
+        <p class="note">Amber only ever downgrades blue. Red stays red. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p></div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>4. Where it lands</h3>
+    <div class="frow one">
+      <div class="box"><b class="t">Row, pin, exports</b>The verdict, FHWA class, urban/rural + urban-area name, road name(s) with distances, the state route chip, and a "Source:" chip naming where the class came from (FHWA HPMS tiles or the state DOT's live layer) — on the row, in the pin popup, as the pin color, and in every export (CSV, TSV, GeoJSON, KMZ carry a Data Source column).</div>
+    </div>
+  </div>
+</section>
+
+<section id="screen">
+  <h2>What's on the screen, and where it comes from</h2>
+  <p class="lead">Grouped by where you see it. "Watch out" is the known shortcoming of that source for that item.</p>
+
+  <h3>The result row</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">Federal aid / Non-federal aid / Review</td><td>Closest road's class + urban/rural through the rule above</td><td class="src"><span class="tag hpms">HPMS tiles</span> default · <span class="tag state">state</span> if live</td><td>Tiles are one HPMS year old. Streets absent from HPMS (private drives, some subdivision streets) read as "no road".</td></tr>
+    <tr><td class="what">FHWA class ("Minor Collector 36 ft")</td><td>Class code of each road within 250 ft, closest first</td><td class="src"><span class="tag hpms">HPMS tiles</span> default · <span class="tag state">state</span> if live</td><td>HPMS carries the bare code; Wisconsin's own layer encodes urban/rural into the code and is decoded.</td></tr>
+    <tr><td class="what">Urban / Rural + urban-area name</td><td>Point-in-polygon against the adjusted urban areas</td><td class="src"><span class="tag hpms">ACUB tiles</span> default · NTAD live if live</td><td>2020 boundaries only. ACUB is the single source of urban/rural; state fields that say urban/rural are deliberately ignored.</td></tr>
+    <tr><td class="what">Road name(s) + distance</td><td>HPMS street name on the segment, merged with Census TIGER names nearby</td><td class="src"><span class="tag hpms">HPMS</span> + <span class="tag census">TIGER</span></td><td>HPMS names are missing on a third to two-thirds of rural WI / MN segments; TIGER fills them. Spellings differ and are collapsed.</td></tr>
+    <tr><td class="what">"State route 0006904 · MP 3.2–4.1" chip</td><td>The state's LRS route id and mileposts as submitted to HPMS</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Cached path only. Quality follows each state's submission.</td></tr>
+    <tr><td class="what">"Source: …" chip</td><td>Names the road-class source of that verdict and links to its public page</td><td class="src"><span class="tag hpms">HPMS tiles</span> or <span class="tag state">State DOT</span></td><td>"FHWA HPMS 2024 tiles" = cached path; "MDOT live layer" (etc.) = live path; "urban boundary only" = state not wired. The map legend's rows link the same way — hover a swatch to see its source. If a state server is down while Live verdicts is on, the verdict falls back to the tiles and the chip reads "… · MDOT live layer down"; the strip under Auto-Detect shows the outage until the server answers again.</td></tr>
+    <tr><td class="what">Geocoded address name, "snapped 18 ft" note</td><td>Census geocoder match + snap onto the TIGER street</td><td class="src"><span class="tag census">Census</span></td><td>Only on the Geocode button. Ambiguous when city / state are missing.</td></tr>
+    <tr><td class="what">"whole road · Kalamazoo County" row + class-by-length chip</td><td>TIGER edges of the named road, 12 midpoints classified</td><td class="src"><span class="tag census">TIGER</span> → then the path above</td><td>Same-named townships with a state typed are merged into one huge search box (Portage MI → most of Michigan). 12 samples, not length-weighted.</td></tr>
+  </table>
+
+  <h3>The map</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">Road-class lines while browsing (zoom 9 and in)</td><td>Pre-built per-state tiles; interstates from z6, locals from z12</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Dense downtown cores were thinned at build time. A state with no tile file falls back to a live mirror of its DOT layer.</td></tr>
+    <tr><td class="what">Urban-boundary outlines while browsing</td><td>Urban-area tiles</td><td class="src"><span class="tag hpms">ACUB tiles</span></td><td>2020 vintage.</td></tr>
+    <tr><td class="what">Lines around a selected site ("Source layers at this site" legend)</td><td>A frame of the state's live functional-class layer in its published symbology, plus the live NTAD boundary</td><td class="src"><span class="tag state">State layer</span> live</td><td><b>Different source from the verdict</b> unless "Live verdicts" is on. INDOT publishes one color for everything, so an FHWA palette is substituted (disclosed).</td></tr>
+    <tr><td class="what">Verdict pins (red / blue / amber)</td><td>The row's verdict</td><td class="src">as the row</td><td></td></tr>
+    <tr><td class="what">Paper-style basemap (roads, water, places)</td><td>Six-state OpenStreetMap extract hosted with the site, z0–11</td><td class="src"><span class="tag other">OSM / Protomaps</span></td><td>Rectangular extract; the state-shaped cut is a mask. Falls back to live Esri streets if the file is missing.</td></tr>
+    <tr><td class="what">Buildings, parks, street names at street zoom</td><td>OpenFreeMap vector tiles, fetched from zoom 13</td><td class="src"><span class="tag other">OSM / OpenFreeMap</span></td><td>Public service with no SLA; if it is down there is simply no detail.</td></tr>
+    <tr><td class="what">Satellite</td><td>Esri World Imagery, only when switched to</td><td class="src"><span class="tag other">Esri</span></td><td></td></tr>
+    <tr><td class="what">Six-state mask and state borders</td><td>Census TIGERweb generalized outlines, stored in the site</td><td class="src"><span class="tag census">Census</span> (file)</td><td></td></tr>
+  </table>
+
+  <h3>Find &amp; Search</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">State / county / township matches + dashed outline</td><td>TIGERweb boundary layers</td><td class="src"><span class="tag census">Census</span> live</td><td>Cities and tribal areas are not searched yet.</td></tr>
+    <tr><td class="what">Road matches in the visible map</td><td>TIGERweb road layers, limited to the map view (zoom 11+)</td><td class="src"><span class="tag census">Census</span> live</td><td>You have to know roughly where the road is first.</td></tr>
+    <tr><td class="what">Class swatch on a road suggestion</td><td>One live point query at the longest segment's midpoint</td><td class="src"><span class="tag state">State layer</span> live</td><td>Not the tiles — so it can differ from a cached verdict at the same spot.</td></tr>
+    <tr><td class="what">Dropped pins and notes</td><td>Pins you drop with the map's pin button become lines in the coordinates box; notes typed in View and Export stay in this browser only</td><td class="src">you</td><td>Cleared with site data; never sent anywhere.</td></tr>
+  </table>
+
+  <h3>PDF report and exports</h3>
+  <table>
+    <tr><th>What you see</th><th>Comes from</th><th>Source</th><th>Watch out</th></tr>
+    <tr><td class="what">PDF figure per site (class lines, boundary, labels)</td><td>Live state layer in its published colors, live NTAD boundary, TIGER street labels, Esri basemap tiles</td><td class="src"><span class="tag state">State</span> + <span class="tag census">Census</span> + <span class="tag other">Esri</span></td><td>Figure is live; the verdict printed beside it may be from the tiles (see the warning above).</td></tr>
+    <tr><td class="what">CSV / TSV / GeoJSON / KMZ columns</td><td>The rows as shown, plus State Route ID and Milepost Range</td><td class="src">as the row</td><td>No County or Owner column yet.</td></tr>
+    <tr><td class="what">FIRMettes (ZIP)</td><td>FEMA's FIRMette print service, one job per site</td><td class="src"><span class="tag other">FEMA</span></td><td>Slow per site; failed sites can be re-run.</td></tr>
+    <tr><td class="what">Per-row reference links</td><td>FEMA Map Viewer pin, each state's official app at its root, Google / Bing / Street View</td><td class="src"><span class="tag other">links</span></td><td>State apps open at their default extent; coordinate deep-links mis-navigate, so they are not used.</td></tr>
+  </table>
+</section>
+
+<section id="sources">
+  <h2>The sources, in plain words</h2>
+  <div class="gloss">
+    <div class="card hpms"><h4>HPMS road tiles <span class="tag hpms">hosted here</span></h4>
+      <p>FHWA's Highway Performance Monitoring System, national 2024 submission, harvested once per state and stored as six tile files with the site (41–70 MB each). Every public road with its FHWA class, the state's route id and mileposts, and the HPMS street name. <b>Default source of every verdict and of the class lines you browse.</b></p>
+      <p class="note">Shortcomings: one year behind the states; names missing on many rural WI / MN roads; the live service behind it is far too slow to query interactively (2–55 s, errors in metro counties, measured 2026-09-16); county, owner and urban code exist in HPMS but are not in the tiles yet.</p></div>
+    <div class="card hpms"><h4>Urban-boundary tiles <span class="tag hpms">hosted here</span></h4>
+      <p>The NTAD 2020 Adjusted Urban Areas (549 Region V polygons, 3 MB), from the same USDOT service the live path queries. <b>Decides urban vs rural on the cached path</b> and draws the boundary outlines while browsing.</p></div>
+    <div class="card state"><h4>State DOT functional-class layers <span class="tag state">live</span></h4>
+      <p>Each state's own published layer: MDOT (MI), INDOT (IN), WisDOT local + state trunk (WI), MnDOT (MN), IDOT (IL), ODOT TIMS (OH). Current, authoritative, and the only thing the state's official map shows. <b>Used for verdicts only when "Live verdicts" is on or the tiles can't be used; always used for the site overlay, PDF figures and Find-box swatches.</b></p>
+      <p class="note">Shortcomings: flaky servers (INDOT 500s, MDOT needs a browser User-Agent, WisDOT moved a layer once); no street names in MN / IL; no county or owner anywhere except Indiana; one point at a time, no name search.</p></div>
+    <div class="card state"><h4>NTAD urban boundaries <span class="tag state">live</span></h4>
+      <p>The same 2020 adjusted urban areas, queried per point on the live path and per frame for the site overlay and PDF.</p></div>
+    <div class="card census"><h4>Census TIGER roads <span class="tag census">live</span></h4>
+      <p>Every road edge in the country with a parsed street name (base name, type, directions). <b>Street names on rows, the road-name lookup, the address snap, the Find box, and the planned street search.</b> Fast when scoped to a county (0.3 s measured); no class, no county attribute on the edge.</p></div>
+    <div class="card census"><h4>Census geocoder + boundary layers <span class="tag census">live</span></h4>
+      <p>The one-line geocoder turns a house address into a point (reached through a sandboxed frame because it sends no CORS header; only on the Geocode button). The state / county / township / place layers back the Find box and the road-name place lookup.</p></div>
+    <div class="card other"><h4>Esri, OpenStreetMap, FEMA <span class="tag other">display &amp; exports</span></h4>
+      <p>Esri World Imagery for satellite and PDF basemaps; a Protomaps OpenStreetMap extract for the paper basemap; OpenFreeMap for street-level detail; FEMA's FIRMette print service for the ZIP. None of these touch the verdict.</p></div>
+  </div>
+</section>
+
+<section id="planned">
+  <h2>Planned: the street search box</h2>
+  <p class="lead">A street-only search on the map, right side, that requires a state and a county — so the inspector picks a real street from a list instead of typing one for the parser to interpret.</p>
+  <table>
+    <tr><th>Step</th><th>Source</th><th>Why that source</th></tr>
+    <tr><td class="what">County pick list + county outline</td><td class="src"><span class="tag census">Census</span> (524 counties, baked once)</td><td>County is the only place unit that exists on both road records and PA declarations. Townships and cities are where a road <i>passes</i>, not an attribute of it.</td></tr>
+    <tr><td class="what">Street suggestions as you type</td><td class="src"><span class="tag census">TIGER roads</span> inside the county polygon</td><td>Complete names, 0.3 s. HPMS names are incomplete and its live service is too slow (rejected on measurement).</td></tr>
+    <tr><td class="what">Same street in two townships</td><td class="src"><span class="tag census">County subdivisions</span></td><td>Label each cluster by the township it sits in; order by distance from the sites already on the map.</td></tr>
+    <tr><td class="what">Class along the whole street, "x mi federal aid / y mi non-federal aid"</td><td class="src"><span class="tag hpms">HPMS tiles</span> + <span class="tag hpms">ACUB tiles</span></td><td>Works with today's tiles: sample the edges, bucket by verdict, sum lengths, draw the segments in red / green.</td></tr>
+    <tr><td class="what">Owner / maintainer chip ("County Highway Agency")</td><td class="src"><span class="tag hpms">HPMS</span> re-harvest</td><td>Only HPMS carries who owns and who maintains a road. Needs the tiles rebuilt with those fields, gated on a Michigan size trial (Wisconsin's tile file is already 70 MB of the 100 MB GitHub limit).</td></tr>
+  </table>
+  <p class="note">Full plan and measurements: <code>docs/NEXT-road-name-lookup.md</code>.</p>
+</section>
+
+</main>
+
+<div class="footer">
+  <p class="disc"><b>This is not a government website.</b> It explains an independent tool built on FHWA HPMS, USDOT NTAD, Census TIGERweb and the Census Geocoder, six state DOT map services, Esri, OpenStreetMap and FEMA's FIRMette service — <b>not endorsed by FEMA</b>, FHWA, USDOT, the Census Bureau or any state DOT. Hand-maintained; keep it in step with <a href="sources.html">sources.html</a>. Figures marked "measured" were taken live on 2026-09-15/16.</p>
+</div>
+</body>
+</html>

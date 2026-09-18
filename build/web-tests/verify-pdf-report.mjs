@@ -101,7 +101,7 @@ await page.waitForFunction(() => (document.getElementById("statusCount").textCon
 const verdictRowOk = (await page.locator("#resultsBody .row.v-fed").first().textContent())?.includes("Kalamazoo");
 
 // Exports now live in the export dialogue's PDF tab.
-await page.click("#exportBtn");
+await page.click("#viewExportBtn");
 await page.click('.extab[data-tab="pdf"]');
 const [download] = await Promise.all([
   page.waitForEvent("download", { timeout: 30000 }),
@@ -187,7 +187,7 @@ if (process.env.SAVE_SAMPLES) {
         { geometryType: "polyline", rendererField: "FunctionalSystem", drawingInfo: miM.drawingInfo,
           features: miG.features, legendHeader: "Road functional class (MDOT)" },
       ],
-      point, verdictColor: "#d73027", frame, basemap,
+      point, verdictColor: "#cc3311", frame, basemap,
       citationLines: ["Road class: Functional System — https://mdotgis.state.mi.us/.../FeatureServer/353",
         "Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — https://services.arcgis.com/...",
         "Basemap: © Esri World Street Map tiles, fetched for this frame at report time",
