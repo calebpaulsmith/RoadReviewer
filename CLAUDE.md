@@ -1270,6 +1270,13 @@ live services. Full design narrative + verification history:
   `onDefaultAreaChanged` re-resolves bare roads at once and re-offers
   area-scoped addresses to the Geocode button. Road-name SEARCH runs inside
   the area when set (else the visible map at z≥11).
+- **Verdict colours are colour-vision-safe (2026-09-17, per user): red
+  `#cc3311` / amber `#ee9900` / BLUE `#0077bb` for non-federal aid** (green
+  vs amber failed the dataviz validator at ΔE 4.4 protan; this trio's worst
+  pair is ΔE 19). `BUCKET_COLOR` + the two `--fed/--nonfed/--review` token
+  blocks are the only definitions; the KMZ uses the `blue` pushpin. Wording
+  in index/flow/sources/README says red / blue / amber. The Excel workbooks
+  (modBuild tints, KML pins) are unchanged and still green/yellow.
 - **Verdict bar chart (2026-09-17, per user).** `#verdictChart` under the
   Auto-Detect header: three status bars in fixed order (Federal aid / Needs
   review = review + failed / Non-federal aid), counts live from

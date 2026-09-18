@@ -9,9 +9,9 @@ distance math: same layer URLs, same retired-segment filters, same
 exact-intersect-then-buffer fallback (the **Detection Buffer** control,
 default 250 ft, matching the Excel search buffer), same per-road
 distances, and the same PR #24 verdict model — the **closest** road
-segment decides red vs green, yellow only downgrades green with an
+segment decides red vs blue, amber only downgrades blue with an
 explicit Review Reason ("Second road close" / "Nearby FHWA road" /
-"Urban boundary edge"), and red never downgrades. Same red/green/yellow
+"Urban boundary edge"), and red never downgrades. Same red/blue/amber
 buckets as the Sites table and KML export. A "Download PDF Report"
 button turns the classified points into a citeable PDF — see below.
 
@@ -27,7 +27,7 @@ first:" followed by one chip per distinct road/class **with its measured
 distance** ("Local (0 ft)", "Major Collector (19 ft)"), each swatched in
 the standard FHWA class color (the same palette the map overlay and PDF
 figures use, so chip color = line color on the map). The first chip is
-tagged **closest** — that's the segment that decided red vs green. Where
+tagged **closest** — that's the segment that decided red vs blue. Where
 the source layer carries a road name on the class feature (both
 Wisconsin layers), the chip pairs name + class ("STH 86 E · Major
 Collector"); Michigan/Indiana class layers publish no name field, so
@@ -209,7 +209,7 @@ Per user direction the left pane's input area is two tabs:
   "remove" link) but nothing writes there any more.
 - **Exports**: CSV/Copy-for-Excel/GeoJSON gained a **Note** column, and
   a new **KMZ** export (zipped KML via the FIRMette bundle's store-zip
-  builder) writes red/green/yellow pushpins by verdict with name,
+  builder) writes red/blue/yellow pushpins by verdict with name,
   status, class, urban area, roads and note in each placemark — the
   same conventions as the Excel tool's KML.
 
@@ -310,7 +310,7 @@ hosted with the site by default: road segments + FHWA classes from the
 per-state HPMS tiles, urban/rural + urban-area name from the new
 `tiles/acub.pmtiles` (549 Region V polygons of the 2020 Adjusted Urban
 Areas, 3 MB). The SAME `computeVerdict` logic as the live path — only
-the data source changes — so red/green/yellow rules are identical.
+the data source changes — so red/blue/amber rules are identical.
 Instant, and zero per-point queries to the six state DOT servers or
 NTAD; only the non-fatal Census TIGER street-name backfill stays live.
 Rows show a "Source: FHWA HPMS 2024 tiles" chip (live rows show
@@ -392,7 +392,7 @@ Find button still search immediately):
   matched segment via the same per-state query the classifier uses,
   closest segment wins, cached per road.
 
-Site pins keep taking the row's verdict color (red / green / yellow, the
+Site pins keep taking the row's verdict color (red / blue / amber, the
 same buckets as the row tint and KML pushpins) once a pasted point
 classifies; they got a bolder white ring and slightly larger radius so
 the verdict reads clearly over the class-colored live road lines.
@@ -410,6 +410,16 @@ the one site you just clicked, so those moves re-apply the filter
 against the last view the user chose. All of it is purely visual —
 exports, the View and Export table, Prev/Next stepping and classification
 always cover every site.
+
+## Verdict colours (2026-09-17)
+
+The verdicts are **red** (federal aid, `#cc3311`), **amber** (needs review,
+`#ee9900`) and **blue** (non-federal aid, `#0077bb`) — not green. The old
+green/yellow pair failed a colour-vision check (ΔE 4.4 for protan viewers);
+this trio passes every check with a worst pair of ΔE 19, and every place the
+colour appears (row tint, badge, pin, chart bar, PDF figure, GeoJSON
+`VerdictColor`) also carries the words. The KMZ uses Google Earth's blue
+pushpin for non-federal aid. The Excel workbooks still tint green/yellow.
 
 ## Quick Export + View and Export (2026-09-17)
 

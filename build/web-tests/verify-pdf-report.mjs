@@ -187,7 +187,7 @@ if (process.env.SAVE_SAMPLES) {
         { geometryType: "polyline", rendererField: "FunctionalSystem", drawingInfo: miM.drawingInfo,
           features: miG.features, legendHeader: "Road functional class (MDOT)" },
       ],
-      point, verdictColor: "#d73027", frame, basemap,
+      point, verdictColor: "#cc3311", frame, basemap,
       citationLines: ["Road class: Functional System — https://mdotgis.state.mi.us/.../FeatureServer/353",
         "Urban boundary: USDOT NTAD 2020 Adjusted Urban Area Boundaries — https://services.arcgis.com/...",
         "Basemap: © Esri World Street Map tiles, fetched for this frame at report time",

@@ -66,16 +66,16 @@
   Three outcomes: <b>inside</b> a polygon (Urban), <b>outside but within the boundary buffer</b> (a point right on
   the urban edge — ambiguous), or clearly <b>Rural</b>. The boundary buffer never narrows below 250 ft even if the
   road search radius is tightened, so a site a few feet on the rural side of a boundary-forming road still resolves Urban.</p>
-  <h3>Step 3 — the closest road decides red vs green</h3>
+  <h3>Step 3 — the closest road decides red vs blue</h3>
   <p>The <b>closest</b> segment is treated as the road the point is ON, and its class alone decides the base color:</p>
   <ul>
     <li><b>Red — Federal aid:</b> FHWA classes 1–5 (Interstate through Major Collector) anywhere, or Minor Collector (6) <i>inside</i> an urban boundary.</li>
-    <li><b>Green — Non-federal aid:</b> Local (7) anywhere, or Minor Collector (6) in a rural area.</li>
+    <li><b>Blue — Non-federal aid:</b> Local (7) anywhere, or Minor Collector (6) in a rural area.</li>
   </ul>
   <p>Before this change, <i>any</i> federal-aid segment inside the buffer turned the row red — a culvert on a quiet
   local street 180 ft from an arterial was flagged red. Now the arterial only matters if it creates a genuine ambiguity (step 4).</p>
-  <h3>Step 4 — yellow only downgrades green (red stays red)</h3>
-  <p>A green result is downgraded to yellow "Review" when something nearby could realistically flip it to
+  <h3>Step 4 — amber only downgrades blue (red stays red)</h3>
+  <p>A blue result is downgraded to amber "Review" when something nearby could realistically flip it to
   federal-aid. The specific reason is reported with the row, checked in this order (most specific first):</p>
   <ul>
     <li><b>Second road close</b> — the second-closest road is within <b>30 ft</b> of the closest one <i>and</i> is federal-aid. At that separation, GPS error alone can put the point on either road.</li>

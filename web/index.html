@@ -7,9 +7,9 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
   :root {
-    --fed:    #fadbd4; --fed-border:    #d73027;
-    --nonfed: #d6eedd; --nonfed-border: #1a9850;
-    --review: #fcefc0; --review-border: #b58900;
+    --fed:    #fbe3dc; --fed-border:    #cc3311;
+    --nonfed: #dcecf7; --nonfed-border: #0077bb;
+    --review: #fdefd0; --review-border: #ee9900;
     --failed: #ececec; --failed-border: #888;
     --ink: #1c2733; --muted: #5b6b7b; --line: #d9e1e8;
   }
@@ -132,9 +132,9 @@
 :root {
   /* Refined verdict palette — the base rules read these vars, so the
      row tints, badges, pins and legend all pick these up. */
-  --fed:    #fdeceb; --fed-border:    #d64545;
-  --nonfed: #e6f5ec; --nonfed-border: #12a150;
-  --review: #fdf3d7; --review-border: #d99e00;
+  --fed:    #fbe7e1; --fed-border:    #cc3311;
+  --nonfed: #e3f0f9; --nonfed-border: #0077bb;
+  --review: #fdf1d8; --review-border: #ee9900;
   --failed: #eef1f5; --failed-border: #9aa7b4;
   --ink: #17232f; --muted: #5b6a79; --faint: #8493a2; --line: #e4e9ef;
   --navy: #12293e; --accent: #1f6feb; --accent-ink: #0b4fc0;
@@ -577,8 +577,8 @@ Portage Rd, Portage MI"></textarea>
         <summary>How the colors are decided</summary>
         <ol>
           <li>Every road within the search radius is found, and the true distance from your point to each one is measured.</li>
-          <li><b>The closest road decides red vs green</b> — it's the road your point is on. Red if its class is federal-aid (Urban Minor Collector or greater), green otherwise. Urban vs rural comes from the 2020 Adjusted Census Urban Boundaries, never from the road data.</li>
-          <li><b>Yellow only downgrades green</b> — a green result turns yellow when something nearby could flip it to federal-aid: a federal-aid road within 30 ft of the closest road (GPS can't tell which one the point is on), any other federal-aid road inside the radius, a Minor Collector sitting right on an urban-boundary edge, or no road found at all. Red never downgrades — a federal-aid closest road stays red.</li>
+          <li><b>The closest road decides red vs blue</b> — it's the road your point is on. Red if its class is federal-aid (Urban Minor Collector or greater), blue otherwise. Urban vs rural comes from the 2020 Adjusted Census Urban Boundaries, never from the road data.</li>
+          <li><b>Amber only downgrades blue</b> — a blue result turns amber when something nearby could flip it to federal-aid: a federal-aid road within 30 ft of the closest road (GPS can't tell which one the point is on), any other federal-aid road inside the radius, a Minor Collector sitting right on an urban-boundary edge, or no road found at all. Red never downgrades — a federal-aid closest road stays red.</li>
         </ol>
         <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
       </details>
@@ -718,7 +718,7 @@ Portage Rd, Portage MI"></textarea>
 
     <div class="ex-pane" data-pane="kmz" hidden>
       <div class="ex-actions">
-        <button id="dlKmz" class="primary" title="KMZ for Google Earth / ArcGIS — red, green and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">Download KMZ</button>
+        <button id="dlKmz" class="primary" title="KMZ for Google Earth / ArcGIS — red, blue and yellow pushpins by verdict; the site name, federal-aid status, class, urban area, roads and your note go into each placemark">Download KMZ</button>
       </div>
       <pre class="ex-prev" id="prevKmz"></pre>
     </div>
@@ -2048,7 +2048,11 @@ function verdictBucket(v) {
   if (v.startsWith("Failed")) return "failed";
   return "review";
 }
-const BUCKET_COLOR = { fed: "#d73027", nonfed: "#1a9850", review: "#b58900", failed: "#777", pending: "#4a7fb5" };
+// Verdict colours (2026-09-17): a colour-vision-safe trio — vermilion / amber /
+// BLUE (not green: green-vs-amber failed the CVD check at ΔE 4.4 protan; this
+// set passes every check, worst pair ΔE 19). Pending is a neutral grey so it
+// never reads as a verdict; failed is charcoal. Used by pins, chart, PDF, GeoJSON.
+const BUCKET_COLOR = { fed: "#cc3311", nonfed: "#0077bb", review: "#ee9900", failed: "#555", pending: "#a3aab2" };
 
 // Current search radius (feet) from the UI, clamped like the Excel tool's
 // BufferFeet() (1..1000, falling back to the 250 ft default).
@@ -2140,7 +2144,7 @@ function roadChipsHtml(res) {
       const label = (g.name ? `<b>${esc(g.name)}</b> · ` : "") + esc(cls) + dist + (g.n > 1 ? ` ×${g.n}` : "") +
         (i === 0 ? `<span class="ctag">closest</span>` : "");
       const tip = i === 0
-        ? `Closest road — its class decides red vs green. FHWA functional class ${g.code} — ${esc(cls)}`
+        ? `Closest road — its class decides red vs blue. FHWA functional class ${g.code} — ${esc(cls)}`
         : `FHWA functional class ${g.code} — ${esc(cls)}`;
       return `<span class="chip${i === 0 ? " primary" : ""}" title="${tip}">` +
         `<i class="cw" style="background:${FHWA_CHIP_COLOR[g.code] || FHWA_CHIP_COLOR[0]}"></i>${label}</span>`;
@@ -2208,7 +2212,7 @@ function render() {
     tr.addEventListener("click", e => { if (e.target.closest("a")) return; tr.classList.toggle("open"); selectSiteByPoint(p); });
 
     // Bolder ring + radius so the verdict color (set below once the row
-    // classifies: red/green/yellow, same as the row tint) reads clearly
+    // classifies: red/blue/amber, same as the row tint) reads clearly
     // over the live class-colored road lines.
     const marker = L.circleMarker([p.lat, p.lon], { radius: 9, weight: 3, color: "#fff",
       fillColor: BUCKET_COLOR.pending, fillOpacity: 1 }).addTo(markerLayer);
@@ -2631,12 +2635,12 @@ $("dlGeojson").addEventListener("click", () => {
   URL.revokeObjectURL(a.href);
 });
 
-// KMZ export — a zipped KML for Google Earth / ArcGIS. Same red / green /
+// KMZ export — a zipped KML for Google Earth / ArcGIS. Same red / blue /
 // yellow pushpin convention as the Excel tool's KML export; the site name,
 // verdict, class, urban area, roads and the collected note all go into the
 // placemark. Reuses makeZip (the FIRMette bundler, defined in a later block).
 function buildKml() {
-  const ICO = { fed: "red", nonfed: "grn", review: "ylw", failed: "wht" };
+  const ICO = { fed: "red", nonfed: "blue", review: "ylw", failed: "wht" };   // blue, not green: colour-vision-safe like the page
   const ex = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const styles = Object.entries(ICO).map(([b, c]) =>
     `<Style id="rr-${b}"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/${c}-pushpin.png</href></Icon></IconStyle></Style>`).join("");

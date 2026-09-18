@@ -410,7 +410,7 @@ checks.push(["an edited cell flows into the export rows and the preview", edited
 // --- "How the colors are decided" explainer ---
 checks.push(["how-colors explainer present", await page.evaluate(() => {
   const d = document.querySelector("details.howcolors");
-  return !!d && d.textContent.includes("closest road decides red vs green") && d.textContent.includes("Yellow only downgrades green");
+  return !!d && d.textContent.includes("closest road decides red vs blue") && d.textContent.includes("Amber only downgrades blue");
 })]);
 
 // --- click row -> zoom + select + layers ---
@@ -872,7 +872,7 @@ checks.push(["sources page: geocoder section says explicit-click only + interpol
   src.includes('id="geocoder"') && src.includes("only when the") && src.includes("interpolation")]);
 checks.push(["sources page: verdict-logic section (closest road, 30 ft rule, boundary edge)",
   src.includes('id="verdict"') && src.includes("Second road close") && src.includes("Urban boundary edge")
-  && src.includes("closest road decides red vs green")]);
+  && src.includes("closest road decides red vs blue")]);
 
 let fail = 0;
 for (const [label, ok] of checks) { console.log((ok ? "  ok   " : "  FAIL ") + label); if (!ok) fail++; }

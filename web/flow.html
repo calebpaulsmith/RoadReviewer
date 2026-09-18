@@ -116,7 +116,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
   <div class="answer">
     <div class="card">
       <h4><span class="tag hpms">HPMS tiles</span> decide the verdict</h4>
-      <p>The red / green / yellow status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"Source: FHWA HPMS 2024 tiles"</b> chip (a live verdict shows <b>"Source: MDOT live layer"</b> etc.); the chip links to that source's public page.</p>
+      <p>The red / blue / amber status on a row comes from the FHWA HPMS road tiles hosted with this site (2024 submission), plus the 2020 urban-boundary tiles. No state server is contacted for the verdict. The row shows a <b>"Source: FHWA HPMS 2024 tiles"</b> chip (a live verdict shows <b>"Source: MDOT live layer"</b> etc.); the chip links to that source's public page.</p>
     </div>
     <div class="card">
       <h4><span class="tag state">State layer</span> decides the verdict only when…</h4>
@@ -181,7 +181,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
           <li><b>Non-federal aid</b> — class 7 (Local) anywhere; class 6 when rural.</li>
           <li><b>Review</b> — no road within the buffer; a named road that the layer gives no class; class 0 (non-certified); a second road within 30 ft that is federal aid; any other federal-aid road nearby; a Minor Collector on the urban boundary.</li>
         </ul>
-        <p class="note">Yellow only ever downgrades green. Red stays red. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p></div>
+        <p class="note">Amber only ever downgrades blue. Red stays red. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p></div>
     </div>
     <div class="arrow">↓</div>
 
@@ -215,7 +215,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
     <tr><td class="what">Road-class lines while browsing (zoom 9 and in)</td><td>Pre-built per-state tiles; interstates from z6, locals from z12</td><td class="src"><span class="tag hpms">HPMS tiles</span></td><td>Dense downtown cores were thinned at build time. A state with no tile file falls back to a live mirror of its DOT layer.</td></tr>
     <tr><td class="what">Urban-boundary outlines while browsing</td><td>Urban-area tiles</td><td class="src"><span class="tag hpms">ACUB tiles</span></td><td>2020 vintage.</td></tr>
     <tr><td class="what">Lines around a selected site ("Source layers at this site" legend)</td><td>A frame of the state's live functional-class layer in its published symbology, plus the live NTAD boundary</td><td class="src"><span class="tag state">State layer</span> live</td><td><b>Different source from the verdict</b> unless "Live verdicts" is on. INDOT publishes one color for everything, so an FHWA palette is substituted (disclosed).</td></tr>
-    <tr><td class="what">Verdict pins (red / green / yellow)</td><td>The row's verdict</td><td class="src">as the row</td><td></td></tr>
+    <tr><td class="what">Verdict pins (red / blue / amber)</td><td>The row's verdict</td><td class="src">as the row</td><td></td></tr>
     <tr><td class="what">Paper-style basemap (roads, water, places)</td><td>Six-state OpenStreetMap extract hosted with the site, z0–11</td><td class="src"><span class="tag other">OSM / Protomaps</span></td><td>Rectangular extract; the state-shaped cut is a mask. Falls back to live Esri streets if the file is missing.</td></tr>
     <tr><td class="what">Buildings, parks, street names at street zoom</td><td>OpenFreeMap vector tiles, fetched from zoom 13</td><td class="src"><span class="tag other">OSM / OpenFreeMap</span></td><td>Public service with no SLA; if it is down there is simply no detail.</td></tr>
     <tr><td class="what">Satellite</td><td>Esri World Imagery, only when switched to</td><td class="src"><span class="tag other">Esri</span></td><td></td></tr>
