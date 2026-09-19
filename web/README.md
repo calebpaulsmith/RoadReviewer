@@ -79,6 +79,34 @@ each source's own published renderer colors (states are picked by
 bounding-box intersection with the view, so a border viewport draws both
 sides). A bottom-left legend lists exactly the classes present in view.
 
+### Pointer coordinate readout (2026-09-16)
+
+A small box in the map's bottom-right corner — above the attribution line,
+under the site legend — shows the latitude/longitude under the pointer and
+follows it continuously, the way ArcGIS's coordinate readout does. With the
+pointer off the map (and on a phone, where there is no pointer) it shows the
+map centre instead, so it is never blank. There is no label: the number is
+the readout.
+
+Both pieces are buttons. **Clicking the coordinate copies it** to the
+clipboard, and the small **DD / DMS** box beside it switches the format
+between decimal degrees and degrees/minutes/seconds — it is labelled with the
+format in force, and the choice is remembered in that browser. Either format
+is written the way the page's own parser reads it back, so a value copied off
+the map pastes straight into the coordinates box. Both answer Enter/Space from
+the keyboard. Tracking freezes while the pointer is over either box, so what
+you click is what you copy.
+
+It is cheap by construction, and the cost is measured rather than assumed
+(`build/web-tests/verify-coord-readout.mjs` prints the numbers): the listener
+is a native one on the map container rather than a Leaflet `mousemove`
+subscription, the handler only stashes the point and schedules a
+`requestAnimationFrame`, so 600 events inside one frame produce exactly one
+DOM write, and the box is fixed-size and CSS-`contain`ed so that write cannot
+invalidate the map container's layout that the same handler reads. Measured
+on the sandbox: ~3–6 µs of work per pointer event, i.e. well under a
+millisecond per second of continuous mouse movement at a 120 Hz polling rate.
+
 Two constraints shape it, both disclosed in the legend:
 
 - **Zoom gating — progressive by class (2026-09-14).** The services cap a
@@ -630,6 +658,14 @@ end-to-end with Python's zipfile including CRCs):
 
 ```
 cd build/web-tests && npm install && node verify-review-ui.mjs
+```
+
+And the pointer coordinate readout (placement, tracking accuracy against
+Leaflet's own projection, re-projection on pan, copy-on-click, the DD/DMS
+switch, plus the cost measurements described above):
+
+```
+cd build/web-tests && npm install && node verify-coord-readout.mjs
 ```
 
 See each script's header comment for why they stub the network with real

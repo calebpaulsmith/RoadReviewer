@@ -325,11 +325,31 @@ details.howcolors { margin-top: 8px; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mapbar .rinfo:empty { display: none; }
 
-/* Site legend: floating card bottom-right (above the attribution line). */
+/* Site legend: floating card bottom-right, above the coordinate readout
+   and the attribution line (56px clears both). */
 #siteLegend {
-  position: absolute; right: 12px; bottom: 26px; z-index: 1000;
+  position: absolute; right: 12px; bottom: 56px; z-index: 1000;
   max-height: 60%; max-width: min(280px, 40%);
 }
+
+/* Pointer coordinate readout — a Leaflet bottomright control, so it stacks
+   itself above the attribution line without fighting it for the corner. Two
+   buttons side by side: the coordinate itself (click = copy) and a small
+   DD/DMS format switch.
+   FIXED width/height + `contain` on purpose: the mousemove handler reads the
+   map container's rect, and an unconstrained per-frame text write in the same
+   corner would make every one of those reads a forced reflow. */
+.coordwrap { display: flex; align-items: stretch; gap: 6px; }
+.coordbox, .coordfmt { background: rgba(255,255,255,.95); border: 1px solid var(--line);
+  border-radius: 8px; height: 25px; box-shadow: var(--shadow-sm); cursor: pointer;
+  user-select: none; white-space: nowrap; overflow: hidden; line-height: 15px; }
+.coordbox:hover, .coordfmt:hover { background: #fff; border-color: #c8d2de; }
+.coordbox:focus-visible, .coordfmt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.coordbox { padding: 4px 9px; width: 218px; contain: layout paint size; text-align: center; }
+.coordbox .cr-val { font: 11.5px/15px ui-monospace, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums; color: var(--ink); }
+.coordfmt { padding: 4px 0; width: 44px; text-align: center; contain: layout paint size;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .4px; color: var(--muted); }
 
 /* ---- table-card chrome (the View and Export card) ---- */
 .po-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
@@ -2588,6 +2608,121 @@ async function copyText(text, what) {
     return false;
   }
 }
+/* ---- pointer coordinate readout (bottom-right, ArcGIS-style) ----
+   Mirrors whatever the pointer is over; falls back to the map CENTER when the
+   pointer leaves the map and on touch, where there is no pointer at all, so
+   the box is never blank. No label: the number IS the readout.
+
+   Two buttons, because one gesture cannot do two jobs: clicking the
+   COORDINATE copies "lat, lon" to the clipboard, and the small DD/DMS box
+   beside it switches the format (the choice sticks per browser). The DMS form
+   is written exactly the way parseCoordinates reads it back, so either format
+   pastes straight into the coordinates box.
+
+   Three deliberate cost choices, in order of how much they matter:
+   1. The listener is NATIVE, on the map container, not map.on("mousemove").
+      A Leaflet-level mousemove listener makes Leaflet walk the DOM for event
+      targets and project a latlng on every one of the ~120 events/s a
+      high-polling mouse emits — and over a marker it reports the MARKER's
+      latlng, not the pointer's, which would be wrong here anyway.
+   2. The handler only stashes the point and schedules a rAF; the DOM write
+      happens at most once per frame, however fast the mouse reports.
+   3. Both boxes are fixed-size and `contain`ed (see .coordbox/.coordfmt) so
+      that write cannot dirty the map container's layout, which this same
+      handler reads.
+   Measured cost: build/web-tests/verify-coord-readout.mjs. */
+const coordCtl = L.control({ position: "bottomright" });
+let coordVal = null, coordBtn = null;
+let coordPt = null;           // last container point under the pointer, or null
+let coordShown = null, coordFrame = 0;
+let coordFmt = "dd";
+try { if (localStorage.getItem("rr_coord_fmt") === "dms") coordFmt = "dms"; } catch { /* private mode */ }
+
+// 42°17'07.3"N — whole degrees, 2-digit minutes, 1 dp seconds. Rounding the
+// seconds can carry (59.97 -> 60), which has to roll up rather than print.
+function fmtDms(v, pos, neg) {
+  const hemi = v < 0 ? neg : pos, a = Math.abs(v);
+  let d = Math.floor(a), m = Math.floor((a - d) * 60), s = ((a - d) * 60 - m) * 60;
+  if (s >= 59.95) { s = 0; m += 1; }
+  if (m >= 60) { m = 0; d += 1; }
+  return d + "°" + String(m).padStart(2, "0") + "'" +
+         (s < 10 ? "0" : "") + s.toFixed(1) + '"' + hemi;
+}
+function fmtLatLon(ll) {
+  return coordFmt === "dms"
+    ? fmtDms(ll.lat, "N", "S") + " " + fmtDms(ll.lng, "E", "W")
+    : ll.lat.toFixed(5) + ", " + ll.lng.toFixed(5);
+}
+
+function paintCoord() {
+  coordFrame = 0;
+  if (!coordVal || !coordShown) return;
+  coordVal.textContent = fmtLatLon(coordShown);
+}
+function showCoord(ll) {
+  coordShown = ll;
+  if (!coordFrame) coordFrame = requestAnimationFrame(paintCoord);
+}
+function refreshCoord() {
+  // Re-project the held container point: during a pan or zoom the geography
+  // under a stationary cursor changes without any mousemove firing.
+  showCoord(coordPt ? map.containerPointToLatLng(coordPt) : map.getCenter());
+}
+function paintCoordFmtButton() {
+  coordBtn.textContent = coordFmt === "dms" ? "DMS" : "DD";
+  coordBtn.title = coordFmt === "dms"
+    ? "Showing degrees, minutes, seconds — click for decimal degrees"
+    : "Showing decimal degrees — click for degrees, minutes, seconds";
+}
+function toggleCoordFmt() {
+  coordFmt = coordFmt === "dms" ? "dd" : "dms";
+  try { localStorage.setItem("rr_coord_fmt", coordFmt); } catch { /* private mode */ }
+  paintCoordFmtButton();
+  paintCoord();               // a click repaints now, not on the next frame
+}
+
+// Both boxes are buttons for the keyboard too, not just the mouse.
+function coordButton(cls, title, onPress) {
+  const d = L.DomUtil.create("div", cls);
+  d.title = title;
+  d.setAttribute("role", "button");
+  d.tabIndex = 0;
+  d.addEventListener("click", onPress);
+  d.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onPress(); }
+  });
+  return d;
+}
+
+coordCtl.onAdd = function () {
+  const wrap = L.DomUtil.create("div", "leaflet-control coordwrap");
+  const box = coordButton("coordbox", "Click to copy this coordinate",
+    () => { if (coordShown) copyText(fmtLatLon(coordShown), "Coordinate"); });
+  box.innerHTML = '<span class="cr-val"></span>';
+  coordVal = box.querySelector(".cr-val");
+  coordBtn = coordButton("coordfmt", "", toggleCoordFmt);
+  wrap.appendChild(box);
+  wrap.appendChild(coordBtn);
+  L.DomEvent.disableClickPropagation(wrap);
+  paintCoordFmtButton();
+  return wrap;
+};
+coordCtl.addTo(map);
+
+const coordHost = map.getContainer();
+coordHost.addEventListener("mousemove", ev => {
+  // Freeze over the controls that live INSIDE the map container (these boxes
+  // included, plus popups): their mousemoves bubble up here, so without this
+  // the act of reaching for the box would overwrite the value you were
+  // reaching for, and the click would copy somewhere else entirely.
+  if (ev.target.closest && ev.target.closest(".leaflet-control, .leaflet-popup")) return;
+  coordPt = map.mouseEventToContainerPoint(ev);
+  showCoord(map.containerPointToLatLng(coordPt));
+}, { passive: true });
+coordHost.addEventListener("mouseleave", () => { coordPt = null; showCoord(map.getCenter()); });
+map.on("move zoom", refreshCoord);
+refreshCoord();
+
 function tsvAll() { return [EXPORT_HEADERS, ...exportRows()].map(r => r.join("\t")).join("\n"); }
 function tsvCoords() {
   return [["Site Name", "Latitude", "Longitude"],
