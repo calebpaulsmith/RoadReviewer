@@ -198,3 +198,29 @@ Portage Rd, Portage MI
 - [ ] **7.10** Reload the page and re-paste. → Addresses are unresolved again
   (results are not stored) until you click.
 
+
+## 8. Pointer coordinate readout (~3 min) — newest work
+
+- [ ] **8.1** Fresh load, don't touch the mouse. → A box in the map's
+  bottom-right corner, above the attribution line, showing the centre
+  coordinate and nothing else (no label).
+- [ ] **8.2** Move over the map. → The value follows the pointer continuously;
+  motion stays smooth at street zoom with imagery on.
+- [ ] **8.3** Park the pointer on a known feature and compare against the pin
+  of a site you already classified. → Same coordinate to ~5 decimals.
+- [ ] **8.4** Hold the pointer still and drag the map with the keyboard arrows
+  (or scroll-zoom). → The value updates as the ground moves under the cursor.
+- [ ] **8.5** Move off the map (over the left panel). → Falls back to the map
+  centre.
+- [ ] **8.6** Move onto the coordinate, then click it. → The value **freezes**
+  as you approach it, and the click copies exactly that value ("Coordinate
+  copied to clipboard"). Paste into the coordinates box → a point at that spot.
+- [ ] **8.7** Click the small **DD** box beside it. → The coordinate becomes
+  `42°17'07.3"N 85°34'12.9"W` and the box now reads **DMS**. Click the
+  coordinate again → the DMS text copies, and it pastes back to the same point.
+- [ ] **8.8** Reload the page. → It comes back in whichever format you left it.
+- [ ] **8.9** With a site legend showing, check the corner. → Legend sits above
+  the readout; neither covers the attribution.
+- [ ] **8.10** On a phone. → The boxes show the map centre and update as you
+  pan; tapping DD/DMS still switches format, and they don't crowd the
+  attribution.
