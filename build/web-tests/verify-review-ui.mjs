@@ -235,7 +235,10 @@ checks.push(["Auto-Detect heading, short disclaimer and Detection Buffer label w
     const lbl = document.getElementById("bufferSel").closest("label").textContent;
     const info = document.querySelector(".results .infodot");
     return h.includes("Auto-Detect") && !h.includes("Results")
-      && !!d && /verify/i.test(d.textContent)
+      && !!d && d.textContent.trim() === "Screening aid only — results may be incorrect."
+      // the colour key sits under the header, one verdict per line
+      && (() => { const l = document.querySelector(".results .legend.col"); return !!l && getComputedStyle(l).flexDirection === "column" && l.children.length === 3; })()
+      && !!document.querySelector(".results details.howcolors") && !document.querySelector("#inputPanel .legend")
       && lbl.includes("Detection Buffer") && !lbl.includes("Search buffer")
       && !!info && (info.title || "").length > 60;   // the buffer-logic explainer
   })]);
@@ -461,6 +464,10 @@ checks.push(["live mirror legend rows link to MDOT's official public map with a 
 })]);
 checks.push(["every classified row shows a Source chip that links to a public site", await page.evaluate(() => {
   const rows = [...document.querySelectorAll("#resultsBody .row")].filter(r => r.querySelector(".chip"));
+  const vb = document.getElementById("verifyBar"), ss = document.getElementById("sourceStatus");
+  if (vb.hidden || !/Verify with State DOT Layers/.test(vb.textContent) || !vb.querySelector('a[href^="https:"]')) return false;
+  if (!(vb.compareDocumentPosition(ss) & Node.DOCUMENT_POSITION_FOLLOWING)) return false;   // outage warnings only beneath it
+  if (!rows.every(r => { const b = r.querySelector(".row-main a.srcbadge"); return b && /^(HPMS|State DOT|NTAD)$/.test(b.textContent); })) return false;
   return rows.length > 0 && rows.every(r => { const a = r.querySelector("a.srcchip"); return a && /^Source: /.test(a.textContent) && /^https:/.test(a.href) && !/\/rest\//.test(a.href); });
 })]);
 checks.push(["live mirror drew into its canvas pane (under pins)", await page.evaluate(() =>
@@ -568,6 +575,8 @@ await page.locator("#findResults .finditem", { hasText: "Kalamazoo County" }).cl
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing Kalamazoo County"), { timeout: 15000 });
 checks.push(["find: county click zooms the map into the county", await page.evaluate(() => {
   const b = map.getBounds(); return b.getWest() > -86.5 && b.getEast() < -84.5 && map.getZoom() >= 9; })]);
+checks.push(["find: picking an area empties the search box and closes the list", await page.evaluate(() =>
+  document.getElementById("findText").value === "" && document.getElementById("findResults").children.length === 0)]);
 checks.push(["find: the county becomes the default area (chip with ✕, remembered in this browser)", await page.evaluate(() => {
   const bar = document.getElementById("areaBar");
   return !bar.hidden && bar.textContent.includes("Kalamazoo County, MI") && !!document.getElementById("areaClear")
@@ -597,6 +606,10 @@ await page.waitForFunction(() => {
   return it && it.textContent.includes("Minor Collector") && !!it.querySelector(".cw");
 }, { timeout: 15000 });
 checks.push(["find: road suggestion carries FHWA class + color swatch", true]);
+checks.push(["find: with an area set the list is limited to it — no State or County groups", await page.evaluate(() => {
+  const hdrs = [...document.querySelectorAll("#findResults .findhdr")].map(d => d.textContent.replace(/ ·.*$/, ""));
+  return hdrs.includes("Road") && !hdrs.includes("State") && !hdrs.includes("County");
+})]);
 await page.locator("#findResults .finditem", { hasText: "S Pitcher St" }).first().click();
 await page.waitForFunction(() => document.getElementById("reviewInfo").textContent.includes("Showing road: S Pitcher St"), { timeout: 15000 });
 
@@ -748,12 +761,20 @@ await page.click("#exportClose");
 
 // --- addresses and road names in the same box ---
 // Coordinates classify as always; a road line resolves by itself through
-// TIGERweb; addresses are highlighted and WAIT for the one Geocode button.
+// TIGERweb; addresses are highlighted and geocoded AUTOMATICALLY once the
+// line is finished (no button since 2026-09-21) — never the line being typed.
 const ADDR_TEXT = "Kalamazoo culvert,42.28536,-85.57025\n5201 Portage Rd, Portage MI 49002\n5300 Portage Rd, Portage MI 49002\n" +
-  "7 Zzz Way, Portage MI\n1 Nowhere Ln, Nowhere MI\nPortage Rd, Portage MI\ngarbage line";
+  "7 Zzz Way, Portage MI\n1 Nowhere Ln, Nowhere MI\nPortage Rd, Portage MI\n?? garbage line";
 geocoderReqs.length = 0;
+await page.fill("#coordsIn", "5201 Portage Rd, Portage MI 49002");   // the caret is still on this line
+await page.waitForTimeout(2800);
+checks.push(["the address line still under the caret is NOT sent while the box has focus", geocoderReqs.length === 0
+  && (await page.locator("#resultsBody .row.v-address").first().textContent()).includes("looked up automatically")]);
+await page.evaluate(() => document.getElementById("coordsIn").blur());
+await page.waitForFunction(() => [...document.querySelectorAll("#resultsBody .row")].some(r => r.textContent.includes("snapped to Portage Rd")), { timeout: 30000 });
+checks.push(["clicking out of the box geocodes it — one request, no button anywhere", geocoderReqs.length === 1
+  && await page.locator("#geocodeBtn").count() === 0]);
 await page.fill("#coordsIn", ADDR_TEXT);
-await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("2 point(s) classified"), { timeout: 20000 });
 await page.waitForFunction(() => [...document.querySelectorAll("#coordsMirror mark")].some(m => m.className.includes("road geo-ok")), { timeout: 20000 });
 checks.push(["parse count names the kinds: 1 point, 4 addresses, 1 road, 1 unreadable",
   (await page.locator("#parseCount").textContent()) === "1 point(s) parsed, 4 addresses, 1 road, 1 line(s) unreadable"]);
@@ -769,21 +790,13 @@ checks.push(["highlights sit under the typed lines (mirror and box share metrics
   return cb.fontFamily === cm.fontFamily && cb.fontSize === cm.fontSize && cb.lineHeight === cm.lineHeight && cb.paddingLeft === cm.paddingLeft
     && Math.abs(rb.left - rm.left) < 1 && Math.abs(rb.top - rm.top) < 1 && Math.abs(rb.width - rm.width) < 1;
 })]);
-checks.push(["one 'Geocode 4 addresses' button, shown only because addresses are present",
-  !(await page.locator("#geoBar").isHidden()) && (await page.locator("#geocodeBtn").textContent()) === "Geocode 4 addresses"]);
-checks.push(["NOTHING was sent to the geocoder on paste/parse", geocoderReqs.length === 0]);
-checks.push(["the coordinate line classified without the button", (await page.locator("#resultsBody .row").first().textContent()).includes("FEDERAL AID")]);
+await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("5 point(s) classified"), { timeout: 60000 });
+checks.push(["the coordinate line classified", (await page.locator("#resultsBody .row").first().textContent()).includes("FEDERAL AID")]);
 const roadRow = page.locator("#resultsBody .row", { hasText: "Portage Rd (Portage)" });
 checks.push(["the road-name line resolved by itself and classified the WHOLE road (mixed classes -> Review)", await roadRow.count() === 1
   && (await roadRow.textContent()).includes("whole road") && (await roadRow.textContent()).includes("Mixed classes on road")
   && (await roadRow.textContent()).includes("Local") && (await roadRow.textContent()).includes("Minor Collector")]);
-checks.push(["address rows say they are waiting for the button", await page.locator("#resultsBody .row.v-address").count() === 4
-  && (await page.locator("#resultsBody .row.v-address").first().textContent()).includes("not sent anywhere yet")]);
-
-await page.click("#geocodeBtn");
-await page.waitForFunction(() => !document.getElementById("geocodeBtn").disabled && document.getElementById("geocodeBtn").textContent.startsWith("Geocode"), { timeout: 40000 });
-await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("5 point(s) classified"), { timeout: 20000 });
-checks.push(["one click sent exactly 4 geocoder requests, all from a child (sandboxed) frame, all JSONP on the fixed host",
+checks.push(["each address was sent exactly once (4 requests in all), all from a child (sandboxed) frame, all JSONP on the fixed host",
   geocoderReqs.length === 4 && geocoderReqs.every(r => !r.main && r.url.startsWith("https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?")
     && r.url.includes("format=jsonp") && /callback=cb_g[a-z0-9]+/.test(r.url))]);
 checks.push(["each request carries a distinct callback id", new Set(geocoderReqs.map(r => /callback=(\w+)/.exec(r.url)[1])).size === 4]);
@@ -799,9 +812,9 @@ checks.push(["5300 Portage Rd: class changes 150 ft along the street -> Review '
 const addr3 = page.locator("#resultsBody .row", { hasText: "7 ZZZ WAY" });
 checks.push(["a geocode whose street matches no Census road -> Review 'Street not matched', raw point kept",
   (await addr3.textContent()).includes("Street not matched") && (await addr3.textContent()).includes("street not matched")]);
-checks.push(["no-match address stays an unresolved row with the reason, and the button offers it again",
+checks.push(["no-match address stays an unresolved row with the reason, and is not re-sent on its own",
   (await page.locator("#resultsBody .row", { hasText: "Nowhere" }).textContent()).includes("No match from the Census geocoder")
-  && (await page.locator("#geocodeBtn").textContent()) === "Geocode 1 address"]);
+  && geocoderReqs.length === 4]);
 checks.push(["mirror marks now show resolved (green) vs failed (red)", await page.evaluate(() => {
   const c = [...document.querySelectorAll("#coordsMirror mark")].map(m => m.className);
   return c.filter(x => x === "addr geo-ok").length === 3 && c.filter(x => x === "addr geo-bad").length === 1;
@@ -824,7 +837,7 @@ checks.push(["bare road name with no area: the row asks for a county / city / to
   document.getElementById("areaBar").hidden && !localStorage.getItem("rr_default_area"))]);
 await page.fill("#coordsIn", ADDR_TEXT);
 await page.waitForFunction(() => (document.getElementById("statusCount").textContent || "").includes("5 point(s) classified"), { timeout: 20000 });
-checks.push(["clearing the addresses hides the button", await (async () => {
+checks.push(["the geocoding status line is hidden when nothing is being located", await (async () => {
   await page.fill("#coordsIn", "Kalamazoo culvert,42.28536,-85.57025");
   return await page.waitForFunction(() => document.getElementById("geoBar").hidden, { timeout: 5000 }).then(() => true).catch(() => false);
 })()]);
@@ -868,8 +881,8 @@ checks.push(["sources page: MI layer 353 documented", src.includes("NextGenPrFin
 checks.push(["sources page: IN record_status quirk", src.includes("record_status=5")]);
 checks.push(["sources page: WI category-code quirk", src.includes("FNCT_CLS_CTGY_TYCD")]);
 checks.push(["sources page: ACUB + FIRMette + TIGER sections", src.includes('id="acub"') && src.includes('id="firmette"') && src.includes('id="tiger"')]);
-checks.push(["sources page: geocoder section says explicit-click only + interpolation caveat",
-  src.includes('id="geocoder"') && src.includes("only when the") && src.includes("interpolation")]);
+checks.push(["sources page: geocoder section says addresses are sent automatically once finished + interpolation caveat",
+  src.includes('id="geocoder"') && src.includes("automatically once an address line is finished") && src.includes("interpolation")]);
 checks.push(["sources page: verdict-logic section (closest road, 30 ft rule, boundary edge)",
   src.includes('id="verdict"') && src.includes("Second road close") && src.includes("Urban boundary edge")
   && src.includes("closest road decides red vs blue")]);

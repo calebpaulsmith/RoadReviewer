@@ -409,6 +409,24 @@ details.howcolors { margin-top: 8px; }
 .row .picker button.pick { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; background: #fff; border: 1px solid #b9cde4; box-shadow: none; }
 .row .picker button.pick:hover { background: #e8f1fb; }
 .row .picker button.pick.out { border-style: dashed; color: var(--muted); }
+/* numbered road choices on the map (match the picker buttons) */
+.optnum { background: #7c3aed; color: #fff; border: 2px solid #fff; border-radius: 50%; font: 700 11px/18px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+/* verdict key: one per line under the Auto-Detect header */
+.legend.col { flex-direction: column; gap: 3px; margin: 0 0 6px; flex-wrap: nowrap; }
+.results details.howcolors { margin: 0 0 8px; }
+/* tiny per-row source badge: HPMS tiles vs the state DOT's live layer */
+.srcbadge { flex: none; font: 700 9.5px/1 system-ui, sans-serif; letter-spacing: .03em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; text-decoration: none; white-space: nowrap; border: 1px solid #9fb6cc; background: #eaf1f7; color: #2c4a63; }
+.srcbadge.dot { border-color: #d9a45a; background: #fdf0dc; color: #6b4300; }
+.srcbadge.fb { border-color: #d6b23a; background: #fbf1c8; color: #5e4a00; }
+.srcbadge:hover { text-decoration: underline; }
+/* display:grid/flex would otherwise beat the hidden attribute (the empty white bar) */
+.vchart[hidden], .verifybar[hidden], .geo-bar[hidden], .srcstatus[hidden], .svcwarn[hidden] { display: none; }
+.verifybar { font-size: 12.5px; margin: 2px 0 6px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.verifybar a { font-size: 11.5px; }
+/* a service that is not answering, in the Data service URLs table */
+#svcTable tr.svc-down td { background: #fde8e6; }
+#svcTable tr.svc-down td:first-child div:first-child::after { content: " — not answering"; color: #b42318; font-weight: 600; }
+.svcwarn { margin: 6px 0; padding: 6px 9px; border-radius: 6px; background: #fde8e6; border: 1px solid #f0b4ae; color: #7a1d14; font-size: 12px; line-height: 1.4; }
 /* pin right-click menu + the drag-to-move pin */
 .pinmenu { display: flex; gap: 6px; margin-top: 6px; }
 .pinmenu button { font-size: 12px; padding: 4px 9px; }
@@ -548,16 +566,13 @@ body.expanded #siteLegend, body.expanded .livelegend { display: none !important;
           <input id="findText" type="search" spellcheck="false" placeholder="Find a state, county, city, township or road… (results appear as you type)"
             title="Start typing part of a state, county, city / village, township or road name. Results are grouped by kind; clicking one zooms the map there. Picking a county, city or township also makes it the AREA that addresses without a city and road names without a place are looked up in. Roads are searched inside the area (or the visible map when no area is set).">
         </div>
-        <div id="findResults"></div>
         <div id="areaBar" class="areabar" hidden></div>
+        <div id="findResults"></div>
       </div>
       <div class="controls">
         <span class="count" id="parseCount"></span>
       </div>
-      <div class="geo-bar" id="geoBar" hidden>
-        <button id="geocodeBtn" class="primary" title="Sends ONLY the highlighted address lines to the Census Bureau geocoder, once, when you click. Nothing is sent as you type.">Geocode addresses</button>
-        <span class="hint">Highlighted lines are addresses. They stay on this page until you click — then each is geocoded, snapped to its named street and classified.</span>
-      </div>
+      <div class="geo-bar hint" id="geoBar" hidden role="status"></div>
       <div class="coords-wrap">
         <div class="coords-mirror" id="coordsMirror" aria-hidden="true"></div>
       <textarea id="coordsIn" spellcheck="false" placeholder="42.28536, -85.57025
@@ -568,20 +583,6 @@ Bridge 7	42°41'28&quot;N	84°32'10&quot;W
 5201 Portage Rd, Portage MI 49002
 Portage Rd, Portage MI"></textarea>
       </div>
-      <div class="legend">
-        <span class="l-fed">Federal aid — closest road</span>
-        <span class="l-nonfed">Non-federal aid — closest road</span>
-        <span class="l-review">Review — ambiguous, needs a look</span>
-      </div>
-      <details class="howcolors">
-        <summary>How the colors are decided</summary>
-        <ol>
-          <li>Every road within the search radius is found, and the true distance from your point to each one is measured.</li>
-          <li><b>The closest road decides red vs blue</b> — it's the road your point is on. Red if its class is federal-aid (Urban Minor Collector or greater), blue otherwise. Urban vs rural comes from the 2020 Adjusted Census Urban Boundaries, never from the road data.</li>
-          <li><b>Amber only downgrades blue</b> — a blue result turns amber when something nearby could flip it to federal-aid: a federal-aid road within 30 ft of the closest road (GPS can't tell which one the point is on), any other federal-aid road inside the radius, a Minor Collector sitting right on an urban-boundary edge, or no road found at all. Red never downgrades — a federal-aid closest road stays red.</li>
-        </ol>
-        <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
-      </details>
     </div>
 
 
@@ -616,8 +617,21 @@ Portage Rd, Portage MI"></textarea>
         <span style="flex:1"></span>
         <button id="popoutBtn" title="Expand this pane over the map: every site's full detail in one editable table, with the map alongside">⧉ View and Export</button>
       </div>
-      <p class="disclaim">Screening aid only — results may be incorrect. Verify every site with the responsible governing agency.</p>
-      <div id="sourceStatus" class="srcstatus" hidden></div>
+      <p class="disclaim">Screening aid only — results may be incorrect.</p>
+      <div class="legend col">
+        <span class="l-fed">Federal aid — closest road</span>
+        <span class="l-nonfed">Non-federal aid — closest road</span>
+        <span class="l-review">Review — ambiguous, needs a look</span>
+      </div>
+      <details class="howcolors">
+        <summary>How the colors are decided</summary>
+        <ol>
+          <li>Every road within the search radius is found, and the true distance from your point to each one is measured.</li>
+          <li><b>The closest road decides red vs blue</b> — it's the road your point is on. Red if its class is federal-aid (Urban Minor Collector or greater), blue otherwise. Urban vs rural comes from the 2020 Adjusted Census Urban Boundaries, never from the road data.</li>
+          <li><b>Amber only downgrades blue</b> — a blue result turns amber when something nearby could flip it to federal-aid: a federal-aid road within 30 ft of the closest road (GPS can't tell which one the point is on), any other federal-aid road inside the radius, a Minor Collector sitting right on an urban-boundary edge, or no road found at all. Red never downgrades — a federal-aid closest road stays red.</li>
+        </ol>
+        <div>Full logic, data sources and per-state quirks: <a href="sources.html#verdict" target="_blank" rel="noopener">how the verdict works</a>.</div>
+      </details>
       <div id="verdictChart" class="vchart" hidden role="group" aria-label="Sites by verdict — click a bar to show only those sites"></div>
       <div class="results-bar">
         <label title="How far from each point to look for roads. The state is always auto-detected from the point's location.">Detection Buffer:
@@ -638,6 +652,10 @@ Portage Rd, Portage MI"></textarea>
         <label class="count" title="Show only the sites inside the visible map area — Find a state, county or township first, then tick this. Zooming to one site (a row click, Prev/Next, adding a point) doesn't narrow the list."><input type="checkbox" id="rowFilterView"> filter by map view</label>
         <span class="count" id="filterCount"></span>
       </div>
+      <div id="verifyBar" class="verifybar" hidden>
+        <b>Verify with State DOT Layers</b><span id="verifyLinks"></span>
+      </div>
+      <div id="sourceStatus" class="srcstatus" hidden></div>
       <div id="resultsBody" class="rowlist"></div>
     </div>
 
@@ -648,6 +666,7 @@ Portage Rd, Portage MI"></textarea>
       <span class="k">https://…/FeatureServer/1</span>) and it takes effect on your next classification.
       Overrides are stored only in this browser (nothing is uploaded) and use the same key names as the
       Excel tool's Sources sheet and the AGOL notebook. <a href="sources.html#services" target="_blank" rel="noopener">More on sources</a>.</div>
+    <div class="svcwarn" data-svcwarn hidden></div>
     <table id="svcTable"><tbody></tbody></table>
     <div class="note"><label title="By default every point is classified from the tilesets hosted with this site (FHWA HPMS classes + 2020 urban boundaries) — instant, and no per-point queries to the state services. Tick this to query the live state DOT + NTAD layers per point instead (the pre-tiles behavior; slower, but reflects any reclassification newer than the tilesets)."><input type="checkbox" id="liveVerdicts"> Live verdicts — query the state DOT layers per point instead of the cached tiles</label></div>
     <div class="act"><button id="svcReset" type="button">Reset all to defaults</button></div>
@@ -1462,12 +1481,36 @@ function parseRoadLine(line) {
   return { street, place: tail.place, state: tail.state, text: s };
 }
 
+// "Racine" / "N Racine" / "Racine, Chicago IL": a street name typed WITHOUT
+// its type. Words alone can't tell a road from a note ("Kalamazoo culvert"),
+// so the line stays kind "unknown" and only carries this as a CANDIDATE — the
+// page looks it up as a road when there is somewhere to look (a default area,
+// or a place after the comma) and says so when there isn't.
+function parseLooseRoadLine(line) {
+  const s = String(line).trim();
+  if (!s || /^\d/.test(s)) return null;
+  const parts = s.split(",").map(x => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  let toks = parts[0].toUpperCase().replace(/[.]/g, "").split(/\s+/).filter(Boolean);
+  if (!toks.length || toks.length > 4 || !toks.every(t => /^[A-Z0-9][A-Z0-9'-]*$/.test(t))) return null;
+  let preDir = "", sufDir = "";
+  if (toks.length > 1 && ADDR_DIR[toks[0]]) { preDir = ADDR_DIR[toks[0]]; toks = toks.slice(1); }
+  if (toks.length > 1 && ADDR_DIR[toks[toks.length - 1]]) { sufDir = ADDR_DIR[toks[toks.length - 1]]; toks = toks.slice(0, -1); }
+  if (!toks.some(t => /[A-Z]{2}/.test(t))) return null;
+  const street = { base: toks.join(" "), preDir, sufType: "", sufDir, route: false, display: parts[0] };
+  if (parts.length < 2) return { street, place: "", state: "", text: s, bare: true, loose: true };
+  const tail = splitStateZip(parts.slice(1).join(", "));
+  if (!tail.place && !tail.state) return null;
+  return { street, place: tail.place, state: tail.state, text: s, loose: true };
+}
+
 function classifyInputLine(line) {
   const addr = parseAddressLine(line);
   if (addr) return { kind: "address", addr };
   const road = parseRoadLine(line);
   if (road) return { kind: "road", road };
-  return { kind: "unknown" };
+  const loose = parseLooseRoadLine(line);
+  return loose ? { kind: "unknown", road: loose } : { kind: "unknown" };
 }
 
 /* ---- polyline geometry for snapping (WGS84 paths as [[lon,lat],...]) ---- */
@@ -1677,7 +1720,7 @@ function parseCoordinates(text) {
     const store = globalThis.RR_SERVICE_OVERRIDES || {};
     tbody.innerHTML = "<tr><th>Layer</th><th>Service URL (blank = built-in default)</th></tr>" +
       SVC_KEYS.map(([k, label]) =>
-        `<tr><td><div>${label}</div><div class="k">${k}</div></td>` +
+        `<tr data-svc="${k}"><td><div>${label}</div><div class="k">${k}</div></td>` +
         `<td><input data-key="${k}" value="${store[k] ? String(store[k]).replace(/"/g, "&quot;") : ""}" ` +
         `placeholder="${defaultFor(k)}"></td></tr>`).join("");
     tbody.querySelectorAll("input[data-key]").forEach(inp => {
@@ -1688,13 +1731,78 @@ function parseCoordinates(text) {
         if (v) o[inp.dataset.key] = v; else delete o[inp.dataset.key];
         save(o);
         inp.classList.toggle("overridden", !!v);
+        probe(inp.dataset.key).then(paint);
       });
     });
+    paint();
     const reset = document.getElementById("svcReset");
     if (reset) reset.addEventListener("click", () => { save({}); render(); });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
-  else render();
+  /* ---- health: which services are not answering ----
+     Each service is asked for its layer description (?f=json). A network
+     error, an HTTP error, or an ArcGIS error body ("Service ... not started",
+     "Token Required") marks its row light red, and every [data-svcwarn]
+     element lists what is out. index.html also feeds in hosts its own live
+     traffic found down (rrServiceHealth.setDownHosts). Rechecked every 2 min
+     while a warning element is on the page. */
+  const downKeys = new Map();     // key -> reason (from the probes here)
+  let downHosts = [];             // [{host, name, reason}] from the page's live requests
+  function urlFor(k) { return (globalThis.RR_SERVICE_OVERRIDES || {})[k] || defaultFor(k); }
+  function hostOf(u) { try { return new URL(u).host; } catch (e) { return ""; } }
+  function labelFor(k) { const e = SVC_KEYS.find(x => x[0] === k); return e ? e[1] : k; }
+  function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function reasonFor(k) {
+    if (downKeys.has(k)) return downKeys.get(k);
+    const h = downHosts.find(d => d.host === hostOf(urlFor(k)));
+    return h ? h.reason : "";
+  }
+  function paint() {
+    const out = [];
+    for (const [k] of SVC_KEYS) {
+      const why = reasonFor(k);
+      const tr = document.querySelector('#svcTable tr[data-svc="' + k + '"]');
+      if (tr) { tr.classList.toggle("svc-down", !!why); tr.title = why ? "Not answering: " + why : ""; }
+      if (why) out.push("<b>" + escHtml(labelFor(k)) + "</b> — " + escHtml(why));
+    }
+    document.querySelectorAll("[data-svcwarn]").forEach(el => {
+      el.hidden = !out.length;
+      el.innerHTML = out.length ? "⚠ Not answering right now (the Road Checker falls back to the FHWA HPMS tiles for these):<br>" + out.join("<br>") : "";
+    });
+  }
+  async function probe(k) {
+    const u = urlFor(k);
+    if (!u) return;
+    try {
+      const opts = (typeof AbortSignal !== "undefined" && AbortSignal.timeout) ? { signal: AbortSignal.timeout(20000) } : {};
+      const r = await fetch(u.replace(/[?#].*$/, "").replace(/\/+$/, "") + "?f=json", opts);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      let j;
+      try { j = await r.json(); } catch (e) { throw new Error("error page instead of data"); }
+      if (j && j.error) throw new Error((j.error.message || "service error").trim() + " (code " + j.error.code + ")");
+      downKeys.delete(k);
+    } catch (e) {
+      downKeys.set(k, e && e.name === "TimeoutError" ? "no answer in 20 s" : (e && e.message === "Failed to fetch" ? "unreachable" : (e && e.message) || "unreachable"));
+    }
+  }
+  let probing = null;
+  function probeAll() {
+    // each row is painted as its own answer lands — one slow server must not hold the rest back
+    if (!probing) probing = Promise.all(SVC_KEYS.map(([k]) => probe(k).then(paint))).then(() => { probing = null; });
+    return probing;
+  }
+  globalThis.rrServiceHealth = { setDownHosts(list) { downHosts = list || []; paint(); }, probeAll };
+
+  function start() {
+    render();
+    const panel = document.getElementById("services");
+    const isDetails = panel && panel.tagName === "DETAILS";
+    // sources.html: check at once and keep checking. index.html: check when
+    // the panel is opened (its live traffic already reports outages).
+    if (isDetails) panel.addEventListener("toggle", () => { if (panel.open) probeAll(); });
+    else if (document.querySelector("[data-svcwarn]")) { probeAll(); setInterval(probeAll, 120000); }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
 })();
 </script>
 
@@ -1820,6 +1928,10 @@ async function httpGetJson(url) {
 // when), and which came back with rows still on the HPMS fallback.
 function fallbackRowCount(host) { return (typeof currentPoints !== "undefined" ? currentPoints : []).filter(p => p.result && (p.result.fallbackHost === host || p.result.failedHost === host)).length; }
 function sourceHealthChanged() {
+  renderSourceStatus();
+  if (typeof scheduleBrowseRefresh === "function") scheduleBrowseRefresh();
+}
+function renderSourceStatus() {
   const el = $("sourceStatus");
   if (!el) return;
   const parts = [];
@@ -1829,8 +1941,10 @@ function sourceHealthChanged() {
     else if (h.upAt && fallbackRowCount(host)) parts.push(`<div class="up">✓ <b>${name}</b> is back up — <a href="#" data-rerun="${esc(host)}">re-run ${fallbackRowCount(host)} row(s)</a> that failed or used the HPMS fallback.</div>`);
   }
   el.innerHTML = parts.join("");
-  el.hidden = !parts.length;
-  if (typeof scheduleBrowseRefresh === "function") scheduleBrowseRefresh();
+  const anySites = (typeof currentPoints !== "undefined" ? currentPoints : []).some(p => !p.invalid);
+  el.hidden = !parts.length || !anySites;      // on this screen: only under "Verify with State DOT Layers"
+  if (globalThis.rrServiceHealth) rrServiceHealth.setDownHosts(
+    [...sourceHealth].filter(([, h]) => h.down).map(([host, h]) => ({ host, name: sourceNameForHost(host), reason: h.reason })));
 }
 async function rerunFallbackRows(host) {
   await Promise.all([...cache].map(async ([k, pr]) => { const r = await pr.catch(() => null); if (r && r.fallbackHost === host) cache.delete(k); }));
@@ -2251,7 +2365,7 @@ function render() {
       const srcChip = sourceChipHtml(res);
       const provChip = window.provenanceChipHtml ? provenanceChipHtml(p, res) : "";
       const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, provChip, extrasHtml(res)].filter(Boolean).join(" ");
-      tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${retry}` +
+      tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${sourceBadgeHtml(res)}${retry}` +
         `<span class="caret">▶</span></div>` +
         (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
       marker.setStyle({ fillColor: BUCKET_COLOR[bucket] });
@@ -2273,6 +2387,13 @@ function render() {
     }).catch(() => { /* classifyPoint never rejects; belt and braces */ });
   });
 
+  // "Verify with State DOT Layers" heads the list (with each state's official
+  // map); source-outage warnings only ever appear beneath it.
+  const vStates = [...new Set(currentPoints.filter(q => !q.invalid).map(q => q._state))].filter(st => PUBLIC_MAP[st]);
+  $("verifyBar").hidden = !total;
+  $("verifyLinks").innerHTML = vStates.map(st =>
+    `<a href="${PUBLIC_MAP[st]}" target="_blank" rel="noopener" title="${esc(typeof STATE_APP !== "undefined" && STATE_APP[st] ? STATE_APP[st].label : st)}">${esc((typeof DOT_NAME !== "undefined" && DOT_NAME[st]) || st)} map ↗</a>`).join(" ");
+  renderSourceStatus();
   $("statusCount").textContent = total ? `classifying 0 of ${total}…` : "";
   $("exportCount").textContent = total ? `${total} site(s)` : "";
   if (keepMapView) keepMapView = false;          // a pin drop / name edit: stay where the user is working
@@ -2309,16 +2430,18 @@ function onInput() {
     const pasted = parseCoordinates($("coordsIn").value);
     const ok = pasted.filter(p => !p.invalid).length;
     const na = pasted.filter(p => p.invalid && p.kind === "address").length;
-    const nr = pasted.filter(p => p.invalid && p.kind === "road").length;
+    const nr = pasted.filter(p => p.invalid && (window.effectiveKind ? effectiveKind(p) : p.kind) === "road").length;
     const bad = pasted.length - ok - na - nr;
     $("parseCount").textContent = pasted.length
       ? `${ok} point(s) parsed` + (na ? `, ${na} address${na === 1 ? "" : "es"}` : "") + (nr ? `, ${nr} road${nr === 1 ? "" : "s"}` : "")
         + (bad ? `, ${bad} line(s) unreadable` : "") : "";
     rebuildPoints();
     render();
-    // Roads resolve on their own (TIGERweb); addresses wait for the button.
+    // Roads resolve on their own (TIGERweb); finished address lines are
+    // geocoded after a further pause (the line being typed is left alone).
     if (window.updateAddressUi) updateAddressUi();
     if (window.resolveRoadLines) resolveRoadLines();
+    if (window.scheduleGeocode) scheduleGeocode(1000);
   }, 500);
 }
 $("coordsIn").addEventListener("input", onInput);
@@ -2894,6 +3017,13 @@ function sourceLinkHtml(src, text, cls) {
   if (!src) return "";
   const t = `Data source: ${src.label}. Click to open ${src.site}.`;
   return `<a class="${cls}" href="${src.url}" target="_blank" rel="noopener" title="${esc(t)}">${text}</a>`;
+}
+// The very small badge on a row's top line: which data decided this verdict.
+function sourceBadgeHtml(res) {
+  const src = verdictSource(res);
+  if (!src) return "";
+  const text = src.key === "hpms" ? "HPMS" : src.key === "state" ? "State DOT" : "NTAD";
+  return sourceLinkHtml(src, text, "srcbadge" + (src.key === "state" ? " dot" : "") + (res.fallbackFrom ? " fb" : ""));
 }
 function sourceChipHtml(res) {
   const src = verdictSource(res);
@@ -4622,8 +4752,10 @@ function findGetJson(url) {
   return findFetchCache.get(url);
 }
 
-async function tigerNameQuery(url, where, outFields) {
+async function tigerNameQuery(url, where, outFields, ext) {
   const u = url + "/query?where=" + encodeURIComponent(where) +
+    (ext ? "&geometry=" + [ext.xmin, ext.ymin, ext.xmax, ext.ymax].map(v => (+v).toFixed(5)).join(",") +
+           "&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects" : "") +
     "&outFields=" + encodeURIComponent(outFields) + "&returnGeometry=false&f=json";
   const json = await findGetJson(u);
   if (json.error) throw new Error(json.error.message || "service error");
@@ -4670,9 +4802,9 @@ function renderAreaBar() {
   const el = $("areaBar");
   if (!defaultArea) { el.hidden = true; el.innerHTML = ""; return; }
   el.hidden = false;
-  el.innerHTML = `<span class="chip areachip" title="Addresses without a city and road names without a place are looked up inside this ${esc(defaultArea.kind)}; the road-name search runs inside it too. Click ✕ to clear it (a state click also clears it).">` +
+  el.innerHTML = `<span class="chip areachip" title="Addresses without a city and road names without a place are looked up inside this ${esc(defaultArea.kind)}; the search box only lists cities, townships and roads inside it. Click ✕ to clear it (a state click also clears it).">` +
     `Area: <b>${esc(areaLabelOf(defaultArea))}</b> <button type="button" id="areaClear" title="Clear the area">✕</button></span>` +
-    `<span class="hint">scopes place-less addresses and bare road names</span>`;
+    `<span class="hint">searches, road names and addresses without a city stay inside it · ✕ to search everywhere</span>`;
 }
 function setDefaultArea(area) {
   defaultArea = area; window.defaultArea = area;
@@ -4708,12 +4840,15 @@ function pointInArea(lat, lon) {
 }
 // A search click: a county / city / township draws its outline, zooms there
 // AND becomes the default area; a state just zooms (and clears the area).
+// A pick closes the search: the box empties and the list goes away, leaving
+// the Area chip (under the box) to say what the next search is limited to.
+function closeFind() { clearTimeout(findTypeTimer); ++findSeq; $("findText").value = ""; $("findResults").innerHTML = ""; }
 async function selectFindArea(area, showState) {
+  closeFind();
   if (!area) { await showState(); clearDefaultArea(); return; }
   const label = areaLabelOf(area);
   const poly = await findShowPolygon(area.url, area.where, area.offset, label);
   setDefaultArea({ ...area, label, extent: poly.extent, rings: poly.rings });
-  if ($("findText").value.trim().length >= 2) runFind();   // the list now searches roads inside the area
 }
 renderAreaBar();
 
@@ -4811,12 +4946,27 @@ async function runFind() {
     // Roads: inside the default area when one is set, else the visible map (zoomed in).
     const bbox = area ? { minLon: area.extent.xmin, minLat: area.extent.ymin, maxLon: area.extent.xmax, maxLat: area.extent.ymax }
                       : { minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth() };
-    const [counties, cities, cousubs, roadGroups] = await Promise.all([
-      tigerNameQuery(TIGER_FIND.counties, stClause + like, "NAME,GEOID,STATE").catch(() => null),
-      tigerNameQuery(TIGER_FIND.places, stClause + like, "NAME,GEOID,STATE").catch(() => null),
-      tigerNameQuery(TIGER_FIND.cousubs, stClause + like, "NAME,GEOID,STATE").catch(() => null),
+    // With an area set, EVERYTHING is limited to it: no states or counties,
+    // only the cities / townships that touch it and the roads inside it.
+    // (Clear the Area chip to search the whole region again.)
+    const ext = area ? area.extent : null;
+    let [counties, cities, cousubs, roadGroups] = await Promise.all([
+      area ? Promise.resolve([]) : tigerNameQuery(TIGER_FIND.counties, stClause + like, "NAME,GEOID,STATE").catch(() => null),
+      tigerNameQuery(TIGER_FIND.places, stClause + like, "NAME,GEOID,STATE", ext).catch(() => null),
+      tigerNameQuery(TIGER_FIND.cousubs, stClause + like, "NAME,GEOID,STATE", ext).catch(() => null),
       (area || z >= FIND_ROAD_MIN_ZOOM) ? findRoads(term, bbox).catch(() => null) : Promise.resolve("zoomed-out"),
     ]);
+    if (area) {
+      await ensureAreaRings();
+      const notSelf = f => f.attributes.GEOID !== area.geoid;
+      if (cities) cities = cities.filter(notSelf);
+      // a township's GEOID starts with its county's
+      if (cousubs) cousubs = cousubs.filter(f => notSelf(f) && (area.kind !== "county" || String(f.attributes.GEOID).startsWith(area.geoid)));
+      if (Array.isArray(roadGroups) && area.rings && area.rings.length) {
+        roadGroups = roadGroups.map(g => ({ ...g, paths: g.paths.filter(p => { const m = p[Math.floor(p.length / 2)]; return pointInArea(m[1], m[0]); }) }))
+          .filter(g => g.paths.length).sort((a, b) => b.paths.length - a.paths.length);
+      }
+    }
     if (seq !== findSeq) return;
 
     const T = term.toUpperCase();
@@ -4843,7 +4993,7 @@ async function runFind() {
       if (total > items.length) addNote(`${total - items.length} more — keep typing to narrow`);
     };
     const st = a => FIPS_ABBR[a.STATE] || a.STATE;
-    const states = Object.entries(R5_STATE_NAMES).filter(([, name]) => name.toUpperCase().includes(T));
+    const states = area ? [] : Object.entries(R5_STATE_NAMES).filter(([, name]) => name.toUpperCase().includes(T));
     group("State", states.map(([fips, name]) => ({ label: name, sub: "state",
       fn: () => selectFindArea(null, () => findShowPolygon(TIGER_FIND.states, `STATE='${fips}'`, 0.01, name)) })), states.length);
     const placeItems = (feats, kind, url, offset, word) => rank(feats).slice(0, FIND_MAX_PER_KIND).map(f => {
@@ -4863,7 +5013,7 @@ async function runFind() {
     } else if (roadGroups) {
       group("Road", roadGroups.slice(0, FIND_MAX_PER_KIND).map(g => {
         const segsTxt = `${g.paths.length} segment(s) ${area ? "in " + area.label : "in view"}`;
-        return { label: g.name, sub: `road · ${segsTxt}`, fn: async () => findShowRoad(g),
+        return { label: g.name, sub: `road · ${segsTxt}`, fn: async () => { closeFind(); findShowRoad(g); },
           // Annotate with the state's FHWA functional class, async so the
           // suggestion list never waits on the class layers.
           after: el => roadGroupClassCode(g).then(code => {
@@ -4874,7 +5024,8 @@ async function runFind() {
           }) };
       }), roadGroups.length);
     }
-    if (!hits && roadGroups !== "zoomed-out") addNote("No matching state, county, city, township or road found.");
+    if (!hits && roadGroups !== "zoomed-out") addNote(area ? `Nothing in ${area.label} matches — clear the Area chip to search all six states.`
+      : "No matching state, county, city, township or road found.");
     if (counties === null || cities === null || cousubs === null || roadGroups === null) addNote("Some searches failed (service unreachable) — edit the search to retry.");
     out.innerHTML = "";
     out.appendChild(frag);
@@ -5108,13 +5259,14 @@ $("firmZipBtn").addEventListener("click", async () => {
    classifyInputLine): coordinates classify as always; a ROAD line
    ("Portage Rd, Portage MI") is looked up automatically through Census
    TIGERweb — a CORS-clean service the Find box already talks to — and the
-   whole road is classified; a full ADDRESS is geocoded ONLY when the user
-   clicks the one "Geocode N addresses" button, because the Census geocoder
-   sends no CORS header and has to be reached by JSONP, which means a remote
-   script executing — so it runs inside a throwaway sandboxed iframe (opaque
-   origin, allow-scripts only, fixed https host, per-request id, the reply
-   shape-checked before a byte of it is used, frame destroyed on any
-   outcome). Nothing is sent on keystroke, paste, blur or parse.
+   whole road is classified; a full ADDRESS is geocoded automatically once
+   its line is finished (paste, leaving the box, or a typing pause — never
+   the line still under the caret; the Geocode button was removed
+   2026-09-21 per user). The Census geocoder sends no CORS header and has to
+   be reached by JSONP, which means a remote script executing — so it runs
+   inside a throwaway sandboxed iframe (opaque origin, allow-scripts only,
+   fixed https host, per-request id, the reply shape-checked before a byte
+   of it is used, frame destroyed on any outcome).
 
    Why the road name is the anchor and the point only a hint: the geocoder
    returns a TIGER address-range INTERPOLATION — a point on the centerline
@@ -5137,6 +5289,15 @@ const roadStore = new Map();       // line key -> { status: "pending"|"ok"|"nopl
 const lineKey = s => String(s).replace(/\s+/g, " ").trim().toUpperCase();
 const ABBR_FIPS = Object.fromEntries(Object.entries(FIPS_ABBR).map(([f, a]) => [a, f]));
 const roadLayer = L.layerGroup().addTo(map);
+// A street name typed without its type ("Racine") is only a CANDIDATE road
+// (rr-core keeps the line "unknown"): it is looked up when there is somewhere
+// to look — a place on the line, or the default area.
+function effectiveKind(p) {
+  if (p.kind !== "unknown" || !p.road) return p.kind;
+  const r = roadStore.get(lineKey(p.raw));
+  return (!p.road.bare || window.defaultArea || (r && r.status === "ok")) ? "road" : "unknown";
+}
+window.effectiveKind = effectiveKind;
 Object.assign(REASON_EXPLAIN, {
   "Class change nearby": "The address geocodes to an interpolated spot on its street, and the functional class changes within 150 ft of it along that street. Which side of the change the site is on decides the verdict — check it on the map.",
   "Street not matched": "The geocoder returned a location, but no Census road within 120 ft of it carries the street name in the address, so the point could not be snapped to the named street. Its classification is for whatever road is nearest — confirm on the map.",
@@ -5247,7 +5408,10 @@ async function tigerRoadByName(street, ext) {
     "&outFields=" + encodeURIComponent(TIGER_ROAD_FIELDS) + "&returnGeometry=true&outSR=4326&f=json");
   const settled = await Promise.allSettled(TIGER_FIND.roads.map(q));
   if (settled.every(s => s.status === "rejected")) throw settled[0].reason;
-  const paths = [], names = new Set();
+  // Every edge keeps its FULL name: "Racine" with no type or direction can
+  // come back as N Racine Ave, S Racine Ave and Racine St, and those are
+  // different roads the user has to choose between.
+  const paths = [], names = new Set(), byName = new Map();
   for (const s of settled) {
     if (s.status !== "fulfilled" || !s.value || s.value.error) continue;
     for (const f of (s.value.features || [])) {
@@ -5255,11 +5419,17 @@ async function tigerRoadByName(street, ext) {
       // parts actually agree with what was typed.
       if (street.route && streetMatchScore(street, streetFromTiger(f.attributes || {})) < 1 &&
           !String((f.attributes || {}).NAME || "").toUpperCase().includes(street.base.split(" ").pop())) continue;
+      const nm = (f.attributes && f.attributes.NAME) || street.display;
       if (f.attributes && f.attributes.NAME) names.add(f.attributes.NAME);
-      for (const p of ((f.geometry && f.geometry.paths) || [])) if (p.length > 1) paths.push(p);
+      for (const p of ((f.geometry && f.geometry.paths) || [])) {
+        if (p.length < 2) continue;
+        paths.push(p);
+        if (!byName.has(nm)) byName.set(nm, []);
+        byName.get(nm).push(p);
+      }
     }
   }
-  return { paths, names: [...names] };
+  return { paths, names: [...names], byName };
 }
 
 /* ---- resolution ---- */
@@ -5300,10 +5470,19 @@ async function resolveAddressLine(raw) {
   // Several matches that all sit within ~60 m are one place (an address
   // range straddling two TIGER edges); several far apart are a real
   // ambiguity — offered as a picker on the row.
+  // The geocoder will answer "1200 N Racine Ave" with 1200 S RACINE AVE when
+  // it has no city to go on. Matches that agree with the typed direction win;
+  // when none does, the match is offered as a choice, never taken silently.
+  let wrongDir = false;
+  if (addr && addr.street && addr.street.preDir) {
+    const dirOf = m => (ADDR_DIR[String((m.components || {}).preDirection || "").toUpperCase()] || "");
+    const same = matches.filter(m => dirOf(m) === addr.street.preDir);
+    if (same.length) matches = same; else wrongDir = matches.some(m => dirOf(m));
+  }
   const m0 = matches[0];
-  const spread = matches.some(m => minDistanceFt({ x: m.lon, y: m.lat }, m0.lat, m0.lon) > 200);
+  const spread = wrongDir || matches.some(m => minDistanceFt({ x: m.lon, y: m.lat }, m0.lat, m0.lon) > 200);
   if (spread) {
-    geocodeStore.set(key, { status: "ambiguous", count: matches.length, matches, area: scoped ? area.label : "",
+    geocodeStore.set(key, { status: "ambiguous", count: matches.length, matches, area: scoped ? area.label : "", wrongDir,
       noneInArea: !!(inArea && !inArea.length) });
     return;
   }
@@ -5318,7 +5497,7 @@ async function finishAddressMatch(key, m0, picked) {
 // Group a road's TIGER edges into SEPARATE stretches (edges chained within
 // ROAD_GAP_M of each other). "Main St" in a county is usually several
 // unrelated roads with one name — each becomes a picker option.
-const ROAD_GAP_M = 600;
+const ROAD_GAP_M = 600, ROAD_SLIVER_M = 250;
 function clusterPaths(paths) {
   const n = paths.length, parent = Array.from({ length: n }, (_, i) => i);
   const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
@@ -5353,20 +5532,26 @@ async function placeAt(lat, lon) {
   })());
   return placeAtCache.get(k);
 }
-async function labelStretches(clusters) {
+async function labelStretches(clusters, showRoadName) {
   const others = validPoints();
   let ref;
   if (others.length) ref = [others.reduce((a, p) => a + p.lat, 0) / others.length, others.reduce((a, p) => a + p.lon, 0) / others.length];
   else { const c = map.getCenter(); ref = [c.lat, c.lng]; }
   const f = localFrame(ref[0]);
   const dist = c => Math.hypot((c.lon - ref[1]) * f.mPerLon, (c.lat - ref[0]) * f.mPerLat);
-  clusters.sort((a, b) => dist(a) - dist(b));
-  const top = clusters.slice(0, 12);
-  const names = await Promise.all(top.map(c => placeAt(c.lat, c.lon)));
+  // Roads in name order; within a road the "all stretches" choice first,
+  // then its stretches nearest first. Numbers match the labels on the map.
+  clusters.sort((a, b) => a.roadName.localeCompare(b.roadName) || (b.all ? 1 : 0) - (a.all ? 1 : 0) || dist(a) - dist(b));
+  const top = clusters.slice(0, 14);
+  const names = await Promise.all(top.map(c => c.all ? "" : placeAt(c.lat, c.lon)));
+  let n = 0;
   top.forEach((c, i) => {
     const mi = (c.lengthM / 1609.34).toFixed(c.lengthM < 800 ? 2 : 1);
+    const road = showRoadName ? c.roadName + " · " : "";
+    if (c.all) { c.label = `${road}all ${c.all} stretches · ${mi} mi`; return; }
+    c.num = ++n;
     c.place = names[i];
-    c.label = (names[i] || `near ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`) + ` · ${mi} mi · ${c.paths.length} seg`;
+    c.label = `${c.num} · ${road}` + (names[i] || `near ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`) + ` · ${mi} mi`;
   });
   return top;
 }
@@ -5385,21 +5570,45 @@ async function resolveRoadLine(raw, road) {
       if (place.ambiguous) { roadStore.set(key, { status: "ambiguous", count: place.ambiguous }); return; }
     }
     const found = await tigerRoadByName(road.street, place.extent);
-    let paths = found.paths;
+    let inArea = () => true;
     if (road.bare) {   // the extent is a box; keep only edges whose midpoint is really inside the area
       await ensureAreaRings();
-      if (area.rings && area.rings.length) paths = paths.filter(p => { const m = p[Math.floor(p.length / 2)]; return pointInArea(m[1], m[0]); });
+      if (area.rings && area.rings.length) inArea = p => { const m = p[Math.floor(p.length / 2)]; return pointInArea(m[1], m[0]); };
     }
-    if (!paths.length) { roadStore.set(key, { status: "noroad", place: place.label, kind: place.kind }); return; }
-    const name = found.names[0] || road.street.display;
-    const clusters = clusterPaths(paths);
+    // TWO questions, ONE picker: which road of that name (N Racine Ave /
+    // S Racine Ave / Racine St — only asked when the typed name left it
+    // open), and which separate stretch of it. Typing more of the name
+    // ("N Racine") narrows the list on its own.
+    const clusters = [], names = [];
+    for (const [nm, ps] of found.byName) {
+      const kept = ps.filter(inArea);
+      if (!kept.length) continue;
+      names.push(nm);
+      let cs = clusterPaths(kept);
+      // slivers (a 100 ft stub where the name changes) are not worth a choice of their own
+      if (cs.some(c => c.lengthM >= ROAD_SLIVER_M)) cs = cs.filter(c => c.lengthM >= ROAD_SLIVER_M);
+      cs.forEach(c => { c.roadName = nm; });
+      if (cs.length > 1) {
+        let longest = cs[0]; for (const c of cs) if (c.lengthM > longest.lengthM) longest = c;
+        clusters.push({ paths: kept, lat: longest.lat, lon: longest.lon, roadName: nm, all: cs.length,
+          lengthM: cs.reduce((a, c) => a + c.lengthM, 0) });
+      }
+      clusters.push(...cs);
+    }
+    if (!clusters.length) { roadStore.set(key, { status: "noroad", place: place.label, kind: place.kind }); return; }
+    const shown = names.length === 1 ? names[0] : road.street.display;
     if (clusters.length > 1) {
-      const options = await labelStretches(clusters);
-      roadStore.set(key, { status: "ambiguous-road", options, total: clusters.length, name, names: found.names, place: place.label, kind: place.kind });
+      const options = await labelStretches(clusters, names.length > 1);
+      roadStore.set(key, { status: "ambiguous-road", options, total: clusters.filter(c => !c.all).length, roads: names.length,
+        name: shown, names, place: place.label, kind: place.kind });
+      if (!validPoints().length) {
+        const b = L.latLngBounds(options.flatMap(c => c.paths.flatMap(p => p.map(([x, y]) => [y, x]))));
+        if (b.isValid()) map.fitBounds(b, { padding: [30, 30] });   // nothing else on the map: show the choices
+      }
       return;
     }
     const c = clusters[0];
-    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name, names: found.names, place: place.label, kind: place.kind });
+    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name: c.roadName, names, place: place.label, kind: place.kind });
   } catch (e) {
     roadStore.set(key, { status: "failed", error: e.message });
   }
@@ -5409,7 +5618,7 @@ async function applyPick(kind, key, i) {
   if (kind === "road") {
     const r = roadStore.get(key), c = r && r.options && r.options[i];
     if (!c) return;
-    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name: r.name, names: r.names,
+    roadStore.set(key, { status: "ok", lat: c.lat, lon: c.lon, paths: c.paths, name: c.roadName || r.name, names: r.names,
       place: r.place + (c.place ? " · " + c.place : ""), kind: r.kind, picked: c.label });
   } else {
     const g = geocodeStore.get(key), m = g && g.matches && g.matches[i];
@@ -5423,19 +5632,20 @@ async function applyPick(kind, key, i) {
 window.applyPick = applyPick;
 // The area changed: bare road names and area-scoped addresses that could not
 // resolve (or resolved ambiguously) get another go — roads at once (TIGER),
-// addresses via the Geocode button (nothing is sent without a click).
+// addresses through the automatic geocode pass.
 function onDefaultAreaChanged() {
   const pasted = parseCoordinates(coordsBox.value);
   let touched = false;
   for (const p of pasted) {
     if (!p.invalid) continue;
     const k = lineKey(p.raw);
-    if (p.kind === "road" && p.road.bare) { const r = roadStore.get(k); if (r && r.status !== "ok") { roadStore.delete(k); touched = true; } }
+    if (effectiveKind(p) === "road" && p.road.bare) { const r = roadStore.get(k); if (r && r.status !== "ok") { roadStore.delete(k); touched = true; } }
     if (p.kind === "address" && !p.addr.state && !p.addr.zip) { const g = geocodeStore.get(k); if (g && g.status !== "ok") { geocodeStore.delete(k); touched = true; } }
   }
   if (touched) { rebuildPoints(); render(); }
   updateAddressUi();
   resolveRoadLines();
+  scheduleGeocode(0, true);
 }
 window.onDefaultAreaChanged = onDefaultAreaChanged;
 
@@ -5450,8 +5660,18 @@ function materializeResolved(pasted) {
       return { line: p.line, name: (g.match.matchedAddress || p.addr.text).replace(/,\s*(\d{5})$/, " $1"),
                lat: g.lat, lon: g.lon, src: p.raw, kind: "address", geo: g };
     }
-    if (p.kind === "road") {
+    if (effectiveKind(p) === "road") {
       const r = roadStore.get(lineKey(p.raw));
+      if (r && r.status === "ambiguous-road") {
+        // The choices, numbered like the picker buttons on the row.
+        for (const c of r.options) {
+          if (c.all) continue;
+          for (const path of c.paths)
+            L.polyline(path.map(([x, y]) => [y, x]), { color: "#7c3aed", weight: 5, opacity: 0.55, dashArray: "8 6", interactive: false }).addTo(roadLayer);
+          L.marker([c.lat, c.lon], { interactive: false, keyboard: false,
+            icon: L.divIcon({ className: "optnum", html: String(c.num), iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(roadLayer);
+        }
+      }
       if (!r || r.status !== "ok") return { ...p, roadState: r || null };
       for (const path of r.paths)
         L.polyline(path.map(([x, y]) => [y, x]), { color: "#7c3aed", weight: 5, opacity: 0.35, interactive: false }).addTo(roadLayer);
@@ -5518,31 +5738,34 @@ function invalidRowHtml(p) {
   if (p.kind === "address") {
     const g = p.geoState;
     let msg, cls = "v-address";
-    if (!g) msg = `Address — not sent anywhere yet. Click <b>Geocode</b> above the box to look it up.`;
+    const again = ` <a href="#" class="regeo" data-key="${esc(lineKey(p.raw))}">try again</a>`;
+    if (!g) msg = `Address — looked up automatically when you finish the line (click outside the box, or pause).`;
     else if (g.status === "pending") msg = `geocoding…`;
-    else if (g.status === "nomatch") { cls = "v-failed"; msg = `No match from the Census geocoder${g.area ? " in " + esc(g.area) : ""} — check the spelling, or add the city and ZIP, then Geocode again.`; }
+    else if (g.status === "nomatch") { cls = "v-failed"; msg = `No match from the Census geocoder${g.area ? " in " + esc(g.area) : ""} — check the spelling, or add the city and ZIP.`; }
     else if (g.status === "ambiguous") {
       cls = "v-review";
-      msg = `${g.count} possible matches${g.area ? (g.noneInArea ? " — none inside " + esc(g.area) : " inside " + esc(g.area)) : ""} — pick one, or add the city / ZIP and Geocode again:`;
+      if (g.wrongDir) msg = `The geocoder only found this address with a DIFFERENT direction (N / S / E / W) than you typed — pick it if it is right, or add the city / ZIP to the line:`;
+      else msg = `${g.count} possible matches${g.area ? (g.noneInArea ? " — none inside " + esc(g.area) : " inside " + esc(g.area)) : ""} — pick one, or add the city / ZIP to the line:`;
       const key = lineKey(p.raw);
       const picker = `<div class="picker">` + g.matches.map((m, i) =>
         `<button type="button" class="pick${g.noneInArea ? " out" : ""}" data-kind="address" data-key="${esc(key)}" data-i="${i}" title="${esc(m.lat + ", " + m.lon)}">${esc(m.matchedAddress || (m.lat + ", " + m.lon))}</button>`).join("") + `</div>`;
       return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div>${picker}<div class="row-links">${code}</div>`];
     }
-    else { cls = "v-failed"; msg = `Geocoder ${esc(g.error || "failed")} — Geocode again to retry.`; }
+    else { cls = "v-failed"; msg = `Geocoder ${esc(g.error || "failed")} —${again}.`; }
     return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div><div class="row-links">${code}</div>`];
   }
-  if (p.kind === "road") {
+  if (effectiveKind(p) === "road") {
     const r = p.roadState;
     let msg, cls = "v-pending";
     if (!r || r.status === "pending") msg = `looking the road up in Census TIGER…`;
     else if (r.status === "noarea") { cls = "v-failed"; msg = `Road name without a place — pick a county, city or township in the search box above, or add one to the line (e.g. “, Kalamazoo County MI”).`; }
     else if (r.status === "ambiguous-road") {
       cls = "v-review";
-      msg = `“${esc(r.name)}” — ${r.total} separate stretches in ${esc(r.place)}${r.total > r.options.length ? ` (nearest ${r.options.length} shown)` : ""} — pick one:`;
+      msg = `“${esc(r.name)}” — ` + (r.roads > 1 ? `${r.roads} roads, ` : "") + `${r.total} separate stretch${r.total === 1 ? "" : "es"} in ${esc(r.place)} — pick one (numbers are on the map)` +
+        (r.roads > 1 ? `, or type more of the name (N / S, Ave / St) to narrow it:` : `:`);
       const key = lineKey(p.raw);
       const picker = `<div class="picker">` + r.options.map((c, i) =>
-        `<button type="button" class="pick" data-kind="road" data-key="${esc(key)}" data-i="${i}" title="${esc(c.lat + ", " + c.lon)}">${esc(c.label)}</button>`).join("") + `</div>`;
+        `<button type="button" class="pick" data-kind="road" data-key="${esc(key)}" data-i="${i}" title="${esc(c.all ? "Classify every stretch of " + c.roadName + " together" : c.roadName + " near " + c.lat + ", " + c.lon)}">${esc(c.label)}</button>`).join("") + `</div>`;
       return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div>${picker}<div class="row-links">${code}</div>`];
     }
     else if (r.status === "noplace") { cls = "v-failed"; msg = `Place “${esc(p.road.place)}” not found — use a county, township, city or village name${p.road.state ? "" : ", and add the state"}.`; }
@@ -5551,6 +5774,8 @@ function invalidRowHtml(p) {
     else { cls = "v-failed"; msg = `Road lookup failed (${esc(r.error || "service unreachable")}) — edit the line to retry.`; }
     return [cls, `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">${msg}</span></div><div class="row-links">${code}</div>`];
   }
+  if (p.road)   // a street name with no type, and nowhere to look for it yet
+    return ["v-failed", `<div class="row-main"><span class="site-name">line ${p.line}</span><span class="rstatus">If ${code} is a road name, pick a county, city or township in the search box above (or add one to the line) and it is looked up there.</span></div>`];
   return ["v-failed", `<div class="row-main"><span class="site-name">line ${p.line}</span><span>Could not read a lat/lon, address or road from: ${code}</span></div>`];
 }
 window.invalidRowHtml = invalidRowHtml;
@@ -5580,7 +5805,7 @@ function lineStatusClass(p) {
     const g = geocodeStore.get(lineKey(p.raw));
     return "addr" + (!g ? "" : g.status === "ok" ? " geo-ok" : g.status === "pending" ? " geo-pending" : " geo-bad");
   }
-  if (p.kind === "road") {
+  if (effectiveKind(p) === "road") {
     const r = roadStore.get(lineKey(p.raw));
     return "road" + (!r || r.status === "pending" ? "" : r.status === "ok" ? " geo-ok" : " geo-bad");
   }
@@ -5597,47 +5822,71 @@ function updateAddressUi() {
     return `<div>${c ? `<mark class="${c}">${esc(ln)}</mark>` : esc(ln)}</div>`;
   }).join("");
   mirror.scrollTop = coordsBox.scrollTop;
-  const unresolved = new Set();
-  for (const p of pasted) if (p.invalid && p.kind === "address") { const g = geocodeStore.get(lineKey(p.raw)); if (!g || g.status !== "ok") unresolved.add(lineKey(p.raw)); }
-  const n = unresolved.size, bar = $("geoBar"), btn = $("geocodeBtn");
-  bar.hidden = n === 0;
-  if (n && !geocodeRunning) btn.textContent = `Geocode ${n} address${n === 1 ? "" : "es"}`;
-  return n;
+  // Addresses not looked up yet (no answer of any kind stored for the line).
+  const waiting = new Set();
+  for (const p of pasted) if (p.invalid && p.kind === "address" && !geocodeStore.has(lineKey(p.raw))) waiting.add(lineKey(p.raw));
+  if (!geocodeRunning) $("geoBar").hidden = true;
+  return waiting.size;
 }
 window.updateAddressUi = updateAddressUi;
 coordsBox.addEventListener("scroll", () => { mirror.scrollTop = coordsBox.scrollTop; mirror.scrollLeft = coordsBox.scrollLeft; });
 
-let geocodeRunning = false;
-async function geocodeUnresolved() {
-  if (geocodeRunning) return;
+/* Addresses are geocoded AUTOMATICALLY (2026-09-21, per user — the button is
+   gone): on paste, when the box loses focus, and after a typing pause. While
+   the box has focus the line under the caret is left alone, so a half-typed
+   address is never sent. Each line is sent once; a line that failed is
+   retried from the link on its row, by editing it, or by changing the area. */
+let geocodeRunning = false, geocodeTimer = null;
+function caretLineNo() {
+  if (document.activeElement !== coordsBox) return 0;
+  return coordsBox.value.slice(0, coordsBox.selectionStart).split(/\r?\n/).length;
+}
+async function geocodeUnresolved(skipLine) {
+  if (geocodeRunning) { scheduleGeocode(600); return; }
   const pasted = parseCoordinates(coordsBox.value);
   const queue = [], seen = new Set();
   for (const p of pasted) {
-    if (!p.invalid || p.kind !== "address") continue;
-    const k = lineKey(p.raw), g = geocodeStore.get(k);
-    if ((g && g.status === "ok") || seen.has(k)) continue;
+    if (!p.invalid || p.kind !== "address" || p.line === skipLine) continue;
+    const k = lineKey(p.raw);
+    if (geocodeStore.has(k) || seen.has(k)) continue;
     seen.add(k); queue.push(p.raw);
   }
   if (!queue.length) return;
-  const btn = $("geocodeBtn"), total = queue.length;
-  geocodeRunning = true; btn.disabled = true;
+  const bar = $("geoBar"), total = queue.length;
+  geocodeRunning = true;
   let done = 0;
+  const say = () => { bar.hidden = false; bar.textContent = `Locating address ${Math.min(done + 1, total)} of ${total} (Census geocoder)…`; };
+  say();
+  for (const raw of queue) geocodeStore.set(lineKey(raw), { status: "pending" });
+  rebuildPoints(); render(); updateAddressUi(); say();
   const worker = async () => {
     while (queue.length) {
       const raw = queue.shift();
       await resolveAddressLine(raw);
-      done++;
-      btn.textContent = `Geocoding ${done} of ${total}…`;
-      updateAddressUi();
+      done++; say();
     }
   };
   try { await Promise.all(Array.from({ length: Math.min(GEOCODE_CONCURRENCY, total) }, worker)); }
-  finally { geocodeRunning = false; btn.disabled = false; }
+  finally { geocodeRunning = false; bar.hidden = true; }
   rebuildPoints(); render(); updateAddressUi();
   const okCount = [...seen].filter(k => (geocodeStore.get(k) || {}).status === "ok").length;
-  toast(`${okCount} of ${total} address${total === 1 ? "" : "es"} located` + (okCount < total ? " — the rest are marked in the list" : ""));
+  if (okCount < total) toast(`${okCount} of ${total} address${total === 1 ? "" : "es"} located — the rest are marked in the list`);
 }
-$("geocodeBtn").addEventListener("click", geocodeUnresolved);
+function scheduleGeocode(ms, all) {
+  clearTimeout(geocodeTimer);
+  geocodeTimer = setTimeout(() => geocodeUnresolved(all ? 0 : caretLineNo()), ms);
+}
+window.scheduleGeocode = scheduleGeocode;
+coordsBox.addEventListener("paste", () => scheduleGeocode(700, true));
+coordsBox.addEventListener("blur", () => scheduleGeocode(0, true));
+// "try again" on a row whose lookup failed.
+$("resultsBody").addEventListener("click", e => {
+  const a = e.target.closest("a.regeo");
+  if (!a) return;
+  e.preventDefault();
+  geocodeStore.delete(a.dataset.key);
+  scheduleGeocode(0, true);
+});
 
 // Road lines resolve on their own (TIGERweb, no geocoder involved); one
 // re-render once the batch lands.
@@ -5645,7 +5894,7 @@ let roadResolveTimer = null;
 function resolveRoadLines() {
   const pasted = parseCoordinates(coordsBox.value), jobs = [];
   for (const p of pasted) {
-    if (!p.invalid || p.kind !== "road") continue;
+    if (!p.invalid || effectiveKind(p) !== "road") continue;
     const k = lineKey(p.raw);
     if (roadStore.has(k)) continue;
     jobs.push(resolveRoadLine(p.raw, p.road));

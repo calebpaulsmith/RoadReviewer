@@ -253,8 +253,9 @@ into one of three kinds, and the box highlights the ones that need a decision:
 |---|---|---|
 | `42.28536, -85.57025` | coordinate | classifies as always |
 | `Portage Rd, Portage MI` · `CR 550 N, Hamilton County IN` | road | looked up **automatically** in Census TIGERweb and the **whole road** classified |
-| `5201 Portage Rd, Portage MI 49002` | address | highlighted; **waits for the one `Geocode N addresses` button** |
-| `Q Ave` (a road with no place) · anything else | unknown | shown as unreadable — a road with no place would mean a six-state search |
+| `5201 Portage Rd, Portage MI 49002` | address | highlighted; **geocoded automatically once the line is finished** (paste, leaving the box, or a typing pause — never the line under the caret) |
+| `Q Ave` · `Racine` · `N Racine` (a road with no place, with or without its type) | road, inside the Area | looked up inside the Area chip's county / city / township; one picker asks which road of that name (N / S, Ave / St) and which stretch. With no Area set the row asks for one — never a six-state search |
+| anything else | unknown | shown as unreadable |
 
 **Road lines.** The place resolves to a county, township, incorporated place
 or CDP (by `BASENAME`, scoped to the typed state or to the six states — more
@@ -277,9 +278,11 @@ localStorage or cookies), the https host fixed in the frame's own source, a
 per-request id that is also the callback name, `postMessage` accepted only
 from that frame's window with origin `"null"` and that id, the reply reduced
 to whitelisted, range-checked fields before any of it is used, and the frame
-removed on success, error or a 20 s timeout. **Nothing is sent on keystroke,
-paste, blur or parse.** The button is the network action; it geocodes every
-unresolved address (three at a time) and disappears when none are left.
+removed on success, error or a 20 s timeout. There is no Geocode button
+(removed 2026-09-21): finished address lines are sent once each, three at a
+time — on paste, when the box loses focus, or ~1.5 s after typing stops,
+skipping the line the caret is on so a half-typed address is never sent. A
+failed lookup has a "try again" link on its row.
 
 **Why the street name is the anchor and the geocoded point only a hint.** The
 geocoder returns a TIGER address-range *interpolation* — a point on the
@@ -579,9 +582,9 @@ that some segments were not drawn.
 - **No damage data.** Input is name + lat/lon — or, since 2026-09-15, a
   road name or street address. WO/DI, applicants, descriptions, categories
   stay in the Excel workbook.
-- **Addresses leave the page only on an explicit click.** A typed address
+- **Addresses go to one place: the Census Bureau.** A finished address line
   is sent to the Census Bureau's geocoder (a federal service, over https)
-  when — and only when — the `Geocode N addresses` button is pressed; road
+  automatically, once; it is listed in the Network log like every request; road
   names go to Census TIGERweb automatically, like the Find box. The
   geocoder's JSONP reply executes inside a sandboxed, throwaway iframe that
   cannot reach this page (see "Addresses and road names").

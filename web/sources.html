@@ -33,6 +33,9 @@
   #svcTable .k { font-size: 11.5px; color: var(--muted); }
   #svcTable input { width: 100%; box-sizing: border-box; font: 12px ui-monospace, Consolas, monospace; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: #fffdf0; }
   #svcTable input.overridden { background: #fff3cd; border-color: #d9b34d; }
+  #svcTable tr.svc-down td { background: #fde8e6; }
+  #svcTable tr.svc-down td:first-child div:first-child::after { content: " — not answering"; color: #b42318; font-weight: 600; }
+  .svcwarn { margin: 10px 0; padding: 8px 11px; border-radius: 6px; background: #fde8e6; border: 1px solid #f0b4ae; color: #7a1d14; font-size: 13px; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -42,6 +45,8 @@
   <div class="sub">Every layer the <a href="index.html">FHWA Road Checker</a> queries, by state — organization, service URL, exact layer names, fields read, and schema quirks. Unofficial tool; not affiliated with FHWA or FEMA.</div>
 </header>
 <main>
+
+<div class="svcwarn" data-svcwarn hidden role="status"></div>
 
 <p class="toc">Jump to:
   <a href="#verdict">How the verdict works</a>
@@ -176,11 +181,11 @@
 </section>
 
 <section id="geocoder">
-  <h2>Addresses — Census Bureau geocoder (explicit click only)</h2>
+  <h2>Addresses — Census Bureau geocoder</h2>
   <p>A typed street address is located with the U.S. Census Bureau's one-line geocoder
     (<code>https://geocoding.geo.census.gov/geocoder/locations/onelineaddress</code>, benchmark
     <code>Public_AR_Current</code>) — the same free, keyless service the RoadReviewer Excel tool uses.
-    It is called <b>only when the "Geocode N addresses" button is pressed</b>; never on typing or pasting.
+    It is called <b>automatically once an address line is finished</b> — on paste, when you click out of the coordinates box, or after a pause in typing (never for the line still being typed) — and once per line.
     The service sends no CORS header, so it is reached by JSONP from a throwaway sandboxed iframe that cannot
     touch this page. Its reply is a TIGER <em>address-range interpolation</em> (a point on the street centerline,
     nudged to one side), so the returned street components are matched to a Census road within 120 m, the point is
@@ -258,6 +263,7 @@
      and it takes effect on your next classification. Overrides live only in this browser (nothing is uploaded) and
      use the same key names as the Excel tool's Sources sheet (<code>Svc_&lt;KEY&gt;</code>) and the AGOL notebook
      (<code>SERVICE_OVERRIDES</code>), so one swap is easy to mirror across every product.</p>
+  <div class="svcwarn" data-svcwarn hidden></div>
   <table id="svcTable"><tbody></tbody></table>
   <p><button id="svcReset" type="button">Reset all to defaults</button></p>
 </section>
@@ -326,7 +332,7 @@
     const store = globalThis.RR_SERVICE_OVERRIDES || {};
     tbody.innerHTML = "<tr><th>Layer</th><th>Service URL (blank = built-in default)</th></tr>" +
       SVC_KEYS.map(([k, label]) =>
-        `<tr><td><div>${label}</div><div class="k">${k}</div></td>` +
+        `<tr data-svc="${k}"><td><div>${label}</div><div class="k">${k}</div></td>` +
         `<td><input data-key="${k}" value="${store[k] ? String(store[k]).replace(/"/g, "&quot;") : ""}" ` +
         `placeholder="${defaultFor(k)}"></td></tr>`).join("");
     tbody.querySelectorAll("input[data-key]").forEach(inp => {
@@ -337,13 +343,78 @@
         if (v) o[inp.dataset.key] = v; else delete o[inp.dataset.key];
         save(o);
         inp.classList.toggle("overridden", !!v);
+        probe(inp.dataset.key).then(paint);
       });
     });
+    paint();
     const reset = document.getElementById("svcReset");
     if (reset) reset.addEventListener("click", () => { save({}); render(); });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
-  else render();
+  /* ---- health: which services are not answering ----
+     Each service is asked for its layer description (?f=json). A network
+     error, an HTTP error, or an ArcGIS error body ("Service ... not started",
+     "Token Required") marks its row light red, and every [data-svcwarn]
+     element lists what is out. index.html also feeds in hosts its own live
+     traffic found down (rrServiceHealth.setDownHosts). Rechecked every 2 min
+     while a warning element is on the page. */
+  const downKeys = new Map();     // key -> reason (from the probes here)
+  let downHosts = [];             // [{host, name, reason}] from the page's live requests
+  function urlFor(k) { return (globalThis.RR_SERVICE_OVERRIDES || {})[k] || defaultFor(k); }
+  function hostOf(u) { try { return new URL(u).host; } catch (e) { return ""; } }
+  function labelFor(k) { const e = SVC_KEYS.find(x => x[0] === k); return e ? e[1] : k; }
+  function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function reasonFor(k) {
+    if (downKeys.has(k)) return downKeys.get(k);
+    const h = downHosts.find(d => d.host === hostOf(urlFor(k)));
+    return h ? h.reason : "";
+  }
+  function paint() {
+    const out = [];
+    for (const [k] of SVC_KEYS) {
+      const why = reasonFor(k);
+      const tr = document.querySelector('#svcTable tr[data-svc="' + k + '"]');
+      if (tr) { tr.classList.toggle("svc-down", !!why); tr.title = why ? "Not answering: " + why : ""; }
+      if (why) out.push("<b>" + escHtml(labelFor(k)) + "</b> — " + escHtml(why));
+    }
+    document.querySelectorAll("[data-svcwarn]").forEach(el => {
+      el.hidden = !out.length;
+      el.innerHTML = out.length ? "⚠ Not answering right now (the Road Checker falls back to the FHWA HPMS tiles for these):<br>" + out.join("<br>") : "";
+    });
+  }
+  async function probe(k) {
+    const u = urlFor(k);
+    if (!u) return;
+    try {
+      const opts = (typeof AbortSignal !== "undefined" && AbortSignal.timeout) ? { signal: AbortSignal.timeout(20000) } : {};
+      const r = await fetch(u.replace(/[?#].*$/, "").replace(/\/+$/, "") + "?f=json", opts);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      let j;
+      try { j = await r.json(); } catch (e) { throw new Error("error page instead of data"); }
+      if (j && j.error) throw new Error((j.error.message || "service error").trim() + " (code " + j.error.code + ")");
+      downKeys.delete(k);
+    } catch (e) {
+      downKeys.set(k, e && e.name === "TimeoutError" ? "no answer in 20 s" : (e && e.message === "Failed to fetch" ? "unreachable" : (e && e.message) || "unreachable"));
+    }
+  }
+  let probing = null;
+  function probeAll() {
+    // each row is painted as its own answer lands — one slow server must not hold the rest back
+    if (!probing) probing = Promise.all(SVC_KEYS.map(([k]) => probe(k).then(paint))).then(() => { probing = null; });
+    return probing;
+  }
+  globalThis.rrServiceHealth = { setDownHosts(list) { downHosts = list || []; paint(); }, probeAll };
+
+  function start() {
+    render();
+    const panel = document.getElementById("services");
+    const isDetails = panel && panel.tagName === "DETAILS";
+    // sources.html: check at once and keep checking. index.html: check when
+    // the panel is opened (its live traffic already reports outages).
+    if (isDetails) panel.addEventListener("toggle", () => { if (panel.open) probeAll(); });
+    else if (document.querySelector("[data-svcwarn]")) { probeAll(); setInterval(probeAll, 120000); }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
 })();
 </script>
 </body>

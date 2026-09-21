@@ -1248,6 +1248,52 @@ live services. Full design narrative + verification history:
   (`rerunFallbackRows` drops their cache entries and re-renders). The browse
   legend adds a "⚠ … is down" note. Verified by the outage leg in
   verify-review-ui (MDOT stubbed to an HTML 500, then a JSON probe).
+- **2026-09-21 pass (per user) — SUPERSEDES the button/layout details above.**
+  (1) **No Geocode button.** Finished address lines are geocoded
+  automatically, once each: on paste, on blur of the box, and ~1.5 s after
+  typing stops (`scheduleGeocode` / `geocodeUnresolved(skipLine)`), skipping
+  the line under the caret while the box has focus so a half-typed address is
+  never sent. A line with ANY stored answer is not re-sent; failures get a
+  "try again" link (`a.regeo`), and an area change re-runs area-scoped ones.
+  `#geoBar` is now only a "Locating address n of N…" status line. When the
+  typed direction (N/S/E/W) disagrees with every geocoder match (it answers
+  "1200 N Racine Ave" with 1200 S RACINE AVE when it has no city), the match
+  is offered as a picker (`wrongDir`), never taken silently.
+  (2) **Search box:** a pick (`closeFind`) empties the box and the list; the
+  Area chip sits directly UNDER the box; with an area set the list is limited
+  to it — no State/County groups, cities/townships by envelope (+ county
+  GEOID prefix for townships), roads filtered to the area polygon.
+  (3) **Street names without a type** (`Racine`, `N Racine`):
+  rr-core `parseLooseRoadLine` attaches a CANDIDATE road to an `unknown` line
+  (kind stays `unknown` so notes like "Kalamazoo culvert" aren't roads —
+  verify-web-core still expects `unknown`); the UI's `effectiveKind(p)` treats
+  it as a road when there is an area (or a place on the line).
+  `tigerRoadByName` returns `byName`; `resolveRoadLine` builds ONE picker
+  covering both questions — which road of that name (N/S, Ave/St) and which
+  stretch — with an "all N stretches" option per road, slivers under
+  `ROAD_SLIVER_M` (250 m) dropped, and the options numbered on the map
+  (`.optnum` markers on `roadLayer`). Typing more of the name narrows it.
+  (4) **Auto-Detect header:** disclaimer is just "Screening aid only — results
+  may be incorrect."; the colour key (`.legend.col`, one per line) and "How
+  the colors are decided" moved under it; each row's top line carries a tiny
+  `a.srcbadge` (HPMS / State DOT / NTAD; amber when it is the outage
+  fallback); "Verify with State DOT Layers" (`#verifyBar`, links to each
+  state's official map) heads the results and `#sourceStatus` outage warnings
+  render only beneath it, only while sites are listed.
+  (5) **Service health in the shared services block** (index + sources,
+  still byte-identical): each service's `?f=json` is probed (an ArcGIS error
+  body counts as down); down rows get `tr.svc-down` (light red) and every
+  `[data-svcwarn]` element lists them. sources.html probes at load + every
+  2 min (the always-on warning); index.html probes when the panel opens and
+  is also fed by live traffic (`rrServiceHealth.setDownHosts`).
+  (6) `.vchart[hidden]` etc. needed an explicit `display:none` — `display:
+  grid/flex` beat the `hidden` attribute (the empty white bar).
+  **MDOT outage 2026-09-21:** `mdotgis.state.mi.us` answers every
+  NextGenPrFinderPub request with `{"error":{"code":500,"message":"Service
+  Widget/NextGenPrFinderPub/MapServer not started"}}` (sometimes hangs
+  instead) and the Widget folder lists no services — MDOT stopped the
+  service; nothing on our side to fix, no authoritative substitute found.
+  verify-web-core's 3 MI checks fail until it returns.
 - **Default area + pickers (2026-09-17, per user; the §4.1/4.2 design of
   `docs/NEXT-road-name-lookup.md`, minus the tile-baked county fields).**
   Clicking a county / city / township in the search box calls
