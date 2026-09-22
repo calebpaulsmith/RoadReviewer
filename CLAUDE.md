@@ -235,9 +235,27 @@ are split across **three companion layers** on the same FeatureServer,
 all keyed by `PR` + `PRBmp`/`PREmp` (Michigan's LRS — Physical Reference
 + Begin/End Milepost).
 
+> **SERVICE MOVED 2026-09-21 — read this first.** MDOT **stopped**
+> `Widget/NextGenPrFinderPub` (every request answers HTTP 200 with
+> `{"error":{"code":500,"message":"Service Widget/NextGenPrFinderPub/MapServer
+> not started"}}`, sometimes hangs; the Widget folder lists no services). It
+> backed MDOT's PR Finder widget, not the NFC map. MDOT's own official NFC /
+> NHS / ACUB Experience reads **`DataAccess/NfcNhsPub/MapServer`** (found by
+> reading the Experience's web map `6a1702b9147243d1a5ee62cd614bc681`), which
+> carries the SAME layer ids (353 Functional System, 364, 333 Nhs, 311 Rural
+> Urban), same fields, same domain, and returned the same PRs for all three
+> test coordinates below. `MI_NFC` now defaults to
+> `https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353`
+> in all four products. **Layer 543 (route names) has no public replacement**:
+> `MI_ROUTE` defaults to BLANK = skipped (web, Excel, notebook); TIGER / HPMS
+> name the road. It was not a rate-limit: a different service on the same host
+> answered normally from the same IP at the same moment, and a block would be
+> a Cloudflare 403/429 host-wide, not an ArcGIS "not started" for one service.
+> The URLs below are kept as the historical record of the old service.
+
 ##### Layer 353 — `Functional System` (the class code lives here)
 
-- URL: `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
+- URL (RETIRED — see note above): `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
 - Type: `Feature Layer` (esriGeometryPolyline)
 - Spatial reference: WKID 3078 / latestWkid 102123 (Michigan GeoRef).
   Hand it WGS84 with `inSR=4326`.
@@ -1340,12 +1358,13 @@ live services. Full design narrative + verification history:
   is also fed by live traffic (`rrServiceHealth.setDownHosts`).
   (6) `.vchart[hidden]` etc. needed an explicit `display:none` — `display:
   grid/flex` beat the `hidden` attribute (the empty white bar).
-  **MDOT outage 2026-09-21:** `mdotgis.state.mi.us` answers every
-  NextGenPrFinderPub request with `{"error":{"code":500,"message":"Service
-  Widget/NextGenPrFinderPub/MapServer not started"}}` (sometimes hangs
-  instead) and the Widget folder lists no services — MDOT stopped the
-  service; nothing on our side to fix, no authoritative substitute found.
-  verify-web-core's 3 MI checks fail until it returns.
+  **MDOT 2026-09-21:** the service we read was stopped; MI moved to
+  `DataAccess/NfcNhsPub/MapServer/353` (§4.2 note). Two things that outage
+  exposed and fixed: (a) web source health is now keyed per SERVICE
+  (`hostOf` = host + ArcGIS service path; `netHostOf` keeps the throttle per
+  host) — per-host, the dead route layer marked the whole MDOT server down
+  and blocked the working class layer; the shared services block's `hostOf`
+  matches. (b) the test stubs match `MapServer/353`.
 - **Default area + pickers (2026-09-17, per user; the §4.1/4.2 design of
   `docs/NEXT-road-name-lookup.md`, minus the tile-baked county fields).**
   Clicking a county / city / township in the search box calls
@@ -2018,6 +2037,7 @@ product has no FIRMette buttons or WO/DI named ranges).
 | `verify-blank-wodi.ps1` | PR #5 — empty WO/DI produces clean filenames + stamps (no dangling `WO `, ` DI`, or `WO #` line) | inspector | FEMA GP |
 | `verify-screenshot-pdf.ps1` | §7g — the manual screenshot flow end-to-end with 6 synthetic GE-aspect images (Prepare → Insert → Export), PyMuPDF asserts the imagery fills EXACTLY the 760×568 block on every page and the right image is on the right page; then sabotages the sheet geometry (rows 142→152, a picture displaced/stretched) and asserts the re-export is still exact | inspector | no |
 | `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
+| `verify-hpms-fallback.ps1` | §9.7a — dead URL in `Svc_MI_NFC` → HPMS verdict + tag + blue cells + bold state link; clearing the cell restores the state layer (URL swap, no rebuild); both down → `Failed - NFC query`. Temp copy. | each product | MDOT + HPMS + NTAD + Census |
 | `verify-output-folder.ps1` | §8 resolved #9 — OneDrive-for-Business / SharePoint `https://…/Documents/…` workbook path maps to the local sync folder (not a mangled `<base>\https:\…` path); builds a fake sync tree + dummy workbook, points `OneDriveCommercial` at it, asserts the clean folder maps and unmappable URLs return `""`. Opens the workbook READ-ONLY. | each product | no |
 
 Run the whole suite from a clean state:
@@ -2334,6 +2354,42 @@ everywhere:
 - **Scope:** overrides cover the classification *query* endpoints only,
   not the Map-Viewer deep-link templates (`URL_NFC_MAPVIEW*`) or the
   FIRMette GP service.
+
+### 9.7a HPMS fallback + what a URL swap can and cannot do (2026-09-21)
+
+**Excel HPMS fallback.** When `QueryStateRoads` errors, `ClassifyOneRow`
+classifies from FHWA's national HPMS layer instead (`ServiceUrl("HPMS")` =
+`REST_HPMS`, `HPMS_National_Current/FeatureServer/0`, field `F_SYSTEM` bare
+FHWA 1-7, same USDOT AGOL org as ACUB; override cell `Svc_HPMS`). The verdict
+is computed normally; Review Reason gets `HPMS fallback - <ST> DOT layer
+unavailable, verify on the state site` (appended with ` | ` to any real
+reason). That tag (`HPMS_FALLBACK_TAG`) drives two conditional formats in
+`modBuild.ApplySitesFormatting`: Review Reason + FHWA Class turn light blue
+(`CLR_HPMS_FALLBACK`, `SetFirstPriority` so it beats the verdict tint on those
+two cells only — Federal Aid Status keeps red/green/yellow) and the state-site
+link (col 14) goes bold + blue. Both sources down → `Failed - NFC query (...;
+HPMS fallback: ...)`, re-runnable. No TIGER change; names still come from it.
+
+**Latent bug this exposed:** `RunQuery` never checked for an ArcGIS error
+BODY. A stopped/locked service answers HTTP 200 + `{"error":...}`, which read
+as zero features — a confident "no road found" instead of a failure. It now
+sets `errMsg = "service error: <message>"` when the body has an error envelope
+and no `"features"` key (`HasArcgisError` existed but was never called).
+
+**URL swap vs rebuild.** A user CAN fix a moved layer with no rebuild: paste
+the new layer URL into the Sources sheet's Service URLs table (`Svc_<KEY>`),
+the web tool's "Data service URLs" panel, or the notebook's
+`SERVICE_OVERRIDES`. That is sufficient whenever the replacement has the SAME
+field names and code scheme — true for this MDOT move (`Svc_MI_NFC` alone would
+have fixed it; `verify-hpms-fallback.ps1` proves the swap path). A rebuild is
+only needed to change the DEFAULT everyone gets, or when the new layer's
+schema differs (different class field, string vs integer, urban/rural baked
+into the code like WI local) — that needs a code change in `QueryStateRoads`.
+
+**Build no longer needs the default printer.** `ConfigureMapPageSetup` retries
+through "Microsoft Print to PDF" (session-only `ActivePrinter`, restored
+after) when PageSetup raises — an unreachable network default printer made
+`.Orientation` throw and hung the headless build in VBE break mode.
 
 ### 9.8 Map-page PDF export — Excel printable-area geometry (2026-07-14)
 

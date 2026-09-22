@@ -1153,7 +1153,30 @@ Private Sub MapRibbonStep(ByVal wsMap As Worksheet, ByVal key As String, _
     MapCtrlLabel wsMap, key & "_Note", leftPt + 2, topPt + h + 2, w - 2, 34, noteText, 8, False, RGB(110, 110, 110)
 End Sub
 
+' PageSetup needs a LIVE printer driver: with a network default printer that
+' is unreachable (laptop off that network) Excel raises "Unable to set the
+' Orientation property of the PageSetup class". So on failure, retry through
+' the always-present "Microsoft Print to PDF" for this Excel session only
+' (ActivePrinter is per session - the Windows default is never touched), then
+' put the session's printer back.
 Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
+    Dim savedPrinter As String
+    On Error Resume Next
+    ApplyMapPageSetup wsMap
+    If Err.Number <> 0 Then
+        Err.Clear
+        savedPrinter = Application.ActivePrinter
+        If SwitchToPdfPrinter() Then
+            ApplyMapPageSetup wsMap
+            RestorePrinter savedPrinter
+        End If
+        Err.Clear
+    End If
+    On Error GoTo 0
+    SizeMapColumns wsMap
+End Sub
+
+Private Sub ApplyMapPageSetup(ByVal wsMap As Worksheet)
     With wsMap.PageSetup
         .Orientation = xlLandscape
         .PaperSize = xlPaperLetter
@@ -1171,7 +1194,6 @@ Private Sub ConfigureMapPageSetup(ByVal wsMap As Worksheet)
         .PrintGridlines = False
         .PrintHeadings = False
     End With
-    SizeMapColumns wsMap
 End Sub
 
 ' Fit the 13 map columns to the map-block width (MAP_PAGE_WIDTH_PTS = the Letter

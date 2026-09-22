@@ -998,6 +998,28 @@ Private Sub ApplySitesFormatting(ByVal ws As Worksheet)
         .FormatConditions(.FormatConditions.Count).Interior.Color = CLR_REVIEW
     End With
 
+    ' HPMS fallback rows (state DOT layer was unavailable - modClassify): the
+    ' Review Reason + FHWA Class cells turn light blue (first priority, so they
+    ' win over the verdict tint on those two cells; Federal Aid Status keeps its
+    ' verdict colour) and the state-site link goes bold - "check it there".
+    Dim hpmsRule As String
+    hpmsRule = "=ISNUMBER(SEARCH(""" & HPMS_FALLBACK_TAG & """,$" & ColLetter(COL_REVIEWNOTE) & SITES_FIRST_DATA_ROW & "))"
+    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_REVIEWNOTE), ws.Cells(r2, COL_CLASS))
+        .FormatConditions.Add Type:=xlExpression, Formula1:=hpmsRule
+        With .FormatConditions(.FormatConditions.Count)
+            .Interior.Color = CLR_HPMS_FALLBACK
+            .SetFirstPriority
+        End With
+    End With
+    With ws.Range(ws.Cells(SITES_FIRST_DATA_ROW, COL_NFCMAP), ws.Cells(r2, COL_NFCMAP))
+        .FormatConditions.Delete
+        .FormatConditions.Add Type:=xlExpression, Formula1:=hpmsRule
+        With .FormatConditions(.FormatConditions.Count)
+            .Font.Bold = True
+            .Interior.Color = CLR_HPMS_FALLBACK
+        End With
+    End With
+
     On Error Resume Next
     If ws.AutoFilterMode Then ws.AutoFilterMode = False
     ws.Range(ws.Cells(SITES_HEADER_ROW, 1), ws.Cells(SITES_HEADER_ROW, COL_LAST)).AutoFilter

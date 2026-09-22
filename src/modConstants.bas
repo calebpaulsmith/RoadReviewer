@@ -219,8 +219,13 @@ Public Const APP_OH As String = "https://tims.dot.state.oh.us/tims"
 
 ' ---- REST endpoints (§4.1, §4.2, §8.2) ----
 Public Const REST_FIRMETTE As String = "https://msc.fema.gov/arcgis/rest/services/NFHL_Print/MSCPrintB/GPServer/PrintFIRMette"
-Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353"
-Public Const REST_MDOT_ROUTE As String = "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543"
+Public Const REST_MDOT_NFC As String = "https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353"
+' MDOT stopped the Widget/NextGenPrFinderPub service (2026-09-21). The class layer
+' moved to DataAccess/NfcNhsPub (same layer 353, the service MDOT's own NFC app
+' reads); the trunkline route-name layer 543 has no public replacement, so the
+' default is blank = skipped (Census TIGER names the road). Paste a URL into
+' Svc_MI_ROUTE on the Sources sheet if MDOT publishes one again.
+Public Const REST_MDOT_ROUTE As String = ""
 Public Const REST_ACUB As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0"
 
 ' Indiana NFC (§4.2a). Switched 2026-07-16 to the AUTHORITATIVE layer that
@@ -263,6 +268,14 @@ Public Const REST_CENSUS_GEOCODE As String = "https://geocoding.geo.census.gov/g
 ' auth. We hit this in addition to MDOT 543 because MDOT only carries
 ' designated trunkline routes — TIGER fills in the local street names.
 Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8"
+' FHWA HPMS national layer (F_SYSTEM = bare FHWA 1-7, every state, same USDOT
+' AGOL org as the ACUB layer). The FALLBACK class source when a state DOT layer
+' is unavailable (2026-09-21): the row is still classified, marked "HPMS
+' fallback", tinted blue, and its state-site link bolded so the inspector
+' verifies it there. Same data the web tool's cached tiles are built from.
+Public Const REST_HPMS As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/HPMS_National_Current/FeatureServer/0"
+Public Const HPMS_FALLBACK_TAG As String = "HPMS fallback"
+Public Const CLR_HPMS_FALLBACK As Long = 16247773   ' RGB(221,235,247) light blue
 
 ' Minnesota / Illinois / Ohio NFC class services - WIRED in PR #36 (§4.2c/d/e).
 ' All three publish a bare FHWA 1-7 class code, same shape as Indiana, with no
@@ -472,6 +485,7 @@ Public Function ServiceDefault(ByVal key As String) As String
         Case "WI_LOCAL_ROADS": ServiceDefault = REST_WI_LOCAL_ROADS
         Case "ACUB":           ServiceDefault = REST_ACUB
         Case "TIGER_ROADS":    ServiceDefault = REST_TIGER_ROADS
+        Case "HPMS":           ServiceDefault = REST_HPMS
         Case "WORLD_IMAGERY":  ServiceDefault = REST_WORLD_IMAGERY
         Case "MN_NFC":         ServiceDefault = REST_MN_NFC
         Case "IL_NFC":         ServiceDefault = REST_IL_NFC

@@ -67,7 +67,7 @@ Instant Apps.
 
 | State | Layer (what it shows) | Add-by-URL |
 |---|---|---|
-| **MI** | MDOT NFC — `FunctionalSystem` 0–7 | `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353` |
+| **MI** | MDOT NFC — `FunctionalSystem` 0–7 | `https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353` |
 | **IN** | INDOT `LRSE_Functional_Class` — `functional_class` 1–7 | `https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22` |
 | **WI** | WisDOT State Trunk — `FED_FC_CD` 1–7 | `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3` |
 | **WI** | WisDOT Local Roads — `FNCT_CLS_CTGY_TYCD` (urban/rural in code) | `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1` |

@@ -124,12 +124,12 @@ await page.route("**/*", async route => {
   // 5201 address and its ±150 ft samples all read 6, the 5300 address reads
   // 6 at its snap but 7 at the sample 150 ft south, and the road's two edge
   // midpoints (42.235 / 42.2425) read 7 and 6.
-  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryPoint") && url.includes("-85.5601")) {
+  if (url.includes("MapServer/353/query") && url.includes("esriGeometryPoint") && url.includes("-85.5601")) {
     const m = /geometry=(-?[\d.]+),(-?[\d.]+)/.exec(url); const lon = +m[1], lat = +m[2];
     return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { FunctionalSystem: lat < 42.2400 ? 7 : 6, PR: "0006904" },
       geometry: { paths: [[[lon, lat - 0.0004], [lon, lat + 0.0004]]] } }] }) });
   }
-  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryPoint")) {
+  if (url.includes("MapServer/353/query") && url.includes("esriGeometryPoint")) {
     if (url.includes("-84.536"))
       return route.fulfill({ ...json, body: JSON.stringify({ features: [
         { attributes: { FunctionalSystem: 7, PR: "0343402" }, geometry: { paths: [[[-84.53601, 42.69105], [-84.53599, 42.69115]]] } },
@@ -170,8 +170,8 @@ await page.route("**/*", async route => {
   if (url.includes("TIGERweb")) return route.fulfill({ ...json, body: JSON.stringify({ features: [{ attributes: { NAME: "S Pitcher St" } }] }) });
 
   // review-overlay pass (frame envelope queries with geometry + layer metadata)
-  if (url.includes("FeatureServer/353?f=json")) return route.fulfill({ ...json, body: miMeta });
-  if (url.includes("FeatureServer/353/query") && url.includes("esriGeometryEnvelope")) return route.fulfill({ ...json, body: miGeom });
+  if (url.includes("MapServer/353?f=json")) return route.fulfill({ ...json, body: miMeta });
+  if (url.includes("MapServer/353/query") && url.includes("esriGeometryEnvelope")) return route.fulfill({ ...json, body: miGeom });
   if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0?f=json")) return route.fulfill({ ...json, body: acubMeta });
   if (url.includes("NTAD_Adjusted_Urban_Areas/FeatureServer/0/query") && url.includes("esriGeometryEnvelope")) return route.fulfill({ ...json, body: acubGeom });
 
@@ -482,7 +482,7 @@ await page.waitForFunction(() => {
 }, { timeout: 15000 });
 checks.push(["live mirror low-zoom band discloses arterials-only display", true]);
 checks.push(["low-zoom band queried with a class-cap filter", await page.evaluate(() =>
-  netLines.some(l => l.includes("FeatureServer/353/query") && l.includes("FunctionalSystem%20%3C%3D%203")))]);
+  netLines.some(l => l.includes("MapServer/353/query") && l.includes("FunctionalSystem%20%3C%3D%203")))]);
 await page.evaluate(() => map.setView([42.6911, -84.5360], 17));   // restore for the checks below
 await page.waitForFunction(() => document.getElementById("liveLegend").textContent.includes("Minor Collector"), { timeout: 15000 });
 
@@ -877,7 +877,7 @@ checks.push(["outage: recovered source reported back up with a re-run offer for 
 // --- sources.html ---
 await page.goto(SOURCES, { waitUntil: "domcontentloaded" });
 const src = await page.content();
-checks.push(["sources page: MI layer 353 documented", src.includes("NextGenPrFinderPub/FeatureServer/353")]);
+checks.push(["sources page: MI layer 353 documented", src.includes("DataAccess/NfcNhsPub/MapServer/353")]);
 checks.push(["sources page: IN record_status quirk", src.includes("record_status=5")]);
 checks.push(["sources page: WI category-code quirk", src.includes("FNCT_CLS_CTGY_TYCD")]);
 checks.push(["sources page: ACUB + FIRMette + TIGER sections", src.includes('id="acub"') && src.includes('id="firmette"') && src.includes('id="tiger"')]);

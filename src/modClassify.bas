@@ -212,9 +212,24 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     Dim segs As Collection, roads As Collection
     Set roads = New Collection
     QueryStateRoads stateCode, lat, lon, latP, lonP, segs, roads, errMsg
+    ' State DOT layer unavailable (server down, service stopped, layer moved):
+    ' classify from FHWA's national HPMS layer instead - same bare F_SYSTEM 1-7
+    ' codes - and MARK the row so the inspector verifies it on the state site.
+    ' Only when HPMS fails too does the row fail (Re-run Failed Rows retries it).
+    Dim hpmsNote As String
     If Len(errMsg) > 0 Then
-        ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "NFC query (" & errMsg & ")"
-        Exit Sub
+        Dim stateErr As String, hpmsErr As String
+        stateErr = errMsg
+        Set segs = New Collection
+        AddClassSegs ServiceUrl("HPMS"), "F_SYSTEM", "1=1", False, False, lat, lon, latP, lonP, segs, hpmsErr
+        If Len(hpmsErr) > 0 Then
+            ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "NFC query (" & stateErr & _
+                "; HPMS fallback: " & hpmsErr & ")"
+            Exit Sub
+        End If
+        TraceLine "  state layer failed (" & stateErr & ") -> HPMS fallback, " & segs.Count & " segment(s)"
+        hpmsNote = HPMS_FALLBACK_TAG & " - " & stateCode & " DOT layer unavailable, verify on the state site"
+        errMsg = ""
     End If
 
     ' Census TIGER street names (with distances) - covers the local streets
@@ -236,6 +251,12 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     ' from INDOT's class layer).
     ComputeVerdict segs, exactUrban, boundaryAmbiguous, (roads.Count > 0), verdict, reason
     ws.Cells(r, COL_ELIGIBILITY).Value = verdict
+    ' The "HPMS fallback" tag in Review Reason is what drives the blue tint and
+    ' the bold state-site link (conditional formats in modBuild), and it
+    ' travels with the row into the CSV / KML exports.
+    If Len(hpmsNote) > 0 Then
+        If Len(reason) > 0 Then reason = reason & " | " & hpmsNote Else reason = hpmsNote
+    End If
     ws.Cells(r, COL_REVIEWNOTE).Value = reason
 End Sub
 
@@ -272,8 +293,10 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
             AddClassSegs ServiceUrl("MI_NFC"), "FunctionalSystem", "RHRetireDate IS NULL", False, False, _
                 lat, lon, latP, lonP, segs, errMsg
             If Len(errMsg) > 0 Then Exit Sub
-            AddNamedRoads ServiceUrl("MI_ROUTE"), "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
-                "MI_ROUTE", lat, lon, latP, lonP, roads
+            If Len(ServiceUrl("MI_ROUTE")) > 0 Then
+                AddNamedRoads ServiceUrl("MI_ROUTE"), "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
+                    "MI_ROUTE", lat, lon, latP, lonP, roads
+            End If
         Case "IN"
             ' Authoritative INDOT Roads_and_Highways layer (§4.2a, switched
             ' 2026-07-16): UPPERCASE FUNCTIONAL_CLASS, where=1=1 - no
@@ -778,6 +801,16 @@ Private Function RunQuery(ByVal baseUrl As String, ByVal lat As String, ByVal lo
         "&outFields=" & UrlEncode(outFields) & geomPart & "&f=json"
     If distanceFt > 0 Then url = url & "&distance=" & distanceFt & "&units=esriSRUnit_Foot"
     RunQuery = HttpGetText(url, errMsg)
+    ' ArcGIS reports a stopped / locked / moved service as HTTP 200 with an
+    ' {"error":{...}} body (MDOT 2026-09-21: "Service ... not started"). Without
+    ' this check that read as "zero features" - i.e. a confident "no road
+    ' found" - instead of a failure.
+    If Len(errMsg) = 0 And InStr(RunQuery, """features""") = 0 Then
+        If HasArcgisError(RunQuery) Then
+            errMsg = "service error: " & Trim$(FirstString(RunQuery, "message"))
+            TraceLine "  -> " & errMsg
+        End If
+    End If
 End Function
 
 ' Prefixes an FHWA class label with Urban/Rural, matching the

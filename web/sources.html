@@ -97,7 +97,7 @@
   <div class="quirk"><b>Official reference map.</b> The review legend and PDF report link MDOT's own public <a href="https://experience.arcgis.com/experience/7edd160c205d46b481fcd605bb4c58ce" target="_blank" rel="noopener">"NFC, NHS &amp; ACUB" map</a> (ArcGIS Experience Builder) as the authoritative reference — functional class <i>and</i> the adjusted urban boundary are on by default there, so it answers both questions. It's linked at the app's canonical root (no coordinate deep-link): Experience Builder mis-navigated on a <code>#widget=center:…</code> hash + stale page path, so the exact-location duty is handled by the separate "pinned view" links (FEMA-hosted ArcGIS Map Viewer, <code>center</code>/<code>marker</code>/<code>level</code>) that open right on the site.</div>
 
   <h3>Layer 353 — "Functional System" (the class code)</h3>
-  <div class="url"><a href="https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353" target="_blank" rel="noopener">https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353</a></div>
+  <div class="url"><a href="https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353" target="_blank" rel="noopener">https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353</a></div>
   <p>Polyline layer keyed on Michigan's LRS (<code>PR</code> + mileposts). Fields read: <code>FunctionalSystem</code> (smallint), <code>PR</code>.
   The <code>FunctionalSystem</code> coded-value domain (<code>LrseFunctionalSystem</code>):</p>
   <table><tr><th>code</th><th>meaning</th></tr>
@@ -109,10 +109,8 @@
   <div class="quirk"><b>Quirk — no urban/rural in the code.</b> Unlike e.g. Tennessee's layer, the class code is bare FHWA 1–7. Urban vs Rural comes exclusively from the nationwide ACUB check below.</div>
   <div class="quirk"><b>Quirk — legend.</b> The map figure/legend colors are MDOT's own published <code>drawingInfo.renderer</code> for this layer (e.g. Minor Collector = yellow, Local = dark grey), read live from the layer's REST metadata — not colors invented by this tool.</div>
 
-  <h3>Layer 543 — "Route System" (trunkline route designation)</h3>
-  <div class="url"><a href="https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543" target="_blank" rel="noopener">https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543</a></div>
-  <p>Fields read: <code>RouteDesignation</code>, <code>RouteNumber</code> (same <code>RHRetireDate IS NULL</code> filter).</p>
-  <div class="quirk"><b>Quirk — trunkline-only names.</b> Only designated Interstate / US / M routes are populated (e.g. "I-94 BL"). Local streets return nothing here — that's expected, and the Census TIGER layer below fills the street-name gap.</div>
+  <h3>Trunkline route names — no longer published</h3>
+  <p>Until September 2026 the tool also read MDOT's "Route System" layer (layer 543 of the <code>Widget/NextGenPrFinderPub</code> service) for trunkline names such as "I-94 BL". MDOT stopped that service; the functional-class layer above moved to <code>DataAccess/NfcNhsPub</code> — the service MDOT's own official NFC / NHS / ACUB map reads — and carries the same layer, fields and class codes. No public replacement for the route-name layer has been found, so Michigan road names now come from the Census TIGER layer below (and from the HPMS tiles). A replacement URL can be pasted into <code>MI_ROUTE</code> under <a href="#services">Service URLs</a>.</p>
 </section>
 
 <section id="in">
@@ -279,8 +277,8 @@
   const SVC_KEYS = [
     ["WI_LOCAL_ROADS", "Wisconsin — local roads + most collectors (queried first)"],
     ["WI_STATE_TRUNK", "Wisconsin — state highways & interstates (fallback)"],
-    ["MI_NFC",         "Michigan — functional class (layer 353)"],
-    ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
+    ["MI_NFC",         "Michigan — functional class (NfcNhsPub layer 353)"],
+    ["MI_ROUTE",       "Michigan — trunkline route names (optional; none published since 2026-09)"],
     ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
     ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
     ["MN_NFC",         "Minnesota — functional class (layer 11)"],
@@ -295,8 +293,8 @@
   const SVC_DEFAULTS = {
     WI_LOCAL_ROADS: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
     WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
-    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-    MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353",
+    MI_ROUTE:       "",   // MDOT retired the service that carried it (2026-09); blank = skipped
     IN_NFC:         "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
     MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
@@ -360,7 +358,11 @@
   const downKeys = new Map();     // key -> reason (from the probes here)
   let downHosts = [];             // [{host, name, reason}] from the page's live requests
   function urlFor(k) { return (globalThis.RR_SERVICE_OVERRIDES || {})[k] || defaultFor(k); }
-  function hostOf(u) { try { return new URL(u).host; } catch (e) { return ""; } }
+  // host + ArcGIS service path: two services on one server are separate sources
+  function hostOf(u) {
+    try { const x = new URL(u); const m = /\/rest\/services\/(.+?)\/(?:MapServer|FeatureServer|GPServer)/i.exec(x.pathname); return x.host + (m ? "/" + m[1] : ""); }
+    catch (e) { return ""; }
+  }
   function labelFor(k) { const e = SVC_KEYS.find(x => x[0] === k); return e ? e[1] : k; }
   function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function reasonFor(k) {
@@ -383,7 +385,7 @@
   }
   async function probe(k) {
     const u = urlFor(k);
-    if (!u) return;
+    if (!u) { downKeys.delete(k); return; }
     try {
       const opts = (typeof AbortSignal !== "undefined" && AbortSignal.timeout) ? { signal: AbortSignal.timeout(20000) } : {};
       const r = await fetch(u.replace(/[?#].*$/, "").replace(/\/+$/, "") + "?f=json", opts);

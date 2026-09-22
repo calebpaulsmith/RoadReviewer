@@ -119,7 +119,7 @@ await page.waitForFunction(() => {
 checks.push(["protomaps-leaflet painted real tile pixels in the browse pane", true]);
 
 checks.push(["no live road-class query fired for the tile-served state", await page.evaluate(() =>
-  !netLines.some(l => /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer/.test(l) && l.includes("esriGeometryEnvelope")))]);
+  !netLines.some(l => /MapServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer/.test(l) && l.includes("esriGeometryEnvelope")))]);
 
 // --- class lines OVERZOOM past the tileset's z13 (maxDataZoom regression) ---
 await page.evaluate(([la, lo]) => {
@@ -164,7 +164,7 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
 
   checks.push(["no live class/ACUB point query fired for the cached verdict",
     !reqUrls.slice(before).some(u =>
-      /FeatureServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer|NTAD_Adjusted_Urban_Areas/.test(u)
+      /MapServer\/353\/query|LRSE_Functional_Class|FFCL_gdb|Functional_Class_Local|mndot_commonlayers2|FunctionalClass\/MapServer|Functional_Class\/MapServer|NTAD_Adjusted_Urban_Areas/.test(u)
       && u.includes("esriGeometryPoint"))]);
   // --- source outage -> HPMS fallback (2026-09-17). Live verdicts ON, the
   // state's class server answering an HTML 500: the verdict still comes
@@ -174,6 +174,9 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
   const ST = st.toUpperCase();
   const stHost = await page.evaluate(S => new URL(svc(STATE_SVC_KEY[S])).host, ST);
   const dot = await page.evaluate(S => DOT_NAME[S], ST);
+  // health is tracked per SERVICE (host + ArcGIS service path), not per host
+  const stKey = await page.evaluate(S => hostOf(svc(STATE_SVC_KEY[S])), ST);
+  const stUrl = await page.evaluate(S => svc(STATE_SVC_KEY[S]), ST);
   await page.route(`**/${stHost}/**`, route => route.fulfill({ status: 500, contentType: "text/html", body: "<html>500</html>" }));
   await page.evaluate(() => { document.getElementById("liveVerdicts").checked = true; });
   await page.fill("#coordsIn", `Outage check,${tLat + 0.0002},${tLon}`);
@@ -189,13 +192,13 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
   }, dot)]);
   checks.push(["outage: exports' Data Source column carries the fallback note", await page.evaluate(d =>
     exportRows().every(r => /FHWA HPMS/.test(r[EX.source]) && r[EX.source].includes(`${d} live layer down`)), dot)]);
-  checks.push(["outage: the down host is not queried again (fast-fail, no request)", await page.evaluate(async h => {
+  checks.push(["outage: the down source is not queried again (fast-fail, no request)", await page.evaluate(async ([h, u]) => {
     const before = netLines.filter(l => l.includes("GET ") && l.includes(h)).length;
-    try { await httpGetJson("https://" + h + "/x/query?f=json"); return false; } catch (e) { if (!e.sourceDown) return false; }
+    try { await httpGetJson(u + "/query?f=json"); return false; } catch (e) { if (!e.sourceDown) return false; }
     return netLines.filter(l => l.includes("GET ") && l.includes(h)).length === before;
-  }, stHost)]);
+  }, [stHost, stUrl])]);
   await page.route(`**/${stHost}/**`, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ name: "Functional Class" }) }));
-  await page.evaluate(h => probeSource(h), stHost);
+  await page.evaluate(h => probeSource(h), stKey);
   await page.waitForFunction(() => /back up/.test(document.getElementById("sourceStatus").textContent), { timeout: 10000 });
   checks.push(["outage: recovered source reported back up with a re-run offer for the fallback row", await page.evaluate(() =>
     /re-run 1 row/.test(document.getElementById("sourceStatus").textContent))]);

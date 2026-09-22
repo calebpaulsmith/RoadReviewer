@@ -68,8 +68,8 @@ import requests
 # RR_SERVICE_OVERRIDES, so a URL swap is the same mental model in every product.
 REST = {
     # Michigan MDOT — NFC class (layer 353) + trunkline route name (layer 543)
-    "MI_NFC":         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-    "MI_ROUTE":       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    "MI_NFC":         "https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353",
+    "MI_ROUTE":       "",
     # Nationwide 2020 Adjusted Census Urban Boundary (USDOT NTAD)
     "ACUB":           "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
     # Indiana INDOT — authoritative Roads_and_Highways functional-class layer

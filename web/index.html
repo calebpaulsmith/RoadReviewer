@@ -816,8 +816,8 @@ Portage Rd, Portage MI"></textarea>
 // override table and the notebook's SERVICE_OVERRIDES dict, so a URL swap is
 // the same mental model in every product.
 const REST = {
-  MI_NFC:        "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-  MI_ROUTE:      "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+  MI_NFC:        "https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353",
+  MI_ROUTE:      "",   // optional trunkline route names — MDOT retired the service that carried layer 543 (2026-09-21); blank = skipped, Census TIGER names the road
   ACUB:          "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Adjusted_Urban_Areas/FeatureServer/0",
   IN_NFC:        "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
   IN_ROADNAME:   "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
@@ -1011,7 +1011,7 @@ async function queryMichiganNfc(lat, lon, bufferFt) {
     .filter(e => cleanStr(e.attrs.FunctionalSystem) !== "" && Number.isFinite(Number(e.attrs.FunctionalSystem)))
     .map(e => ({ code: Math.trunc(Number(e.attrs.FunctionalSystem)), name: "", distFt: e.distFt }));
   const roads = [];
-  try {
+  if (svc("MI_ROUTE")) try {
     const route = await queryWithFallback(svc("MI_ROUTE"), lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt, true);
     for (const e of featureEntries(route, lat, lon)) {
       const nm = [e.attrs.RouteDesignation, e.attrs.RouteNumber].map(cleanStr).filter(Boolean).join(" ");
@@ -1687,8 +1687,8 @@ function parseCoordinates(text) {
   const SVC_KEYS = [
     ["WI_LOCAL_ROADS", "Wisconsin — local roads + most collectors (queried first)"],
     ["WI_STATE_TRUNK", "Wisconsin — state highways & interstates (fallback)"],
-    ["MI_NFC",         "Michigan — functional class (layer 353)"],
-    ["MI_ROUTE",       "Michigan — trunkline route names (layer 543)"],
+    ["MI_NFC",         "Michigan — functional class (NfcNhsPub layer 353)"],
+    ["MI_ROUTE",       "Michigan — trunkline route names (optional; none published since 2026-09)"],
     ["IN_NFC",         "Indiana — functional class (LRSE layer 22)"],
     ["IN_ROADNAME",    "Indiana — road names (2021 centerlines)"],
     ["MN_NFC",         "Minnesota — functional class (layer 11)"],
@@ -1703,8 +1703,8 @@ function parseCoordinates(text) {
   const SVC_DEFAULTS = {
     WI_LOCAL_ROADS: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1",
     WI_STATE_TRUNK: "https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3",
-    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353",
-    MI_ROUTE:       "https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/543",
+    MI_NFC:         "https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353",
+    MI_ROUTE:       "",   // MDOT retired the service that carried it (2026-09); blank = skipped
     IN_NFC:         "https://gis.indot.in.gov/ro/rest/services/RAH_GIO_Collaboration/LRSE_Functional_Class/FeatureServer/22",
     IN_ROADNAME:    "https://gisdata.in.gov/server/rest/services/Hosted/Road_Centerlines_of_Indiana_2021/FeatureServer/15",
     MN_NFC:         "https://dotapp9.dot.state.mn.us/egis12/rest/services/BASEMAP/mndot_commonlayers2/MapServer/11",
@@ -1768,7 +1768,11 @@ function parseCoordinates(text) {
   const downKeys = new Map();     // key -> reason (from the probes here)
   let downHosts = [];             // [{host, name, reason}] from the page's live requests
   function urlFor(k) { return (globalThis.RR_SERVICE_OVERRIDES || {})[k] || defaultFor(k); }
-  function hostOf(u) { try { return new URL(u).host; } catch (e) { return ""; } }
+  // host + ArcGIS service path: two services on one server are separate sources
+  function hostOf(u) {
+    try { const x = new URL(u); const m = /\/rest\/services\/(.+?)\/(?:MapServer|FeatureServer|GPServer)/i.exec(x.pathname); return x.host + (m ? "/" + m[1] : ""); }
+    catch (e) { return ""; }
+  }
   function labelFor(k) { const e = SVC_KEYS.find(x => x[0] === k); return e ? e[1] : k; }
   function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function reasonFor(k) {
@@ -1791,7 +1795,7 @@ function parseCoordinates(text) {
   }
   async function probe(k) {
     const u = urlFor(k);
-    if (!u) return;
+    if (!u) { downKeys.delete(k); return; }
     try {
       const opts = (typeof AbortSignal !== "undefined" && AbortSignal.timeout) ? { signal: AbortSignal.timeout(20000) } : {};
       const r = await fetch(u.replace(/[?#].*$/, "").replace(/\/+$/, "") + "?f=json", opts);
@@ -1863,7 +1867,14 @@ async function withHostSlot(host, fn) {
   finally { s.active--; const next = s.queue.shift(); if (next) next(); }
 }
 const sourceHealth = new Map();  // host -> { down, since, reason, probeUrl, timer, upAt }
-function hostOf(url) { try { return new URL(url, location.href).host; } catch { return ""; } }
+// A "source" is a host PLUS its ArcGIS service path: MDOT stopping one service
+// (Widget/NextGenPrFinderPub, 2026-09-21) must not mark the working one on the
+// same server (DataAccess/NfcNhsPub) down. The request throttle stays per host.
+function netHostOf(url) { try { return new URL(url, location.href).host; } catch { return ""; } }
+function hostOf(url) {
+  try { const u = new URL(url, location.href); const m = /\/rest\/services\/(.+?)\/(?:MapServer|FeatureServer|GPServer)/i.exec(u.pathname); return u.host + (m ? "/" + m[1] : ""); }
+  catch { return ""; }
+}
 function healthOf(host) {
   let h = sourceHealth.get(host);
   if (!h) { h = { down: false, since: 0, reason: "", probeUrl: "", timer: null, upAt: 0 }; sourceHealth.set(host, h); }
@@ -1878,8 +1889,8 @@ const SOURCE_KEY_NAME = { MI_NFC: "MDOT live layer", MI_ROUTE: "MDOT live layer"
 const STATE_SVC_KEY = { MI: "MI_NFC", IN: "IN_NFC", WI: "WI_LOCAL_ROADS", MN: "MN_NFC", IL: "IL_NFC", OH: "OH_NFC" };
 function sourceNameForHost(host) {
   for (const k of Object.keys(SOURCE_KEY_NAME)) { const u = svc(k); if (u && hostOf(u) === host) return SOURCE_KEY_NAME[k]; }
-  if (/fema\.gov$/.test(host)) return "FEMA FIRMette service";
-  if (/census\.gov$/.test(host)) return "Census Bureau";
+  if (/fema\.gov(\/|$)/.test(host)) return "FEMA FIRMette service";
+  if (/census\.gov(\/|$)/.test(host)) return "Census Bureau";
   return host;
 }
 class SourceDownError extends Error {
@@ -1925,7 +1936,7 @@ function fetchOpts(ms) { return (typeof AbortSignal !== "undefined" && AbortSign
 async function httpGetJson(url) {
   const host = hostOf(url), h = healthOf(host);
   if (h.down) throw new SourceDownError(host, h);
-  return withHostSlot(host, async () => {
+  return withHostSlot(netHostOf(url), async () => {
     logNet("GET " + url);
     let r;
     try { r = await fetch(url, fetchOpts(FETCH_TIMEOUT_MS)); }

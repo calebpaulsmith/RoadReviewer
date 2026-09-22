@@ -37,7 +37,7 @@ Public Sub BuildSourcesSheet()
     StateHeader ws, "Michigan (MDOT) - WIRED"
     Cite ws, "Michigan Department of Transportation, National Functional Classification, NHS & ACUB (interactive map),", APP_MI
     Cite ws, "Michigan Department of Transportation, Functional System, ArcGIS REST feature service layer 353 " & _
-        "(NextGen PR Finder; road names from companion layer 543) - queried by this tool,", REST_MDOT_NFC
+        "(DataAccess/NfcNhsPub - the service behind MDOT's own NFC map) - queried by this tool,", REST_MDOT_NFC
 
     StateHeader ws, "Indiana (INDOT) - WIRED"
     Cite ws, "Indiana Department of Transportation, INDOT Functional Class Map (Functional Classification & Urban " & _
@@ -152,11 +152,12 @@ Public Sub BuildSourcesSheet()
     SvcOverrideRow ws, "WI_LOCAL_ROADS", "Wisconsin - local roads + most collectors (queried first)"
     SvcOverrideRow ws, "WI_STATE_TRUNK", "Wisconsin - state highways & interstates (fallback)"
     SvcOverrideRow ws, "MI_NFC", "Michigan - functional class (layer 353)"
-    SvcOverrideRow ws, "MI_ROUTE", "Michigan - trunkline route names (layer 543)"
+    SvcOverrideRow ws, "MI_ROUTE", "Michigan - trunkline route names (optional; none published since 2026-09)"
     SvcOverrideRow ws, "IN_NFC", "Indiana - functional class (LRSE, layer 22)"
     SvcOverrideRow ws, "IN_ROADNAME", "Indiana - road names (2021 centerlines)"
     SvcOverrideRow ws, "ACUB", "All states - adjusted urban-area boundary (urban/rural)"
     SvcOverrideRow ws, "TIGER_ROADS", "All states - Census street names"
+    SvcOverrideRow ws, "HPMS", "All states - FHWA HPMS functional class (fallback when a state layer is down)"
     SvcOverrideRow ws, "WORLD_IMAGERY", "All states - Esri aerial imagery (Fetch Imagery on Map Pages)"
     SvcOverrideRow ws, "MN_NFC", "Minnesota - functional class"
     SvcOverrideRow ws, "IL_NFC", "Illinois - functional class"

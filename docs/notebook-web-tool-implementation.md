@@ -251,7 +251,7 @@ Build a Web Map once, following **`docs/agol-review-app.md` §2** (full click li
 1. **Content → Map** (opens **Map Viewer**).
 2. **Add → Add layer from URL**, and paste the exact URLs from **`agol-review-app.md` §1**. Start
    with the states you cover plus the nationwide ACUB layer:
-   - **MI (MDOT NFC):** `https://mdotgis.state.mi.us/arcgis/rest/services/Widget/NextGenPrFinderPub/FeatureServer/353`
+   - **MI (MDOT NFC):** `https://mdotgis.state.mi.us/arcgis/rest/services/DataAccess/NfcNhsPub/MapServer/353`
    - **IN (INDOT class):** `https://gisdata.in.gov/server/rest/services/Hosted/LRSE_Functional_Class/FeatureServer/22`
    - **WI (state trunk):** `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/FFCL_gdb/FeatureServer/3`
    - **WI (local roads):** `https://services5.arcgis.com/0pgGLzT0Nh7FVjon/arcgis/rest/services/Functional_Class_Local_Non_Prod/FeatureServer/1`
