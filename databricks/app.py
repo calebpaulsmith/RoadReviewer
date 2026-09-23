@@ -248,7 +248,7 @@ def area(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 
 
-@app.get("/tiles/{name}")
+@app.api_route("/tiles/{name}", methods=["GET", "HEAD"])
 def tiles(name: str, request: Request) -> Response:
     """PMTiles with HTTP Range support (protomaps reads the archive by byte
     ranges - a server that ignores Range would ship the whole 50-70 MB file
@@ -261,6 +261,8 @@ def tiles(name: str, request: Request) -> Response:
         raise HTTPException(404)
     size = path.stat().st_size
     headers = {"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"}
+    if request.method == "HEAD":  # the page probes each tileset with HEAD before using it
+        return Response(status_code=200, headers={**headers, "Content-Length": str(size)})
     rng = request.headers.get("range")
     m = _RANGE.match(rng.strip()) if rng else None
     if not m:

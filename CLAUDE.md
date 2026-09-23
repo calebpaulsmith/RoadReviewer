@@ -1523,8 +1523,15 @@ cached-verdict path (`determineAcubTiles` / `classifyPointTiles`) to
 `api/features` instead of the tiles — identical `{props, geomType, parts}`
 shape, identical verdict code, `srcNote` = "Databricks Delta tables". On
 GitHub Pages there is no `api/` and nothing changes. `package.ps1` builds
-`dist/RoadReviewer-databricks-app.zip` (~350 MB with tiles, `-NoTiles` to
-serve tiles from a UC Volume via `RR_TILES_DIR`); `dist/` is gitignored.
+`dist/RoadReviewer-databricks-app.zip` **without tiles by default (~2 MB)**
+— the user's workspace can't take 350 MB and the app can't read a Volume,
+so the page runs on its existing fallbacks (Esri live streets basemap, live
+DOT class mirror, live NTAD boundaries) while verdicts come from Delta;
+verified in Chromium with an empty tiles dir. `-WithTiles` includes them;
+`RR_TILES_DIR` still works where a Volume IS readable. `/tiles/{name}`
+handles GET **and HEAD** (the page probes with HEAD; a GET-only route let
+HEAD fall through to the static mount and defeated the fallback).
+`dist/` is gitignored.
 Verified locally: uvicorn + a stubbed `_query` → Chromium classified the
 §4.2 Kalamazoo point "Federal aid - Urban Minor Collector" from the API with
 exactly three `/api` calls. NOT yet deployed to a real workspace — the SQL

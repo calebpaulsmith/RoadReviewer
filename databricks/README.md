@@ -15,10 +15,11 @@ PMTiles) reads these tables through `app.py`'s `/api/features` endpoint,
 so verdicts, review reasons, road names, the LRS chips and every export are
 identical to the public site - only the data source changes, and each row's
 source note says "Databricks Delta tables". Everything else in the page
-still works exactly as on GitHub Pages: the Live Review button (live state
+still works as on GitHub Pages: the Live Review button (live state
 DOT queries), the Census TIGERweb search, address geocoding, FIRMettes,
-PDF / CSV / KMZ / GeoJSON exports, the map (basemap + class tiles are
-served by the app with HTTP Range support).
+PDF / CSV / KMZ / GeoJSON exports, the map (live Esri basemap + live class
+layers when the tile archives are not packaged; the app also serves PMTiles
+with HTTP Range support when they are).
 
 ## Files
 
@@ -40,14 +41,17 @@ databricks/
    with internet access. Re-runs replace, never duplicate.
 2. **Package the app.** On the laptop:
    ```powershell
-   .\databricks\package.ps1            # dist\RoadReviewer-databricks-app.zip (~350 MB with tiles)
+   .\databricks\package.ps1            # dist\RoadReviewer-databricks-app.zip (~2 MB, no tiles)
    ```
-   Upload the unzipped folder to the workspace (Workspace > Import, or
-   `databricks sync dist\RoadReviewer-databricks-app /Workspace/Users/<you>/road-reviewer`).
-   If the tile archives are too big for your workspace-file limits, package
-   with `-NoTiles`, put `web/tiles/*.pmtiles` in a Unity Catalog Volume and
-   set `RR_TILES_DIR` in `app.yaml` to that volume path
-   (`/Volumes/<catalog>/<schema>/<volume>`).
+   The package deliberately leaves out `web/tiles/` (350 MB of PMTiles that
+   workspace files can't hold). Nothing is lost: verdicts come from the Delta
+   tables, and the page falls back automatically to live map layers for
+   display - Esri street tiles for the basemap, the state DOT class layers
+   and the NTAD urban boundaries for the overlays (the same fallbacks the
+   public site uses when a tileset is missing). `-WithTiles` includes them
+   if a workspace ever can take the size. Upload the unzipped folder
+   (Workspace > Import, or `databricks sync dist\RoadReviewer-databricks-app
+   /Workspace/Users/<you>/road-reviewer`).
 3. **Create the app** (Compute > Apps > Create, or
    `databricks apps create road-reviewer`), add a **SQL warehouse resource
    named `sql-warehouse`** (that name is what `app.yaml` reads), and set

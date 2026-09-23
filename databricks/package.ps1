@@ -1,7 +1,8 @@
 # Package the FHWA Road Checker as a Databricks App upload.
 #
-#   .\databricks\package.ps1                # -> dist\RoadReviewer-databricks-app.zip (tiles included, ~350 MB)
-#   .\databricks\package.ps1 -NoTiles       # tiles left out: serve them from a UC Volume via RR_TILES_DIR
+#   .\databricks\package.ps1                # -> dist\RoadReviewer-databricks-app.zip (~2 MB, NO tiles: the
+#                                          #    page falls back to live map layers; verdicts come from Delta)
+#   .\databricks\package.ps1 -WithTiles     # include web	iles (~350 MB) - only if your workspace can take it
 #   .\databricks\package.ps1 -StageOnly     # just the staged folder (for `databricks sync`), no zip
 #
 # The zip unpacks to ONE folder holding app.yaml, app.py, requirements.txt,
@@ -9,7 +10,7 @@
 # folder to your workspace (Workspace > Import, or `databricks sync`) and
 # point the app's source code path at it - see README.md.
 param(
-    [switch]$NoTiles,
+    [switch]$WithTiles,
     [switch]$StageOnly,
     [string]$OutDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "dist")
 )
@@ -27,7 +28,7 @@ Copy-Item (Join-Path $PSScriptRoot "setup\build_reviewer_tables.py") (Join-Path 
 # the site, minus the tile archives when asked (they are the bulk of the size)
 $webSrc = Join-Path $repo "web"
 $webDst = Join-Path $stage "web"
-robocopy $webSrc $webDst /E /NFL /NDL /NJH /NJS /NP $(if ($NoTiles) { "/XD"; (Join-Path $webSrc "tiles") }) | Out-Null
+robocopy $webSrc $webDst /E /NFL /NDL /NJH /NJS /NP $(if (-not $WithTiles) { "/XD"; (Join-Path $webSrc "tiles") }) | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
 
 $size = [math]::Round(((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
