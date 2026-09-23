@@ -1,0 +1,22 @@
+# Databricks App manifest for the FHWA Road Checker (RoadReviewer web tool).
+#
+# The app is the SAME static site that GitHub Pages serves (web/), served by
+# app.py, plus a small JSON API over two Unity Catalog Delta tables:
+#   <catalog>.<schema>.reviewer_roads        every HPMS road segment, six states
+#   <catalog>.<schema>.reviewer_boundaries   urban areas (ACUB 2020) + counties + states
+# Build the tables once with setup/build_reviewer_tables.py, then deploy.
+#
+# Bind a SQL warehouse to the app as the resource named "sql-warehouse"
+# (Compute > Apps > <app> > Edit > Resources) - its id lands in
+# DATABRICKS_WAREHOUSE_ID below. RR_CATALOG / RR_SCHEMA name where the two
+# reviewer_* tables live. See README.md.
+command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: RR_CATALOG
+    value: "main"
+  - name: RR_SCHEMA
+    value: "roadreviewer"
+  - name: RR_WEB_DIR
+    value: "web"

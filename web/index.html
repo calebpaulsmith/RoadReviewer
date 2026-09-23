@@ -267,7 +267,19 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: row; }
   display: flex; align-items: center; gap: 8px; }
 .sb-head h1 span { font-weight: 600; font-size: 10px; background: rgba(255,255,255,.15); color: #d3e3f4;
   padding: 2px 8px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; }
-.sb-head a { color: #93c2f0; font-size: 12px; margin-left: auto; white-space: nowrap; }
+.sb-head a { color: #93c2f0; font-size: 12px; white-space: nowrap; }
+/* Data sources ▾ (2026-09-22, per user): the header link is a dropdown that also holds the Data service URLs panel */
+.sb-head { position: relative; }
+.sb-head details.srcmenu { margin-left: auto; position: static; }
+.sb-head details.srcmenu > summary { list-style: none; cursor: pointer; color: #93c2f0; font-size: 12px; white-space: nowrap; }
+.sb-head details.srcmenu > summary::-webkit-details-marker { display: none; }
+.sb-head details.srcmenu[open] > summary { color: #fff; }
+.sb-head .srcmenu-body { position: absolute; left: 8px; right: 8px; top: calc(100% - 2px); z-index: 1200;
+  max-height: 70vh; overflow: auto; background: #fff; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 10px 12px; font-size: 12.5px; }
+.sb-head .srcmenu-body > a { display: block; color: #205d8c; font-size: 13px; margin: 2px 0 6px; }
+.sb-head .srcmenu-body details.svcpanel { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.livebtn[aria-pressed="true"] { background: #ee9900; border-color: #c97d00; color: #fff; font-weight: 600; }
 .sb-scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 12px 14px 16px; }
 
 /* ---- the two input tabs: Coordinate Input | Search & Collect ---- */
@@ -576,8 +588,26 @@ body.expanded #siteLegend, body.expanded .livelegend { display: none !important;
 
 <div id="sidebar">
   <div class="sb-head">
-    <h1>Federal-Aid Road Checker <span>unofficial</span></h1>
-    <a href="sources.html" target="_blank" rel="noopener">Data sources</a> · <a href="flow.html" target="_blank" rel="noopener" title="When the verdict comes from the HPMS tiles vs the state DOT layer, and where every item on screen comes from">How it decides</a>
+    <h1>Federal-Aid Road Checker</h1>
+    <details class="srcmenu" id="srcMenu">
+      <summary title="Where every verdict comes from, plus the live data service URLs this page reads">Data sources ▾</summary>
+      <div class="srcmenu-body">
+        <a href="sources.html" target="_blank" rel="noopener">Data sources &amp; citations →</a>
+        <a href="flow.html" target="_blank" rel="noopener" title="When the verdict comes from the HPMS tiles vs the state DOT layer, and where every item on screen comes from">How it decides →</a>
+      <details class="svcpanel" id="services">
+        <summary title="Each row is a live data service this page reads. If a state moves or locks a layer, paste the full replacement layer URL and it takes effect on your next classification. Overrides are stored only in this browser.">Data service URLs</summary>
+        <div class="note">Leave a box blank to use the built-in default (shown as the placeholder). If a state moves or
+          locks a layer, paste the full replacement layer URL (e.g.
+          <span class="k">https://…/FeatureServer/1</span>) and it takes effect on your next classification.
+          Overrides are stored only in this browser (nothing is uploaded) and use the same key names as the
+          Excel tool's Sources sheet and the AGOL notebook. <a href="sources.html#services" target="_blank" rel="noopener">More on sources</a>.</div>
+        <div class="svcwarn" data-svcwarn hidden></div>
+        <table id="svcTable"><tbody></tbody></table>
+        <div class="note" hidden><label title="By default every point is classified from the tilesets hosted with this site (FHWA HPMS classes + 2020 urban boundaries) — instant, and no per-point queries to the state services. Tick this to query the live state DOT + NTAD layers per point instead (the pre-tiles behavior; slower, but reflects any reclassification newer than the tilesets)."><input type="checkbox" id="liveVerdicts"> Live verdicts — query the state DOT layers per point instead of the cached tiles</label></div>
+        <div class="act"><button id="svcReset" type="button">Reset all to defaults</button></div>
+      </details>
+      </div>
+    </details>
   </div>
   <div class="sb-scroll">
     <div class="input-col" id="inputPanel">
@@ -635,7 +665,7 @@ Portage Rd, Portage MI"></textarea>
         <h2>Auto-Detect</h2>
         <span class="count" id="statusCount"></span>
         <span style="flex:1"></span>
-        <button id="popoutBtn" title="Expand this pane over the map: every site's full detail in one editable table, with the map alongside">⧉ View and Export</button>
+        <button id="liveReviewBtn" class="livebtn" aria-pressed="false" title="Live Review: re-check every site against the state DOT's live functional-class layer and the live NTAD urban boundaries instead of the cached HPMS tiles. Slower, but reflects any reclassification newer than the tilesets. Click again to go back to the cached tiles.">⟳ Live Review</button>
       </div>
       <p class="disclaim">Screening aid only — results may be incorrect.</p>
       <div class="legend col">
@@ -679,18 +709,6 @@ Portage Rd, Portage MI"></textarea>
       <div id="resultsBody" class="rowlist"></div>
     </div>
 
-  <details class="svcpanel" id="services">
-    <summary title="Each row is a live data service this page reads. If a state moves or locks a layer, paste the full replacement layer URL and it takes effect on your next classification. Overrides are stored only in this browser.">Data service URLs</summary>
-    <div class="note">Leave a box blank to use the built-in default (shown as the placeholder). If a state moves or
-      locks a layer, paste the full replacement layer URL (e.g.
-      <span class="k">https://…/FeatureServer/1</span>) and it takes effect on your next classification.
-      Overrides are stored only in this browser (nothing is uploaded) and use the same key names as the
-      Excel tool's Sources sheet and the AGOL notebook. <a href="sources.html#services" target="_blank" rel="noopener">More on sources</a>.</div>
-    <div class="svcwarn" data-svcwarn hidden></div>
-    <table id="svcTable"><tbody></tbody></table>
-    <div class="note"><label title="By default every point is classified from the tilesets hosted with this site (FHWA HPMS classes + 2020 urban boundaries) — instant, and no per-point queries to the state services. Tick this to query the live state DOT + NTAD layers per point instead (the pre-tiles behavior; slower, but reflects any reclassification newer than the tilesets)."><input type="checkbox" id="liveVerdicts"> Live verdicts — query the state DOT layers per point instead of the cached tiles</label></div>
-    <div class="act"><button id="svcReset" type="button">Reset all to defaults</button></div>
-  </details>
 
   <details class="netlog">
     <summary title="Every request this page makes is listed here for transparency — your points only ever go to the public map services shown in this log.">Network log</summary>
@@ -4187,8 +4205,9 @@ function setAcubTilesVisible(on) {
    changes. Zero state-DOT / NTAD queries per point; only the
    non-fatal Census TIGER street-name lookup stays live. Falls back to
    the live-service path when tiles are unusable (file://, a missing
-   tileset, a read error) or when "live verdicts" is ticked under
-   Data service URLs.
+   tileset, a read error) or when Live Review is on (the button in the
+   results header; the stored state is the "Live verdicts" checkbox under
+   Data sources ▸ Data service URLs).
    ============================================================ */
 const ACUB_TILE_URL = "tiles/acub.pmtiles";
 const CLASS_TILE_Z = 13, ACUB_TILE_Z = 12, TILE_UNITS = 4096;
@@ -4196,6 +4215,43 @@ const tileSrcCache = new Map();   // url -> PmtilesSource
 function tileSource(url) {
   if (!tileSrcCache.has(url)) tileSrcCache.set(url, new protomapsL.PmtilesSource(url, false));
   return tileSrcCache.get(url);
+}
+/* Databricks Delta source (2026-09-22, per user). When this page is served by
+   the Databricks App in databricks/ (app.py), the SAME HPMS road segments and
+   urban-area polygons live in two Unity Catalog Delta tables — reviewer_roads
+   and reviewer_boundaries — and the app exposes them at api/features. The
+   probe below (one GET of api/health at load) turns the source on; the
+   cached-verdict path then reads features from the tables instead of the
+   PMTiles, through the same featuresNear() shape, so every verdict rule is
+   unchanged. GitHub Pages has no api/ and stays on the tiles. */
+let deltaApiOk = null, deltaApiInfo = null;
+async function deltaApiUsable() {
+  if (deltaApiOk === null) {
+    deltaApiOk = false;
+    if (location.protocol !== "file:") {
+      try {
+        const r = await fetch("api/health", { cache: "no-store" });
+        const j = r.ok ? await r.json() : null;
+        if (j && j.ok && j.delta) { deltaApiOk = true; deltaApiInfo = j; logNet(`Databricks Delta source found: ${j.catalog}.${j.schema} (${(j.tables || []).join(", ")})`); }
+      } catch { /* not the Databricks app */ }
+    }
+  }
+  return deltaApiOk;
+}
+async function deltaFeaturesNear(kind, stateCode, lat, lon, radiusFt) {
+  const q = new URLSearchParams({ kind, state: stateCode || "", lat: String(lat), lon: String(lon), ft: String(radiusFt) });
+  const r = await fetch("api/features?" + q.toString());
+  if (!r.ok) throw new Error("Delta API HTTP " + r.status);
+  const j = await r.json();
+  if (j.error) throw new Error("Delta API: " + j.error);
+  return j.features || [];
+}
+// One entry point for the cached path: Delta tables when served by the
+// Databricks app, else the tilesets. Same {props, geomType, parts} shape.
+async function featuresNear(kind, stateCode, lat, lon, radiusFt) {
+  if (await deltaApiUsable()) return deltaFeaturesNear(kind, stateCode, lat, lon, radiusFt);
+  if (kind === "acub") return tileFeaturesNear(ACUB_TILE_URL, "acub", ACUB_TILE_Z, lat, lon, radiusFt);
+  return tileFeaturesNear(HPMS_TILE_URL(stateCode), "roads", CLASS_TILE_Z, lat, lon, radiusFt);
 }
 let acubTilesOk = null;
 async function acubTilesUsable() {
@@ -4251,7 +4307,7 @@ function pointInRings(parts, lat, lon) {
 // determineAcub, from acub.pmtiles instead of the NTAD service.
 async function determineAcubTiles(lat, lon, bufferFt) {
   const floorFt = Math.max(bufferFt, ACUB_MIN_BUFFER_FEET);
-  const feats = await tileFeaturesNear(ACUB_TILE_URL, "acub", ACUB_TILE_Z, lat, lon, floorFt);
+  const feats = await featuresNear("acub", "", lat, lon, floorFt);
   for (const f of feats) {
     if (f.geomType === 3 && pointInRings(f.parts, lat, lon))
       return { exactUrban: true, boundary: false, name: cleanStr(f.props.NAME) };
@@ -4273,6 +4329,7 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
                 classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
                 verdict: "", reviewReason: "", failed: false, segments: [], bufferFt,
                 srcNote: "cached tiles", sourceKind: "hpms" };
+  if (deltaApiOk) out.srcNote = "Databricks Delta tables (reviewer_roads / reviewer_boundaries)";
   const acub = await determineAcubTiles(lat, lon, bufferFt);
   out.urbanRural = acub.exactUrban ? "Urban" : "Rural";
   out.acubName = acub.name;
@@ -4283,7 +4340,7 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
   // RouteNumber — HPMS is built from the states' submissions, so R points
   // straight back at the state inventory, e.g. an MDOT PR number).
   const roads = [];
-  const roadFeats = await tileFeaturesNear(HPMS_TILE_URL(stateCode), "roads", CLASS_TILE_Z, lat, lon, bufferFt);
+  const roadFeats = await featuresNear("roads", stateCode, lat, lon, bufferFt);
   for (const f of roadFeats) {
     if (f.geomType !== 2) continue;
     const d = minDistanceFt({ paths: f.parts }, lat, lon);
@@ -4330,7 +4387,7 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
 // "Source: FHWA HPMS … · MDOT live layer down" chip and the export column).
 async function classifyPointSmart(lat, lon, stateCode, bufferFt) {
   let tilesOk = false;
-  try { tilesOk = stateCode !== "XX" && hpmsTilesUsable() && (await ensureHpmsTiles(stateCode)) && (await acubTilesUsable()); }
+  try { tilesOk = stateCode !== "XX" && ((await deltaApiUsable()) || (hpmsTilesUsable() && (await ensureHpmsTiles(stateCode)) && (await acubTilesUsable()))); }
   catch { tilesOk = false; }
   if (!liveVerdictsForced() && tilesOk) return classifyPointTiles(lat, lon, stateCode, bufferFt);
   const outage = tilesOk ? liveSourceOutage(stateCode) : null;
@@ -4485,7 +4542,7 @@ async function refreshBrowseLayers() {
     for (let c = 1; c <= 7; c++)
       entries.push(sourceLinkHtml({ ...hs, label: `${functionalSystemLabel(c)} — ${hs.label}` },
         `<span class="sw" style="background:${FHWA_CHIP_COLOR[c]}"></span>${esc(functionalSystemLabel(c))}`, "lrow"));
-    entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — every road FHWA classifies, incl. local streets; no live queries. Interstates appear from z6, locals from z12. Roads with no class line (private drives, some subdivision streets) have no FHWA class in HPMS. Verdicts use these same tiles unless "live verdicts" is ticked under Data service URLs.</div>`);
+    entries.push(`<div class="note">Pre-built from FHWA's HPMS submission — every road FHWA classifies, incl. local streets; no live queries. Interstates appear from z6, locals from z12. Roads with no class line (private drives, some subdivision streets) have no FHWA class in HPMS. Verdicts use these same tiles unless Live Review is on (the ⟳ Live Review button above the results).</div>`);
   }
   if (untiled.length && !wantRoads) entries.push(`<div class="note">Zoom in (zoom ${BROWSE_MAJOR_ROAD_ZOOM}+) to load road classes${tiled.length ? " for " + esc(untiled.join(", ")) : ""}</div>`);
   else if (wantRoads && classCap) entries.push(`<div class="note">Showing ${classCap === 3 ? "principal arterials" : "arterials"} and up${tiled.length ? " for " + esc(untiled.join(", ")) : ""} — zoom in for collectors (z12+) and local streets (z${BROWSE_ROAD_ZOOM}+)</div>`);
@@ -4846,8 +4903,30 @@ function refreshExportDialog() {
 }
 window.refreshExportDialog = refreshExportDialog;
 
-/* ---------------- "View and Export" from the results header (the old pop-out) ---------------- */
-$("popoutBtn").addEventListener("click", () => openExport());
+/* ---------------- Live Review (2026-09-22, per user): one button in the results header ----------------
+   Toggles the "Live verdicts" setting (the checkbox under Data sources ▸ Data service URLs is the
+   stored state) and re-checks every site straight away, so the user sees the state DOT's answer
+   without digging through a panel. */
+function syncLiveReviewBtn() {
+  const b = $("liveReviewBtn"); if (!b) return;
+  const on = liveVerdictsForced();
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  b.textContent = on ? "⟳ Live Review: ON" : "⟳ Live Review";
+}
+$("liveReviewBtn").addEventListener("click", () => {
+  const cb = $("liveVerdicts");
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event("change"));   // persists + re-runs every site (the checkbox's own handler)
+  syncLiveReviewBtn();
+  toast(cb.checked ? "Live Review on — re-checking every site against the state DOT layers" : "Back to the cached HPMS tiles");
+});
+$("liveVerdicts").addEventListener("change", syncLiveReviewBtn);
+syncLiveReviewBtn();
+document.addEventListener("click", e => {
+  const m = $("srcMenu");
+  if (m && m.open && !e.target.closest("#srcMenu")) m.open = false;
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("srcMenu")) $("srcMenu").open = false; });
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (pinMode) setPinMode(0);

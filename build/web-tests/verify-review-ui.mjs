@@ -521,9 +521,11 @@ checks.push(["rows are compact until clicked (detail + links hidden)", await pag
   return collapsedHidden && openShows;
 })]);
 
-// --- the results-header button opens the same expanded View and Export; Back returns the map ---
-checks.push(["results-header 'View and Export' expands the pane with every site; Back restores the map", await page.evaluate(async () => {
-  document.getElementById("popoutBtn").click();
+// --- the pane-bottom button opens the expanded View and Export; Back returns the map ---
+// (the results-header duplicate was removed 2026-09-22 per user; only #viewExportBtn remains)
+checks.push(["'View and Export' expands the pane with every site; Back restores the map; header has no duplicate", await page.evaluate(async () => {
+  if (document.getElementById("popoutBtn")) return false;
+  document.getElementById("viewExportBtn").click();
   await new Promise(r => setTimeout(r, 480));
   const txt = document.getElementById("exportTable").textContent;
   const open = document.body.classList.contains("expanded") && document.querySelectorAll("#exportTable tr").length === 3

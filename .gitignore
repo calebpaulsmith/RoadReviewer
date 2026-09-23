@@ -21,3 +21,6 @@ __pycache__/
 # Inspector output (FIRMettes, Map PDFs, KML, CSV) — generated per WO
 # by the workflows; never source of truth, never committed.
 Output/
+
+# Databricks App package output (databricks\package.ps1) - 350 MB with tiles, never committed
+dist/

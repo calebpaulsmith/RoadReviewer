@@ -984,6 +984,11 @@ src/                                    Shared VBA source (importable .bas modul
                                           Excel's (machine-dependently broken) print renderer
   modExport.bas                         Sites table → CSV with resolved link URLs, product-
                                           filtered columns (F10)
+databricks/                             the web tool as a Databricks App (§7i): app.yaml + app.py
+                                          (FastAPI: static site, PMTiles range server, /api over the
+                                          two reviewer_* Delta tables), setup/build_reviewer_tables.py
+                                          (notebook that harvests HPMS + ACUB + TIGER counties/states
+                                          into Unity Catalog), package.ps1 (-> dist/*.zip, gitignored)
 build/                                  Local assembly + verification scripts (not for end users)
   build.ps1                             COM-driven build; `-Product Standard|Inspector|Both`
                                           (default Both) → RoadReviewer.xlsm + Site Inspector
@@ -1500,6 +1505,40 @@ live services. Full design narrative + verification history:
   up in **`docs/NEXT-road-name-lookup.md`**. Nothing of it is built.
 
 ---
+
+## 7i. Databricks App + `reviewer_*` Delta tables (2026-09-22, per user)
+
+`databricks/` packages the SAME `web/` site as a Databricks App with its data
+in **two** Unity Catalog Delta tables (as few as possible, per user):
+`reviewer_roads` (every HPMS segment, six states: `f_system`, state LRS keys,
+bbox columns, GeoJSON) and `reviewer_boundaries` (`kind` = urban_area /
+county / state). `setup/build_reviewer_tables.py` is a notebook that ports
+`build/tiles/fetch-hpms-state.mjs` (quadtree envelope harvest) and
+`fetch-acub.mjs` to Python and adds TIGERweb counties + states; `app.py`
+(FastAPI) serves `web/` with HTTP Range support for the PMTiles and exposes
+`/api/health`, `/api/features?kind=roads|acub|county` and `/api/area`.
+**Page hook:** `index.html` probes `api/health` once at load
+(`deltaApiUsable`); when it answers `delta:true`, `featuresNear()` routes the
+cached-verdict path (`determineAcubTiles` / `classifyPointTiles`) to
+`api/features` instead of the tiles — identical `{props, geomType, parts}`
+shape, identical verdict code, `srcNote` = "Databricks Delta tables". On
+GitHub Pages there is no `api/` and nothing changes. `package.ps1` builds
+`dist/RoadReviewer-databricks-app.zip` (~350 MB with tiles, `-NoTiles` to
+serve tiles from a UC Volume via `RR_TILES_DIR`); `dist/` is gitignored.
+Verified locally: uvicorn + a stubbed `_query` → Chromium classified the
+§4.2 Kalamazoo point "Federal aid - Urban Minor Collector" from the API with
+exactly three `/api` calls. NOT yet deployed to a real workspace — the SQL
+connector / service-principal auth path in `_connect()` is untested live.
+
+**Same pass, UI (per user):** the "unofficial" badge is gone; the header's
+"Data sources" is a dropdown (`#srcMenu`, spans the sidebar) holding the
+citations + How-it-decides links AND the **Data service URLs** panel
+(`#services`, moved out of the scroll column — the shared services block is
+untouched); the results-header "⧉ View and Export" duplicate (`#popoutBtn`)
+is removed, only the pane-bottom `#viewExportBtn` remains; a **⟳ Live
+Review** toggle button (`#liveReviewBtn`) sits in its place and drives the
+(now hidden) `#liveVerdicts` checkbox, which remains the stored state and
+the thing verify-hpms-tiles flips.
 
 ## 7c. Two-product split (2026-07-05) — summary
 
