@@ -1150,7 +1150,7 @@ active work is — the latest round (branch `claude/web-map-roads-hvran-6akxmg`,
 PR #43) added the single Export pill + export dialogue with the editable table
 and the identity write-back (§7b). Outstanding: Caleb's hand pass over that
 work (`docs/web-manual-tests.md`), the PDF map-width redesign question, and
-the never-reproduced "Page Unresponsive" zoom crash — all three tracked as
+the "Page Unresponsive" zoom crash (reproduced + fixed 2026-09-30) — all three tracked as
 open items at the end of §7b.
 
 Everything in the §3 V1 scope is BUILT and covered by the §9.2 verifier
@@ -1514,10 +1514,40 @@ live services. Full design narrative + verification history:
   feeds to `reportFrame()` — geometry deliberately untouched. Caleb asked to
   **revisit what this control is for at all** (fixed scale vs per-site auto-fit
   vs a plain zoom); the odd 0.75 mi step is an artifact of the metre values,
-  not a choice. (b) A "Page Unresponsive" crash on zooming region↔street,
-  reported from the real laptop and **never reproduced headless** (max long
-  task ~0.5 s under 4× throttling at DPR 2); the canvas-count fix above is the
-  best candidate — re-check on the laptop. (c) Caleb's hand pass over the
+  not a choice. (b) **"Page Unresponsive" — REPRODUCED AND FIXED (2026-09-30,
+  per user: Live Review clicked with points in the box froze Edge).**
+  Reproduced headless at 2560×1350, DPR 2, 4× CPU throttling (the earlier
+  1600×1000 attempts were simply too small): single main-thread tasks of
+  5–8 s, the four verdicts starved until the paint finished. A Chrome trace
+  (not the sampling profiler, which only says "(program)") put 80 of 84 s in
+  `CanvasResourceProviderSharedImage::ProduceCanvasResource` inside the frame
+  commit — the browser copying changed canvas bitmaps to the compositor —
+  and inside each 4–8 s commit ONE canvas cost 1.5–4 s while ~60 tile
+  canvases cost ~15 ms each. That canvas was the six-state **mask**:
+  `L.canvas({padding: 0.5})` is one bitmap the size of the padded viewport
+  (8480×5400 px = 183 MB at that screen) that Leaflet redraws on every move
+  and zoom. Fixes, all in `web/index.html`: (1) the mask polygon uses
+  `L.svg` (3,038 vertices; pans by transform); (2) `pacedLayer()` wraps every
+  protomaps layer — `tilePaintGate` releases 1–3 tiles per animation frame
+  (adaptive on the previous frame's duration, `tileDelay` ~0 so paint follows
+  release) instead of letting 60–100 tiles per layer × 4–6 layers paint in the
+  same frames; (3) `fadeAnimation: false` on the map; (4) the Live Review
+  toggle keeps the map view and re-selects the site instead of refitting to
+  the region view. After: no load-time task over 150 ms, verdicts land ~12 s
+  after the paste (were minutes), worst single task ~3 s (was 8–11 s) under
+  the same 4× throttle. Residual: periodic commits that re-produce ALL ~230
+  canvases at ~12 ms each — 2–3 s throttled, ~0.5–0.8 s real; a `clearRect`
+  repaint counter shows JS repainted only 2–4 of them, so it is the browser
+  discarding/re-creating canvas resources, which headless SwiftShader may
+  exaggerate. Next lever if the laptop still stutters: ONE multi-source
+  protomaps layer for the six state class tilesets + ACUB (`sources: {mi:
+  {url…}, …}` with `dataSource` on each paint rule — the vendored 5.1.0
+  supports it) → one canvas per tile instead of up to seven, ~40% fewer
+  canvases. Method (the scratch scripts die with the session): Playwright +
+  CDP `Tracing.start` (categories `devtools.timeline,disabled-by-default-
+  devtools.timeline,cc,gpu`), group `X` events under each `RunTask` > 1 s and
+  count `ProduceCanvasResource` per commit; `Emulation.setCPUThrottlingRate`
+  4 and `deviceScaleFactor: 2` at 2560×1350 are what made it show. (c) Caleb's hand pass over the
   export/edit work (`docs/web-manual-tests.md`, interactive copy at
   <https://claude.ai/artifact/KMuEX8xpojeYZ36aBrvSnG>) is outstanding.
   (d) **A road name with NO place is refused** (`Q Ave` — a bare name would
