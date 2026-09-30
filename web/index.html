@@ -2050,6 +2050,50 @@ const ATLAS = { paper: "#f3ecd9", ground: "#e8e1cd", water: "#a8c6c7", park: "#c
                 ink: "#3d342b", inkSoft: "#6d6255", border: "#9d917c", casing: "#d4cab5", ribbon: "#fbf8ef",
                 ochre: "#e8c98a", ochreCasing: "#bf9d5a", majorFill: "#f0dfb1", majorCasing: "#c9b27a",
                 building: "#d8d0c2", rail: "#a99e8a" };
+/* ---- Tile paint pacing (2026-09-30, the "Page Unresponsive" report) ----
+   protomaps-leaflet paints a tile the moment its data arrives (after a
+   tileDelay of 3 ms x its distance from the view centre), so at a region
+   view on a big screen 60-100 tiles per layer x 4-6 layers all paint inside
+   the same few frames. Canvas 2D on a machine without GPU acceleration (the
+   hardened laptop; headless Chromium) rasterizes them together in ONE task:
+   measured 5-8 s single tasks at 2560x1350 @2x under 4x CPU throttling, with
+   147 of 177 profiled seconds in native raster (only setTransform / scale /
+   stroke named) and the four verdicts starved until the paint finished.
+   This gate hands each tile's data to the painter a few tiles per animation
+   frame, adaptively — a slow previous frame drops it to one — so the same
+   total paint work is spread out: the map fills in progressively and the
+   page keeps answering input. Every protomaps layer goes through
+   pacedLayer(): basemap, street detail, per-state class tiles, urban areas. */
+const tilePaintGate = (() => {
+  const waiting = [];
+  let scheduled = false, lastFrame = 0, perFrame = 2;
+  function pump(ts) {
+    scheduled = false;
+    const dt = lastFrame ? ts - lastFrame : 0;
+    lastFrame = ts;
+    if (dt > 80) perFrame = 1;
+    else if (dt > 40) perFrame = Math.max(1, perFrame - 1);
+    else perFrame = Math.min(4, perFrame + 1);
+    for (let n = 0; n < perFrame && waiting.length; n++) waiting.shift()();
+    if (waiting.length) { scheduled = true; requestAnimationFrame(pump); }
+    else lastFrame = 0;
+  }
+  return () => new Promise(res => {
+    waiting.push(res);
+    if (!scheduled) { scheduled = true; requestAnimationFrame(pump); }
+  });
+})();
+function pacedLayer(opts) {
+  const layer = protomapsL.leafletLayer(opts);
+  // renderTile() awaits view.getDisplayTile() and then paints; gating the
+  // data hand-off is the only seam the library exposes without a fork.
+  for (const view of layer.views.values()) {
+    const orig = view.getDisplayTile.bind(view);
+    view.getDisplayTile = async coords => { const t = await orig(coords); await tilePaintGate(); return t; };
+  }
+  return layer;
+}
+
 const ATLAS_FLAVOR = {
   background: ATLAS.ground, earth: ATLAS.paper,
   park_a: "#d9dfbd", park_b: ATLAS.park, hospital: "#ece0d5", industrial: "#e8e1d0", school: "#ece5d2",
@@ -2111,7 +2155,7 @@ const imageryBase = L.layerGroup([
     // roads, dark brown-grey type. Same key set as the library's built-in
     // "light" flavor; handed to its exported paintRules/labelRules because
     // the flavor option itself only accepts the built-in names.
-    roadBase = protomapsL.leafletLayer({ url: "tiles/basemap.pmtiles", maxDataZoom: 11,
+    roadBase = pacedLayer({ url: "tiles/basemap.pmtiles", maxDataZoom: 11,
       paintRules: protomapsL.paintRules(ATLAS_FLAVOR), labelRules: protomapsL.labelRules(ATLAS_FLAVOR, "en"),
       backgroundColor: ATLAS_FLAVOR.background,
       attribution: 'Basemap &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; OpenStreetMap' });
@@ -2187,7 +2231,7 @@ const imageryBase = L.layerGroup([
         symbolizer: new P.CenteredTextSymbolizer({ labelProps: ["housenumber"],
           fill: "#8a7f70", font: "400 9px system-ui" }) },
     ];
-    P.leafletLayer({ url: tpl, paintRules, labelRules, pane: "detailPane", updateWhenIdle: true,
+    pacedLayer({ url: tpl, paintRules, labelRules, pane: "detailPane", updateWhenIdle: true,
       minZoom: 13, maxDataZoom: 14,
       attribution: 'Detail &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; OpenStreetMap' }).addTo(map);
   } catch { /* the detail layer is a bonus — never let it break the map */ }
@@ -4157,7 +4201,7 @@ async function ensureHpmsTiles(st) {
     if (!hpmsTilesUsable()) throw 0;
     const r = await fetch(HPMS_TILE_URL(st), { method: "HEAD" });
     if (!r.ok) throw 0;
-    entry.layer = protomapsL.leafletLayer({
+    entry.layer = pacedLayer({
       url: HPMS_TILE_URL(st), pane: "browsePane", updateWhenIdle: true,
       paintRules: hpmsPaintRules(), labelRules: [],
       // maxDataZoom MUST match the tileset's -z (13): protomaps-leaflet
@@ -4206,7 +4250,7 @@ async function ensureAcubTileLayer() {
   if (acubTileLayer) return true;
   if (!hpmsTilesUsable() || !(await acubTilesUsable())) return false;
   if (acubTileLayer) return true;
-  acubTileLayer = protomapsL.leafletLayer({ url: ACUB_TILE_URL, pane: "acubPane", updateWhenIdle: true,
+  acubTileLayer = pacedLayer({ url: ACUB_TILE_URL, pane: "acubPane", updateWhenIdle: true,
     paintRules: [{ dataLayer: "acub", symbolizer: new protomapsL.PolygonSymbolizer({
       fill: "rgb(252,201,237)", opacity: 0.32, stroke: "#8a6d80", width: 1 }) }],
     labelRules: [], minZoom: BROWSE_ACUB_ZOOM, maxDataZoom: ACUB_TILE_Z,
