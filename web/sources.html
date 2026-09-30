@@ -83,12 +83,13 @@
   <p>A blue result is downgraded to amber "Review" when something nearby could realistically flip it to
   federal-aid. The specific reason is reported with the row, checked in this order (most specific first):</p>
   <ul>
+    <li><b>Conflicting classes</b> — two roads sit at the <b>same distance</b> (within 3 ft) and only one is federal-aid, so the data cannot say which one the point is on. Usually one road recorded twice with different classes: FHWA HPMS keeps an <i>inventory</i> and a <i>non-inventory direction</i> record for some roads (WisDOT's STH 52 near Rhinelander is a Minor Collector on one and an Other Principal Arterial on the other). This is the one case where a red result is downgraded to amber.</li>
     <li><b>Second road close</b> — the second-closest road is within <b>30 ft</b> of the closest one <i>and</i> is federal-aid. At that separation, GPS error alone can put the point on either road.</li>
     <li><b>Nearby FHWA road</b> — some other detected road inside the search radius is federal-aid. The point is probably on the local road, but a human should confirm.</li>
     <li><b>Urban boundary edge</b> — the closest road is a Minor Collector and the point sits right on an urban-boundary edge; urban vs rural flips a Minor Collector's verdict, so it needs a look.</li>
     <li><b>No road found</b> / <b>Non-certified</b> — nothing classified within the radius, or the closest segment is a non-certified roadway in the state data.</li>
   </ul>
-  <p>A red row is never downgraded: if the closest road is federal-aid, that IS the answer, regardless of what else is nearby.</p>
+  <p>Otherwise a red row is never downgraded: if the closest road is federal-aid, that IS the answer, regardless of what else is nearby. The only exception is the tie above — two roads at the same distance with different outcomes.</p>
 </section>
 
 <section id="mi">

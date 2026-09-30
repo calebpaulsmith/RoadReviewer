@@ -166,6 +166,17 @@ console.log("computeVerdict (closest-road + ambiguity model, port of modClassify
   check("closest urban minor collector -> red", v([seg(6, 5)], true, false).verdict === "Federal aid - Urban Minor Collector");
   check("closest rural minor collector -> green (correct label)", v([seg(6, 5)], false, false).verdict === "Non-federal aid - Rural Minor Collector");
   check("red stays red with local nearby", v([seg(5, 5), seg(7, 10)], false, false).verdict === "Federal aid - Rural Major Collector");
+  // A TIE (same distance, within CLASS_TIE_FEET) with differing outcomes is a
+  // review whichever segment came first — WI STH 52 in HPMS: the inventory
+  // record is class 6, the non-inventory direction record class 3, both 25 ft.
+  check("tie with different outcomes -> Conflicting classes (federal first)",
+    v([seg(3, 25), seg(6, 25)], false, false).verdict === "Review - Conflicting classes");
+  check("tie with different outcomes -> Conflicting classes (non-federal first)",
+    v([seg(6, 25), seg(3, 25)], false, false).reason === "Conflicting classes");
+  check("tie, both federal -> red", v([seg(1, 0), seg(2, 0)], false, false).verdict === "Federal aid - Rural Interstate");
+  check("tie, both non-federal -> green", v([seg(7, 0), seg(6, 0)], false, false).verdict === "Non-federal aid - Rural Local");
+  check("tie with a non-certified segment is not a conflict", v([seg(3, 0), seg(0, 0)], false, false).verdict === "Federal aid - Rural Other Principal Arterial");
+  check("4 ft apart is not a tie", v([seg(3, 20), seg(7, 24)], false, false).verdict === "Federal aid - Rural Other Principal Arterial");
   check("interstate gets urban/rural prefix", v([seg(1, 5)], true, false).verdict === "Federal aid - Urban Interstate");
   check("local closest + federal within 30 ft -> Second road close",
     v([seg(7, 5), seg(5, 20)], false, false).verdict === "Review - Second road close");

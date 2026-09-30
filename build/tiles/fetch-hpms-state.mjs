@@ -83,7 +83,7 @@ function cellUrl([x0, y0, x1, y1]) {
   return `${BASE}/query?where=STATE_ID%3D${fips}` +
     `&geometry=${x0.toFixed(5)},${y0.toFixed(5)},${x1.toFixed(5)},${y1.toFixed(5)}` +
     `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
-    `&outFields=OBJECTID,F_SYSTEM,ROUTE_ID,BEGIN_POINT,END_POINT,RouteName,RouteNumber` +
+    `&outFields=OBJECTID,F_SYSTEM,ROUTE_ID,BEGIN_POINT,END_POINT,RouteName,RouteNumber,FACILITY_TYPE` +
     // NO resultRecordCount: the service stopped accepting it (republish,
     // 2026-09-14 evening) — the layer's own maxRecordCount (2000) caps the
     // page and exceededTransferLimit still signals the split.
@@ -153,6 +153,16 @@ async function worker() {
           if (p.END_POINT != null) props.E = Math.round(p.END_POINT * 1000) / 1000;
           if (p.RouteName != null && String(p.RouteName).trim() !== "") props.N = String(p.RouteName).trim();
           if (p.RouteNumber != null && p.RouteNumber !== 0) props.RN = p.RouteNumber;
+          // T = HPMS FACILITY_TYPE, only when it is NOT a plain mainline
+          // (1 one-way / 2 two-way): 4 ramp, 5 non-mainline, 6 NON-INVENTORY
+          // DIRECTION, 7 planned/unbuilt. A 6 is the other direction of a
+          // road the state inventories once; on an UNDIVIDED road it is the
+          // same centerline written twice, and the two records can disagree
+          // on class (WI STH 52 at 45.169879,-89.102452: inventory record
+          // class 6, non-inventory 3). The cached classifier drops such a
+          // twin so the inventory record decides (classifyPointTiles).
+          const ft = Math.trunc(Number(p.FACILITY_TYPE));
+          if (ft >= 3 && ft <= 7) props.T = ft;
           lines += JSON.stringify({ type: "Feature", properties: props, geometry: f.geometry }) + "\n";
           written++;
         }

@@ -25,6 +25,9 @@ Private Const ACUB_MIN_BUFFER_FEET As Long = 250
 ' declarations MUST precede every Sub/Function (VBA "Only comments may appear
 ' after End Sub" rule, §9.3), so it lives up here, not next to its user.
 Private Const CLOSE_ROAD_FEET As Double = 30
+' Two roads this close to the SAME distance are a tie: sort order would pick
+' the winner, so a tie whose two outcomes differ is a review, not a verdict.
+Private Const CLASS_TIE_FEET As Double = 3
 
 ' Tracks whether the not-authoritative disclaimer dialog has been shown yet
 ' this Excel session. Module-level state must precede every procedure (VBA
@@ -676,6 +679,21 @@ Private Sub ComputeVerdict(ByVal segs As Collection, ByVal exactUrban As Boolean
         verdict = "Review - non-certified class, check manually"
         reason = "Non-certified"
         Exit Sub
+    End If
+    ' (0) Two roads at effectively the SAME distance whose federal-aid outcomes
+    ' differ: one undivided road written twice with different classes (HPMS
+    ' inventory vs non-inventory direction - WI STH 52 at 45.169879,-89.102452
+    ' is 6 vs 3), or the exact intersection of an arterial and a local street.
+    ' Sort order would pick the winner arbitrarily, so it is a review whichever
+    ' came first - the one case where red does not stay red.
+    If UBound(sorted) >= 1 Then
+        If CLng(sorted(1)(0)) <> 0 And (CDbl(sorted(1)(1)) - pDist) <= CLASS_TIE_FEET Then
+            If ClassIsFederal(CLng(sorted(1)(0)), exactUrban) <> ClassIsFederal(pClass, exactUrban) Then
+                verdict = "Review - Conflicting classes"
+                reason = "Conflicting classes"
+                Exit Sub
+            End If
+        End If
     End If
     If ClassIsFederal(pClass, exactUrban) Then
         verdict = "Federal aid - " & PrefixedClass(pClass, exactUrban)   ' RED stays RED

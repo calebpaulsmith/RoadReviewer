@@ -726,6 +726,30 @@ services — default UA (or any UA) returns 200, same as the nationwide
 ACUB layer. RoadReviewer sends its browser UA on every request
 regardless; harmless here.
 
+#### HPMS vs WisDOT disagreement — STH 52 near Rhinelander (2026-09-30, per user)
+
+`45.169879, -89.102452` reads **Minor Collector** in Excel (WisDOT trunk
+layer, the live web path) but **Other Principal Arterial** from the HPMS
+tiles. Not a two-layer bug: the WisDOT trunk layer returns the road twice
+(`RWLK_ID` 6463 "STH 52 E" `FED_FC_CD=6`, and 19029 "STH 52 W" with a
+BLANK class — WisDOT classes only the inventory direction of an undivided
+road, `DIV_STATUS=U`), and the null record is skipped. FHWA HPMS 2024 carries
+the same two records as `ROUTE_ID` 6463 (`F_SYSTEM=6`, `FACILITY_TYPE=2`
+two-way) and 19029 (`F_SYSTEM=3`, **`FACILITY_TYPE=6` = Non-Inventory
+Direction**). Both sit 25 ft from the point, and the tiles listed 19029
+first, so "closest wins" picked the non-inventory record. WisDOT's
+submission is inconsistent; the inventory record is the one to believe.
+Fixes: (1) `computeVerdict` (rr-core, modClassify, notebook) now returns
+**"Review - Conflicting classes"** when the two nearest segments are within
+`CLASS_TIE_FEET` (3 ft) of the same distance and their federal-aid outcomes
+differ — the one case where red does not stay red (sort order was deciding);
+(2) the tile harvest bakes `T` = `FACILITY_TYPE` for non-mainline records and
+`classifyPointTiles` drops a `T:6` segment whose inventory twin (same `RN`,
+or same name apart from a trailing N/S/E/W) is at the same distance, so with
+rebuilt tiles the point reads Minor Collector like Excel (`build/tiles/
+README.md`). WI tiles were rebuilt with `T`; MI/IN/MN/IL/OH still lack it and
+fall to the Conflicting-classes review until rebuilt.
+
 #### Confirmed test coordinates (verified live 2026-07-01)
 
 | # | Expected outcome | lat | lon | Layer / result |

@@ -11,7 +11,9 @@ default 250 ft, matching the Excel search buffer), same per-road
 distances, and the same PR #24 verdict model — the **closest** road
 segment decides red vs blue, amber only downgrades blue with an
 explicit Review Reason ("Second road close" / "Nearby FHWA road" /
-"Urban boundary edge"), and red never downgrades. Same red/blue/amber
+"Urban boundary edge"), and red never downgrades — except a tie:
+two roads at the same distance (within 3 ft) with different outcomes
+is "Conflicting classes", whichever came first. Same red/blue/amber
 buckets as the Sites table and KML export. A "Download PDF Report"
 button turns the classified points into a citeable PDF — see below.
 
