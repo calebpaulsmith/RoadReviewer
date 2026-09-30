@@ -107,10 +107,22 @@ const base = await paneColours("leaflet-tile-pane");
 ok(base.distinct > 40, "region view: basemap paints more than land + water", `${base.distinct} distinct colours at z${z0}`);
 const browse = await paneColours("leaflet-browse-pane");
 ok(browse.blue === 0, "region view: NO class lines at the region zoom (clean opening map)", `${browse.blue} sampled blue px`);
-const outside = await paneAt("leaflet-mask-pane", 38.5, -95.5);        // Kansas: outside the six states
-ok(outside.some(p => p[3] > 250), "region view: mask covers points outside the six states", JSON.stringify(outside[0]));
-const inside = await paneAt("leaflet-mask-pane", 44.9, -93.2);         // Minneapolis: inside a hole
-ok(inside.every(p => p[3] === 0), "region view: mask leaves the states open", JSON.stringify(inside[0]));
+// The mask is an SVG path since 2026-09-30 (as a canvas it was one
+// viewport-sized bitmap re-uploaded on every move — the "Page Unresponsive"
+// freeze), so hit-test the path's fill (evenodd: the state holes are open)
+// instead of sampling canvas pixels.
+const maskCovers = (lat, lon) => page.evaluate(([lat, lon]) => {
+  const svg = document.querySelector(".leaflet-mask-pane svg"), path = svg && svg.querySelector("path");
+  if (!path) return null;
+  const pt = map.latLngToContainerPoint([lat, lon]);
+  const mr = document.getElementById("map").getBoundingClientRect(), sr = svg.getBoundingClientRect();
+  const [vx, vy] = svg.getAttribute("viewBox").split(" ").map(Number);   // Leaflet: viewBox size == svg size, scale 1
+  return path.isPointInFill(new DOMPoint(vx + (mr.left + pt.x - sr.left), vy + (mr.top + pt.y - sr.top)));
+}, [lat, lon]);
+const outside = await maskCovers(38.5, -95.5);                        // Kansas: outside the six states
+ok(outside === true, "region view: mask covers points outside the six states", String(outside));
+const inside = await maskCovers(44.9, -93.2);                         // Minneapolis: inside a hole
+ok(inside === false, "region view: mask leaves the states open", String(inside));
 
 // ---- 2. Minneapolis z10: ACUB from tiles, no river slivers ----
 await page.evaluate(() => map.setView([44.95, -93.5], 10)); await sleep(8000);
