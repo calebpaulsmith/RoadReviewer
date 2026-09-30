@@ -2086,7 +2086,13 @@ const tilePaintGate = (() => {
   });
 })();
 function pacedLayer(opts) {
-  const layer = protomapsL.leafletLayer(opts);
+  // tileDelay: the library sleeps (distance from centre x tileDelay ms)
+  // between receiving a tile's data and painting it, default 3 ms. With
+  // the gate that sleep let tiles released over several cheap frames pile
+  // into one later frame (5-7 s tasks at street zoom, worse than ungated).
+  // ~0 keeps release and paint in the same frame, so the pump's frame-time
+  // feedback measures the real raster cost. (0 itself is read as "unset".)
+  const layer = protomapsL.leafletLayer(Object.assign({ tileDelay: 0.001 }, opts));
   // renderTile() awaits view.getDisplayTile() and then paints; gating the
   // data hand-off is the only seam the library exposes without a fork.
   for (const view of layer.views.values()) {
