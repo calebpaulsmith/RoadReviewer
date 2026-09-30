@@ -70,7 +70,7 @@ Measured (2026-09-14, HPMS_National_Current):
 | OH | 487,331 | 57 MB |
 | IL | 445,757 | 46 MB |
 | MN | 509,570 | 53 MB |
-| WI | 902,580 | 70 MB |
+| WI | 902,580 | 70 MB (rebuilt 2026-09-30 with `T`, 70.3 MB) |
 
 The state-linkage attributes (round 2, below) roughly double-to-triple
 each tileset — every file still under the 100 MB limit; ≈ 317 MB total
