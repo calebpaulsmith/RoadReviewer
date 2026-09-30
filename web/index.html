@@ -2033,7 +2033,11 @@ document.addEventListener("click", e => {
 // away, and minZoom — recomputed on resize, since the region-fit zoom depends
 // on the viewport — blocks zooming out any further than the region.
 const R5_BOUNDS = L.latLngBounds([36.8, -97.5], [49.6, -80.3]);
-const map = L.map("map", { zoomAnimation: false, maxZoom: 19,
+// fadeAnimation off (2026-09-30): Leaflet fades tiles in by setting opacity
+// on EVERY loading tile each animation frame; with ~270 tile canvases that
+// style churn re-uploaded 140-200 canvases per commit (8-20 ms each in a
+// trace, 1.4-3 s per frame) while only 2-4 were actually repainted.
+const map = L.map("map", { zoomAnimation: false, fadeAnimation: false, maxZoom: 19,
   maxBounds: R5_BOUNDS, maxBoundsViscosity: 1.0 });
 map.fitBounds(R5_BOUNDS);
 function lockRegionZoom() {
