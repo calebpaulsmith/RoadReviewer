@@ -2066,14 +2066,16 @@ const ATLAS = { paper: "#f3ecd9", ground: "#e8e1cd", water: "#a8c6c7", park: "#c
    pacedLayer(): basemap, street detail, per-state class tiles, urban areas. */
 const tilePaintGate = (() => {
   const waiting = [];
-  let scheduled = false, lastFrame = 0, perFrame = 2;
+  let scheduled = false, lastFrame = 0, perFrame = 1;
   function pump(ts) {
     scheduled = false;
     const dt = lastFrame ? ts - lastFrame : 0;
     lastFrame = ts;
-    if (dt > 80) perFrame = 1;
-    else if (dt > 40) perFrame = Math.max(1, perFrame - 1);
-    else perFrame = Math.min(4, perFrame + 1);
+    // Climb only while frames stay cheap; a slow frame (the previous batch's
+    // rasterization) drops straight back to one tile, so it can't oscillate.
+    if (dt > 120) perFrame = 1;
+    else if (dt > 50) perFrame = Math.max(1, perFrame - 1);
+    else if (dt < 30) perFrame = Math.min(3, perFrame + 1);
     for (let n = 0; n < perFrame && waiting.length; n++) waiting.shift()();
     if (waiting.length) { scheduled = true; requestAnimationFrame(pump); }
     else lastFrame = 0;
