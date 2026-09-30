@@ -2265,7 +2265,16 @@ map.createPane("maskPane").style.zIndex = 300;
       for (const poly of polys) holes.push(poly[0].map(([x, y]) => [y, x]));   // outer ring only
     }
     const world = [[-89, -540], [-89, 540], [89, 540], [89, -540]];
-    L.polygon([world, ...holes], { pane: "maskPane", renderer: L.canvas({ pane: "maskPane", padding: 0.5 }),
+    // SVG renderer, NOT L.canvas (2026-09-30): a canvas renderer here is one
+    // bitmap the size of the padded viewport — 8480x5400 px (183 MB) at
+    // 2560x1350 on a 2x display — and Leaflet redraws it on every move and
+    // zoom, after which the browser re-uploads the whole bitmap to the
+    // compositor on the main thread (CanvasResourceProviderSharedImage::
+    // ProduceCanvasResource, 1.5-4 s per upload under 4x CPU throttling; the
+    // single biggest block in every "Page Unresponsive" trace, dwarfing the
+    // ~1 ms per tile canvas). The mask is 3,038 vertices: as an SVG path it
+    // pans by transform and re-projects in a few ms on zoom.
+    L.polygon([world, ...holes], { pane: "maskPane", renderer: L.svg({ pane: "maskPane" }),
       stroke: true, color: ATLAS.border, weight: 1.2, opacity: 0.9,
       fill: true, fillColor: ATLAS.ground, fillOpacity: 1, fillRule: "evenodd", interactive: false }).addTo(map);
   } catch { /* no mask file (file:// or missing): the rectangle extract shows as before */ }
