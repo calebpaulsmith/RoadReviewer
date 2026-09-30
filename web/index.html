@@ -4413,19 +4413,19 @@ async function determineAcubTiles(lat, lon, bufferFt) {
 
 // The cached-path equivalent of classifyPoint — identical output shape
 // and identical verdict logic, fed from the tiles.
-// HPMS writes some roads twice: the inventory record plus a NON-INVENTORY
-// DIRECTION record (FACILITY_TYPE 6, baked into the tiles as T:6 by
-// build/tiles/fetch-hpms-state.mjs). On a divided highway that is the second
-// carriageway and must stay — a point on it needs it. On an UNDIVIDED road it
-// is the same centerline written again, and the two records can carry
-// different classes: WI STH 52 at 45.169879,-89.102452 is class 6 on the
-// inventory record and 3 on the non-inventory one, while WisDOT's own layer
-// (the live path, and the Excel tool) classes only the inventory direction.
-// Drop a T:6 segment whose inventory twin — same route number, or same name
-// apart from a trailing direction letter — lies at the same distance, so the
-// inventory record decides. Tilesets built before T existed carry no T; the
-// tie then lands in computeVerdict's "Conflicting classes" review instead of
-// whichever record the tile listed first.
+// HPMS writes some routes twice: a two-way record (FACILITY_TYPE 2) plus a
+// "non-inventory direction" record (FACILITY_TYPE 6, baked into the tiles as
+// T:6 by build/tiles/fetch-hpms-state.mjs) on the SAME centerline, and the
+// two can carry different classes: WI STH 52 at 45.169879,-89.102452 is
+// class 6 on the type-2 record and 3 on the type-6 one, while WisDOT's own
+// layer (the live path, and the Excel tool) classes only one direction.
+// Drop a T:6 segment whose twin — same route number, or same name apart
+// from a trailing direction letter — lies at the same distance, so the
+// type-2 record decides. T:6 on its own means nothing (WisDOT files nearly
+// every local street as 6, 725k of 902k segments), and a divided highway's
+// second carriageway is far enough away to keep. Tilesets built before T
+// existed carry no T; the tie then lands in computeVerdict's "Conflicting
+// classes" review instead of whichever record the tile listed first.
 function routeStem(name) {
   return String(name || "").toUpperCase().replace(/\s+/g, " ").trim().replace(/(\d)\s*[NSEW]$/, "$1");
 }

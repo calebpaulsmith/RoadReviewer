@@ -744,11 +744,18 @@ Fixes: (1) `computeVerdict` (rr-core, modClassify, notebook) now returns
 `CLASS_TIE_FEET` (3 ft) of the same distance and their federal-aid outcomes
 differ — the one case where red does not stay red (sort order was deciding);
 (2) the tile harvest bakes `T` = `FACILITY_TYPE` for non-mainline records and
-`classifyPointTiles` drops a `T:6` segment whose inventory twin (same `RN`,
-or same name apart from a trailing N/S/E/W) is at the same distance, so with
-rebuilt tiles the point reads Minor Collector like Excel (`build/tiles/
-README.md`). WI tiles were rebuilt with `T`; MI/IN/MN/IL/OH still lack it and
-fall to the Conflicting-classes review until rebuilt.
+`classifyPointTiles` drops a `T:6` segment whose twin (same `RN`, or same
+name apart from a trailing N/S/E/W) is at the same distance, so with rebuilt
+tiles the point reads Minor Collector like Excel (`build/tiles/README.md`).
+Caveat measured while rebuilding: `FACILITY_TYPE 6` is NOT a rare marker in
+WI — WisDOT files 725k of its 902k segments (nearly every local street) as
+6, versus 16 of 861 in a Kalamazoo sample for MI — so `T:6` on its own means
+nothing; only the same-route, same-distance twin test acts on it. WI tiles
+were rebuilt with `T`; MI/IN/MN/IL/OH still lack it and fall to the
+Conflicting-classes review until rebuilt. The harvester now retries a
+minimum-size cell the server gives up on and then skips it with a warning
+instead of aborting the run (the first WI rebuild died one Milwaukee cell
+from the end).
 
 #### Confirmed test coordinates (verified live 2026-07-01)
 
