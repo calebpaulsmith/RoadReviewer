@@ -83,7 +83,7 @@ function cellUrl([x0, y0, x1, y1]) {
   return `${BASE}/query?where=STATE_ID%3D${fips}` +
     `&geometry=${x0.toFixed(5)},${y0.toFixed(5)},${x1.toFixed(5)},${y1.toFixed(5)}` +
     `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
-    `&outFields=OBJECTID,F_SYSTEM,ROUTE_ID,BEGIN_POINT,END_POINT,RouteName,RouteNumber` +
+    `&outFields=OBJECTID,F_SYSTEM,ROUTE_ID,BEGIN_POINT,END_POINT,RouteName,RouteNumber,FACILITY_TYPE` +
     // NO resultRecordCount: the service stopped accepting it (republish,
     // 2026-09-14 evening) — the layer's own maxRecordCount (2000) caps the
     // page and exceededTransferLimit still signals the split.
@@ -105,6 +105,7 @@ const queue = [];
       queue.push([x, y, Math.min(x + STEP, x1), Math.min(y + STEP, y1)]);
 }
 let written = 0, cellsDone = 0, splits = 0;
+const skipped = [];
 
 async function worker() {
   for (;;) {
@@ -130,7 +131,19 @@ async function worker() {
           console.log(`  give-up cell ${(x1 - x0).toFixed(2)}deg @ ${x0.toFixed(2)},${y0.toFixed(2)} -> split`);
           split(); continue;
         }
-        throw e;
+        if (e instanceof TooBigError) {
+          // Already at the minimum cell: the server gave up on ~500 m of a
+          // dense core. Retry a few times (it is usually load, not size),
+          // then skip it with a loud warning rather than abort a 60-minute
+          // harvest one cell from the end (WI, 2026-09-30: 902,462 features
+          // written, then one Milwaukee cell killed the run before tippecanoe).
+          let ok = false;
+          for (let i = 0; i < 3 && !ok; i++) {
+            await new Promise(res => setTimeout(res, 15000 * (i + 1)));
+            try { j = await getJson(cellUrl(cell)); ok = true; } catch (e2) { if (!(e2 instanceof TooBigError)) throw e2; }
+          }
+          if (!ok) { skipped.push(cell); console.log(`  WARNING: skipped min-size cell @ ${x0.toFixed(4)},${y0.toFixed(4)} after 3 retries`); continue; }
+        } else throw e;
       }
       const feats = j.features || [];
       const exceeded = !!((j.properties && j.properties.exceededTransferLimit) || j.exceededTransferLimit);
@@ -153,6 +166,19 @@ async function worker() {
           if (p.END_POINT != null) props.E = Math.round(p.END_POINT * 1000) / 1000;
           if (p.RouteName != null && String(p.RouteName).trim() !== "") props.N = String(p.RouteName).trim();
           if (p.RouteNumber != null && p.RouteNumber !== 0) props.RN = p.RouteNumber;
+          // T = HPMS FACILITY_TYPE, only when it is NOT a plain mainline
+          // (1 one-way / 2 two-way): 4 ramp, 5 non-mainline, 6 NON-INVENTORY
+          // DIRECTION, 7 planned/unbuilt. Where a route is written twice —
+          // a type-2 record and a type-6 record on the same centerline — the
+          // two can disagree on class (WI STH 52 at 45.169879,-89.102452:
+          // type-2 record class 6, type-6 record class 3); the cached
+          // classifier drops the type-6 TWIN so the other record decides
+          // (classifyPointTiles). NOTE 6 is not rare: WisDOT files 725k of
+          // its 902k segments — nearly every local street — as 6, so T:6
+          // alone means nothing; only the same-route, same-distance twin
+          // test acts on it.
+          const ft = Math.trunc(Number(p.FACILITY_TYPE));
+          if (ft >= 3 && ft <= 7) props.T = ft;
           lines += JSON.stringify({ type: "Feature", properties: props, geometry: f.geometry }) + "\n";
           written++;
         }
@@ -169,3 +195,4 @@ console.log(`FIPS ${fips}: quadtree harvest of ${JSON.stringify(box)}`);
 await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 await new Promise(res => out.end(res));
 console.log(`DONE: ${written} features, ${cellsDone} leaf cells, ${splits} splits -> ${outPath}`);
+if (skipped.length) console.log(`WARNING: ${skipped.length} min-size cell(s) skipped: ${JSON.stringify(skipped)}`);

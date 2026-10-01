@@ -112,6 +112,9 @@ ACUB_MIN_BUFFER_FEET = 250
 # can't tell which one the point is on, so a federal-aid second road there earns a
 # yellow flag (modClassify.CLOSE_ROAD_FEET).
 CLOSE_ROAD_FEET = 30
+# Two roads this close to the SAME distance are a tie whose differing outcomes
+# are a review, not a verdict (modClassify.CLASS_TIE_FEET).
+CLASS_TIE_FEET = 3
 
 # Browser-like User-Agent. MDOT (`mdotgis.state.mi.us`) returns HTTP 403 to the default
 # non-browser UA (CLAUDE.md §4.2 / §9.3); a normal UA fixes it. Sent on every request —
@@ -564,6 +567,14 @@ def compute_verdict(segments, exact_urban, boundary_ambiguous, buffer_ft,
 
     if p["code"] == 0:
         return ("Review - non-certified class, check manually", "Non-certified")
+    # (0) Two roads at effectively the same distance whose federal-aid outcomes differ
+    # (one undivided road written twice with different classes - HPMS inventory vs
+    # non-inventory direction, WI STH 52 - or an exact intersection): sort order would
+    # pick the winner, so it is a review whichever came first (red does not stay red here).
+    if (len(ordered) > 1 and ordered[1]["code"] != 0
+            and (_dist(ordered[1]) - _dist(p)) <= CLASS_TIE_FEET
+            and class_is_federal(ordered[1]["code"], exact_urban) != class_is_federal(p["code"], exact_urban)):
+        return ("Review - Conflicting classes", "Conflicting classes")
     if class_is_federal(p["code"], exact_urban):
         return ("Federal aid - " + ("Urban " if exact_urban else "Rural ")
                 + functional_system_label(p["code"]), "")

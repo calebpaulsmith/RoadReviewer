@@ -726,6 +726,37 @@ services — default UA (or any UA) returns 200, same as the nationwide
 ACUB layer. RoadReviewer sends its browser UA on every request
 regardless; harmless here.
 
+#### HPMS vs WisDOT disagreement — STH 52 near Rhinelander (2026-09-30, per user)
+
+`45.169879, -89.102452` reads **Minor Collector** in Excel (WisDOT trunk
+layer, the live web path) but **Other Principal Arterial** from the HPMS
+tiles. Not a two-layer bug: the WisDOT trunk layer returns the road twice
+(`RWLK_ID` 6463 "STH 52 E" `FED_FC_CD=6`, and 19029 "STH 52 W" with a
+BLANK class — WisDOT classes only the inventory direction of an undivided
+road, `DIV_STATUS=U`), and the null record is skipped. FHWA HPMS 2024 carries
+the same two records as `ROUTE_ID` 6463 (`F_SYSTEM=6`, `FACILITY_TYPE=2`
+two-way) and 19029 (`F_SYSTEM=3`, **`FACILITY_TYPE=6` = Non-Inventory
+Direction**). Both sit 25 ft from the point, and the tiles listed 19029
+first, so "closest wins" picked the non-inventory record. WisDOT's
+submission is inconsistent; the inventory record is the one to believe.
+Fixes: (1) `computeVerdict` (rr-core, modClassify, notebook) now returns
+**"Review - Conflicting classes"** when the two nearest segments are within
+`CLASS_TIE_FEET` (3 ft) of the same distance and their federal-aid outcomes
+differ — the one case where red does not stay red (sort order was deciding);
+(2) the tile harvest bakes `T` = `FACILITY_TYPE` for non-mainline records and
+`classifyPointTiles` drops a `T:6` segment whose twin (same `RN`, or same
+name apart from a trailing N/S/E/W) is at the same distance, so with rebuilt
+tiles the point reads Minor Collector like Excel (`build/tiles/README.md`).
+Caveat measured while rebuilding: `FACILITY_TYPE 6` is NOT a rare marker in
+WI — WisDOT files 725k of its 902k segments (nearly every local street) as
+6, versus 16 of 861 in a Kalamazoo sample for MI — so `T:6` on its own means
+nothing; only the same-route, same-distance twin test acts on it. WI tiles
+were rebuilt with `T`; MI/IN/MN/IL/OH still lack it and fall to the
+Conflicting-classes review until rebuilt. The harvester now retries a
+minimum-size cell the server gives up on and then skips it with a warning
+instead of aborting the run (the first WI rebuild died one Milwaukee cell
+from the end).
+
 #### Confirmed test coordinates (verified live 2026-07-01)
 
 | # | Expected outcome | lat | lon | Layer / result |
@@ -1126,7 +1157,7 @@ active work is — the latest round (branch `claude/web-map-roads-hvran-6akxmg`,
 PR #43) added the single Export pill + export dialogue with the editable table
 and the identity write-back (§7b). Outstanding: Caleb's hand pass over that
 work (`docs/web-manual-tests.md`), the PDF map-width redesign question, and
-the never-reproduced "Page Unresponsive" zoom crash — all three tracked as
+the "Page Unresponsive" zoom crash (reproduced + fixed 2026-09-30) — all three tracked as
 open items at the end of §7b.
 
 Everything in the §3 V1 scope is BUILT and covered by the §9.2 verifier
@@ -1490,10 +1521,40 @@ live services. Full design narrative + verification history:
   feeds to `reportFrame()` — geometry deliberately untouched. Caleb asked to
   **revisit what this control is for at all** (fixed scale vs per-site auto-fit
   vs a plain zoom); the odd 0.75 mi step is an artifact of the metre values,
-  not a choice. (b) A "Page Unresponsive" crash on zooming region↔street,
-  reported from the real laptop and **never reproduced headless** (max long
-  task ~0.5 s under 4× throttling at DPR 2); the canvas-count fix above is the
-  best candidate — re-check on the laptop. (c) Caleb's hand pass over the
+  not a choice. (b) **"Page Unresponsive" — REPRODUCED AND FIXED (2026-09-30,
+  per user: Live Review clicked with points in the box froze Edge).**
+  Reproduced headless at 2560×1350, DPR 2, 4× CPU throttling (the earlier
+  1600×1000 attempts were simply too small): single main-thread tasks of
+  5–8 s, the four verdicts starved until the paint finished. A Chrome trace
+  (not the sampling profiler, which only says "(program)") put 80 of 84 s in
+  `CanvasResourceProviderSharedImage::ProduceCanvasResource` inside the frame
+  commit — the browser copying changed canvas bitmaps to the compositor —
+  and inside each 4–8 s commit ONE canvas cost 1.5–4 s while ~60 tile
+  canvases cost ~15 ms each. That canvas was the six-state **mask**:
+  `L.canvas({padding: 0.5})` is one bitmap the size of the padded viewport
+  (8480×5400 px = 183 MB at that screen) that Leaflet redraws on every move
+  and zoom. Fixes, all in `web/index.html`: (1) the mask polygon uses
+  `L.svg` (3,038 vertices; pans by transform); (2) `pacedLayer()` wraps every
+  protomaps layer — `tilePaintGate` releases 1–3 tiles per animation frame
+  (adaptive on the previous frame's duration, `tileDelay` ~0 so paint follows
+  release) instead of letting 60–100 tiles per layer × 4–6 layers paint in the
+  same frames; (3) `fadeAnimation: false` on the map; (4) the Live Review
+  toggle keeps the map view and re-selects the site instead of refitting to
+  the region view. After: no load-time task over 150 ms, verdicts land ~12 s
+  after the paste (were minutes), worst single task ~3 s (was 8–11 s) under
+  the same 4× throttle. Residual: periodic commits that re-produce ALL ~230
+  canvases at ~12 ms each — 2–3 s throttled, ~0.5–0.8 s real; a `clearRect`
+  repaint counter shows JS repainted only 2–4 of them, so it is the browser
+  discarding/re-creating canvas resources, which headless SwiftShader may
+  exaggerate. Next lever if the laptop still stutters: ONE multi-source
+  protomaps layer for the six state class tilesets + ACUB (`sources: {mi:
+  {url…}, …}` with `dataSource` on each paint rule — the vendored 5.1.0
+  supports it) → one canvas per tile instead of up to seven, ~40% fewer
+  canvases. Method (the scratch scripts die with the session): Playwright +
+  CDP `Tracing.start` (categories `devtools.timeline,disabled-by-default-
+  devtools.timeline,cc,gpu`), group `X` events under each `RunTask` > 1 s and
+  count `ProduceCanvasResource` per commit; `Emulation.setCPUThrottlingRate`
+  4 and `deviceScaleFactor: 2` at 2560×1350 are what made it show. (c) Caleb's hand pass over the
   export/edit work (`docs/web-manual-tests.md`, interactive copy at
   <https://claude.ai/artifact/KMuEX8xpojeYZ36aBrvSnG>) is outstanding.
   (d) **A road name with NO place is refused** (`Q Ave` — a bare name would
