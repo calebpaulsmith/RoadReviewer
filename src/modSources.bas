@@ -73,6 +73,8 @@ Public Sub BuildSourcesSheet()
     StateHeader ws, "All states - urban boundary, street names, geocoding, flood maps"
     Cite ws, "U.S. Department of Transportation, Bureau of Transportation Statistics, 2020 Adjusted Urban Area " & _
         "Boundaries (National Transportation Atlas Database) - the urban/rural source for every state,", REST_ACUB
+    Cite ws, "Federal Highway Administration, Highway Performance Monitoring System (HPMS), national layer - " & _
+        "the second class source: used when a state layer is down, and for the optional HPMS double-check,", REST_HPMS
     Cite ws, "U.S. Census Bureau, TIGERweb Transportation - Local Roads, ArcGIS REST map service layer 8 " & _
         "(street names, all states),", REST_TIGER_ROADS
     Cite ws, "U.S. Census Bureau, Census Geocoder - one-line address service (fills coordinates from an address),", REST_CENSUS_GEOCODE
@@ -89,17 +91,44 @@ Public Sub BuildSourcesSheet()
         "constitute a federal-aid, funding, or eligibility determination."
 
     Sub2 ws, "How the answer is built"
-    Body ws, "For each point the tool reads the road's functional class from the state's own data, and separately " & _
-        "checks whether the point falls inside a Census-adjusted urban area. A road that is Urban Minor Collector " & _
-        "or higher is tagged 'federal aid'; Rural Local, Urban Local and Rural Minor Collector are 'non-federal " & _
-        "aid'. It tags the road, not the project - what that means for a work order is the reviewer's call."
+    Body ws, "THE RULE. A road is 'federal aid' when its functional class is Major Collector or higher anywhere, " & _
+        "or Minor Collector inside an urban area. Local roads, and Minor Collectors in rural areas, are " & _
+        "'non-federal aid'. This is the federal definition (23 U.S.C. 101): every public road except a local " & _
+        "road or a rural minor collector. Who owns the road does not enter into it - a state highway classed " & _
+        "Rural Minor Collector is not federal aid. The tool tags the road, not the project - what that means " & _
+        "for a work order is the reviewer's call."
+    Body ws, "THE TWO FACTS AND THEIR SOURCES. (1) Urban or rural comes from the U.S. DOT 2020 Adjusted Urban " & _
+        "Area boundaries - never from the road data, so every state is judged the same way. (2) The road's " & _
+        "class comes from the state DOT's own functional-class layer for the State you picked."
+    Body ws, "THE CLOSEST ROAD DECIDES. Every classified road within the search buffer is found and its distance " & _
+        "to the point measured. The closest one is the road the point is on, and its class plus urban/rural " & _
+        "gives red (federal aid) or green (non-federal aid)."
+    Body ws, "WHEN A ROW TURNS YELLOW (Review). The Review Reason column says why: 'Conflicting classes' - two " & _
+        "roads at the same distance give different answers; 'Second road close' - the closest road is " & _
+        "non-federal but a federal-aid road is within 30 ft of it; 'Nearby FHWA road' - a federal-aid road is " & _
+        "elsewhere inside the buffer; 'Urban boundary edge' - a Minor Collector right on the edge of an urban " & _
+        "area; 'Unclassified road' - the Census street layer shows a road but the state gives it no class; " & _
+        "'No road found'; 'Non-certified'. A red row stays red except for 'Conflicting classes'."
+    Body ws, "IF THE STATE LAYER IS DOWN the class is read from FHWA's HPMS data instead (HPMS is built from the " & _
+        "states' own submissions). The row is still classified, Review Reason says 'HPMS fallback', the cells " & _
+        "turn light blue and the state-site link goes bold - verify that row on the state's map. If both " & _
+        "sources fail the row reads 'Failed' and Re-run Failed Rows retries it."
+    Body ws, "HPMS DOUBLE-CHECK (the Y/N box beside the search buffer, N by default). With Y every row is also " & _
+        "looked up in HPMS. The comparison is on the SAME ROAD, matched by its route id - both sources file a " & _
+        "road under the same id. Different federal-aid answers turn the row into 'Review - Sources disagree' " & _
+        "and Review Reason names the HPMS class; the same answer with a different class is only noted. It adds " & _
+        "one lookup per site (under a second each). The two sources rarely differ - about 1 in 1,000 sampled " & _
+        "road points."
+    Body ws, "DUPLICATE HPMS RECORDS. HPMS stores some two-way roads as two rows on the same line, one per " & _
+        "direction of travel, and the second row's class can be wrong. When both rows of one route sit at the " & _
+        "same distance from the point, only the main row is used."
 
     Sub2 ws, "BOUNDARY ROADS (urban vs rural on the edge)"
-    Body ws, "Urban vs rural comes only from the urban-boundary layer, never from the state's own data, so every " & _
-        "state is judged the same way. When a GPS point sits ON or just OUTSIDE an urban boundary - e.g. on a " & _
-        "road that forms the boundary, or a few feet onto the rural side - the point is deliberately treated as " & _
-        "URBAN (the boundary check always searches at least 200 ft). This leans toward flagging a boundary road " & _
-        "for review rather than silently dropping it. Always confirm boundary cases manually on the source map."
+    Body ws, "A point inside an urban-area boundary is Urban; anything outside is Rural. When a point is outside " & _
+        "but within 250 ft of a boundary - e.g. on a road that forms the boundary - it is still Rural, and the " & _
+        "one case where that matters is flagged: a Minor Collector there reads 'Review - Urban boundary edge', " & _
+        "because inside the boundary it would be federal aid. Always confirm boundary cases manually on the " & _
+        "source map."
 
     Sub2 ws, "Michigan"
     Body ws, "Michigan's road data includes retired (historical) segments; the tool skips those so it never reads " & _

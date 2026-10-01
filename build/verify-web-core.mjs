@@ -33,7 +33,7 @@ const ctx = vm.createContext({ httpGetJson, console });
 vm.runInContext(m[1], ctx, { filename: "rr-core (from web/index.html)" });
 const core = vm.runInContext(
   "({ classifyPoint, detectState, parseCoordinates, computeVerdict, classIsFederal, mergeRoadList, minDistanceFt, wisconsinLocalCategoryToFhwa, " +
-  "parseAddressLine, parseRoadLine, streetMatchScore, streetFromTiger, streetFromGeocoder, closestPointOnPaths, pointAlongPath, pathLengthM, sanitizeGeocodeResponse })", ctx);
+  "crossCheck, applyCrossCheck, dropNonInventoryTwins, parseAddressLine, parseRoadLine, streetMatchScore, streetFromTiger, streetFromGeocoder, closestPointOnPaths, pointAlongPath, pathLengthM, sanitizeGeocodeResponse })", ctx);
 
 let pass = 0, fail = 0;
 function check(label, ok, detail) {
@@ -177,6 +177,82 @@ console.log("computeVerdict (closest-road + ambiguity model, port of modClassify
   check("tie, both non-federal -> green", v([seg(7, 0), seg(6, 0)], false, false).verdict === "Non-federal aid - Rural Local");
   check("tie with a non-certified segment is not a conflict", v([seg(3, 0), seg(0, 0)], false, false).verdict === "Federal aid - Rural Other Principal Arterial");
   check("4 ft apart is not a tie", v([seg(3, 20), seg(7, 24)], false, false).verdict === "Federal aid - Rural Other Principal Arterial");
+  // HPMS non-inventory twins (FACILITY_TYPE 6 beside its type-2 record on
+  // the same centerline): the type-6 record is dropped, so STH 52 reads 6.
+  {
+    const tw = (code, distFt, facility, routeNumber, name) => ({ code, distFt, facility, routeNumber, name });
+    const sth52 = core.dropNonInventoryTwins([tw(3, 25, 6, "52", "STH  052W"), tw(6, 25, 2, "52", "STH  052E")]);
+    check("STH 52: type-6 twin dropped, inventory record left", sth52.length === 1 && sth52[0].code === 6);
+    check("STH 52 after the twin drop -> Rural Minor Collector",
+      v(sth52, false, false).verdict === "Non-federal aid - Rural Minor Collector");
+    check("twin matched by name stem when there is no route number",
+      core.dropNonInventoryTwins([tw(3, 25, 6, "", "STH  052W"), tw(6, 25, 2, "", "STH 052E")]).length === 1);
+    check("twin matched by route id apart from the -D / -I suffix (MnDOT)",
+      core.dropNonInventoryTwins([{ code: 5, distFt: 10, facility: 6, routeId: "0400006595000005-D" },
+                                  { code: 6, distFt: 10, facility: 2, routeId: "0400006595000005-I" }]).map(s => s.code).join() === "6");
+    check("type 6 with no twin is kept (WisDOT files most local streets as 6)",
+      core.dropNonInventoryTwins([tw(7, 10, 6, "", "MAIN ST")]).length === 1);
+    check("two type-6 records are both kept",
+      core.dropNonInventoryTwins([tw(7, 10, 6, "5", ""), tw(6, 10, 6, "5", "")]).length === 2);
+    check("a type-6 record on a different route is kept",
+      core.dropNonInventoryTwins([tw(3, 25, 6, "52", "STH 052W"), tw(6, 25, 2, "64", "STH 064E")]).length === 2);
+    check("a same-route record 40 ft away is not a twin (divided highway)",
+      core.dropNonInventoryTwins([tw(3, 65, 6, "52", ""), tw(6, 25, 2, "52", "")]).length === 2);
+  }
+  // Double-check: the verdict's source against the other class source.
+  {
+    const cc = (p, o, urban = false) => core.crossCheck(p, o, urban);
+    check("cross-check: same class -> agree", cc([seg(6, 25)], [seg(6, 24)]).status === "agree");
+    check("cross-check: 6 vs 3 rural -> disagree", cc([seg(6, 25)], [seg(3, 25)]).status === "disagree");
+    check("cross-check: 4 vs 3 -> class-differs (both federal)", cc([seg(4, 5)], [seg(3, 5)]).status === "class-differs");
+    check("cross-check: 6 vs 7 rural -> class-differs (both non-federal)", cc([seg(6, 5)], [seg(7, 5)]).status === "class-differs");
+    check("cross-check: 6 vs 7 urban -> disagree", cc([seg(6, 5)], [seg(7, 5)], true).status === "disagree");
+    check("cross-check: other source finds no road -> none", cc([seg(6, 5)], []).status === "none");
+    check("cross-check: other source tied, one of the two matches -> agree", cc([seg(6, 5)], [seg(3, 25), seg(6, 25)]).status === "agree");
+    check("cross-check: intersection drawn 4 ft apart is not a disagreement (USH 14 at Autumn Dr)",
+      cc([seg(3, 0), seg(7, 5)], [seg(7, 0), seg(3, 4)], true).status === "agree");
+    check("cross-check: a matching road 40 ft past the other source's closest does not count",
+      cc([seg(3, 0)], [seg(7, 0), seg(3, 40)]).status === "disagree");
+    check("cross-check: near-closest match of a different class -> class-differs",
+      cc([seg(3, 0)], [seg(7, 0), seg(4, 10)]).status === "class-differs");
+    check("cross-check: other source non-certified -> unclear", cc([seg(6, 5)], [seg(0, 5)]).status === "unclear");
+    check("cross-check: this source has no class -> other-only", cc([], [seg(7, 30)]).status === "other-only");
+    check("cross-check: the closest segment speaks for each source", cc([seg(7, 5), seg(3, 90)], [seg(7, 6), seg(3, 80)]).status === "agree");
+    // Route ids: the same road is compared, whatever each source draws closest.
+    const sid = (code, distFt, routeId) => ({ code, distFt, routeId });
+    const byId = cc([sid(3, 0, "42510"), sid(7, 20, "A")], [sid(7, 0, "4112437"), sid(3, 45, "42510")], true);
+    check("cross-check by route id: same road agrees even when the other source draws another road 45 ft closer",
+      byId.status === "agree" && byId.by === "id", JSON.stringify(byId));
+    const idDis = cc([sid(7, 0, "CGRECR00012**C")], [sid(6, 2, "cgrecr00012**c"), sid(7, 3, "X")], true);
+    check("cross-check by route id: same id, different federal-aid answer -> disagree (id match is case/space-insensitive)",
+      idDis.status === "disagree" && idDis.by === "id" && idDis.code === 6, JSON.stringify(idDis));
+    check("cross-check by route id: Illinois ids with inner double spaces match",
+      cc([sid(3, 0, "016  20370 000000")], [sid(3, 5, "016 20370 000000")]).by === "id");
+    check("cross-check: no shared id falls back to the distance rule",
+      cc([sid(3, 0, "A")], [sid(7, 0, "B"), sid(3, 4, "C")]).by === "distance");
+    check("cross-check: a missing id on this source falls back to the distance rule",
+      cc([seg(3, 0)], [sid(3, 2, "A")]).by === "distance");
+    const ap = (verdict, reason, c, name = "State DOT") => core.applyCrossCheck(verdict, reason, c, name);
+    const dis = ap("Federal aid - Rural Other Principal Arterial", "", cc([seg(3, 25)], [seg(6, 25)]));
+    check("disagree turns a red verdict into Review - Sources disagree",
+      dis.verdict === "Review - Sources disagree" && dis.reason === "Sources disagree" && dis.note === "State DOT: Rural Minor Collector", JSON.stringify(dis));
+    const dis2 = ap("Non-federal aid - Rural Minor Collector", "", cc([seg(6, 25)], [seg(3, 25)]), "HPMS");
+    check("disagree turns a green verdict into Review - Sources disagree",
+      dis2.verdict === "Review - Sources disagree" && dis2.note === "HPMS: Rural Other Principal Arterial", JSON.stringify(dis2));
+    const kept = ap("Review - Nearby FHWA road", "Nearby FHWA road", cc([seg(7, 5), seg(3, 90)], [seg(3, 5)]));
+    check("a row already under review keeps its reason and gains the note",
+      kept.verdict === "Review - Nearby FHWA road" && kept.reason === "Nearby FHWA road" && kept.note === "State DOT: Rural Other Principal Arterial", JSON.stringify(kept));
+    const tie = ap("Review - Conflicting classes", "Conflicting classes", cc([seg(3, 25), seg(6, 25)], [seg(6, 25)]));
+    check("Conflicting classes row is told the other source's class",
+      tie.verdict === "Review - Conflicting classes" && tie.note === "State DOT: Rural Minor Collector", JSON.stringify(tie));
+    const same = ap("Federal aid - Urban Minor Arterial", "", cc([seg(4, 5)], [seg(3, 5)], true), "HPMS");
+    check("class-differs leaves the verdict and notes the other class",
+      same.verdict === "Federal aid - Urban Minor Arterial" && same.reason === "" && /^HPMS class: Other Principal Arterial/.test(same.note), JSON.stringify(same));
+    const agree = ap("Federal aid - Urban Minor Arterial", "", cc([seg(4, 5)], [seg(4, 5)], true));
+    check("agree changes nothing and adds no note", agree.verdict === "Federal aid - Urban Minor Arterial" && agree.note === "");
+    const unclear = ap("Non-federal aid - Rural Local", "", cc([seg(7, 5)], [seg(0, 2)]));
+    check("an unclear second source changes nothing", unclear.verdict === "Non-federal aid - Rural Local" && unclear.note === "");
+  }
   check("interstate gets urban/rural prefix", v([seg(1, 5)], true, false).verdict === "Federal aid - Urban Interstate");
   check("local closest + federal within 30 ft -> Second road close",
     v([seg(7, 5), seg(5, 20)], false, false).verdict === "Review - Second road close");

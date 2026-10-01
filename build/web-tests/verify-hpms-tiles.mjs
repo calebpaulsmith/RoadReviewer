@@ -203,6 +203,47 @@ if (existsSync(join(tilesDir, "acub.pmtiles"))) {
   checks.push(["outage: recovered source reported back up with a re-run offer for the fallback row", await page.evaluate(() =>
     /re-run 1 row/.test(document.getElementById("sourceStatus").textContent))]);
   await page.evaluate(() => { document.getElementById("liveVerdicts").checked = false; });
+
+  // --- Double-check Y/N (2026-09-30). Default N. With Y the cached-HPMS
+  // verdict is compared with the state DOT's answer (stubbed here by swapping
+  // the state's query function, so the leg is the same for every tileset):
+  // a different federal-aid answer makes the row a review, the same class
+  // adds an "agrees" chip, and a state layer that fails leaves the verdict. ---
+  checks.push(["double-check box ships as N with the five-word hint", await page.evaluate(() =>
+    document.getElementById("dblCheck").value === "N"
+    && document.getElementById("dblCheckHint").textContent.trim().split(/\s+/).length === 5)]);
+  const stubState = code => page.evaluate(([S, c]) => {
+    NFC_WIRED[S] = async () => { if (c < 0) throw new Error("stubbed outage"); return { segments: [{ code: c, distFt: 2, name: "" }], roads: [] }; };
+  }, [ST, code]);
+  const rowHas = re => page.waitForFunction(src => new RegExp(src, "i").test(document.querySelector("#resultsBody .row").textContent), re.source, { timeout: 30000 });
+  await stubState(7);                                    // the state says Local; the tiles say federal aid
+  await page.selectOption("#dblCheck", "Y");
+  await rowHas(/Sources disagree/);
+  checks.push(["double-check Y: a state/HPMS mismatch turns the verdict into Review - Sources disagree", await page.evaluate(() => {
+    const r = document.querySelector("#resultsBody .row"), res = currentPoints[0].result;
+    return r.className.includes("v-review") && res.verdict === "Review - Sources disagree"
+      && /State DOT: (Urban|Rural) Local/.test(r.querySelector(".chip.chk").textContent);
+  })]);
+  checks.push(["double-check: the export's Review Reason carries the other source's class", await page.evaluate(() =>
+    exportRows().every(r => r[EX.verdict] === "Review - Sources disagree" && /^Sources disagree \| State DOT: (Urban|Rural) Local$/.test(r[EX.reason])))]);
+  checks.push(["double-check setting is remembered", await page.evaluate(() => localStorage.getItem("rr_double_check") === "Y")]);
+  await page.selectOption("#dblCheck", "N");
+  await page.waitForFunction(() => { const r = document.querySelector("#resultsBody .row"); return r.className.includes("v-fed") && !r.querySelector(".chip.chk"); }, { timeout: 30000 });
+  checks.push(["double-check N: the cached verdict stands alone again", true]);
+  const cachedCode = await page.evaluate(() => currentPoints[0].result.segments[0].code);
+  await stubState(cachedCode);
+  await page.selectOption("#dblCheck", "Y");
+  await rowHas(/State DOT agrees/);
+  checks.push(["double-check Y: matching sources keep the verdict and show an agrees chip", await page.evaluate(() =>
+    document.querySelector("#resultsBody .row").className.includes("v-fed") && exportRows().every(r => /^Federal aid/.test(r[EX.verdict]) && r[EX.reason] === ""))]);
+  await page.selectOption("#dblCheck", "N");
+  await page.waitForFunction(() => !document.querySelector("#resultsBody .row .chip.chk"), { timeout: 30000 });
+  await stubState(-1);
+  await page.selectOption("#dblCheck", "Y");
+  await rowHas(/Double-check unavailable/);
+  checks.push(["double-check Y: a state layer that fails leaves the verdict and says so", await page.evaluate(() =>
+    document.querySelector("#resultsBody .row").className.includes("v-fed"))]);
+  await page.selectOption("#dblCheck", "N");
 } else {
   console.log("  (skip) web/tiles/acub.pmtiles not present — cached-classification check skipped");
 }

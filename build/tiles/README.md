@@ -48,6 +48,19 @@ honored from the `tippecanoe` key, `--drop-densest-as-needed` so dense
 cores thin instead of overflowing). `tippecanoe` ≥ 2.x: `apt-get install
 tippecanoe` or https://github.com/felt/tippecanoe.
 
+Every harvest also writes `<out>.ndjson.conflicts.csv` (2026-09-30): each
+centerline HPMS records more than once with DIFFERENT classes — the WI STH 52
+pattern — with its coordinates, classes, facility types, route ids and
+whether the difference can change the federal-aid answer. To get that report
+alone, with no tippecanoe and no feature file:
+
+```sh
+HPMS_CONFLICTS_ONLY=1 node build/tiles/fetch-hpms-state.mjs 27 /tmp/mn.ndjson
+```
+
+Run 2026-09-30, all six states: WI 83 (28 that can flip the answer), MN 4 (3),
+OH 2 (2), MI / IN / IL 0. Combined list: `docs/hpms-twin-conflicts-2026-09-30.csv`.
+
 ## Refresh cadence
 
 HPMS publishes annually. When BTS updates `HPMS_National_Current`,

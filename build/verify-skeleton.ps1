@@ -179,6 +179,12 @@ try {
   foreach ($n in @('JobState','JobOutputFolder','JobAgolMap','JobBufferFeet','JobWO','JobDI','JobDisaster','JobApplicant')) {
     try { $r = $wb.Names($n); Write-Host ("  " + $n + " -> " + $r.RefersTo) } catch { throw "Missing named range: $n" }
   }
+  # The HPMS double-check box ships as N with a Y/N dropdown (both products).
+  try { $hc = $wb.Names('JobHpmsCheck').RefersToRange } catch { throw "Missing named range: JobHpmsCheck" }
+  if ([string]$hc.Value2 -ne 'N') { throw ("JobHpmsCheck should default to N, got '" + [string]$hc.Value2 + "'") }
+  if ($hc.Validation.Type -ne 3 -or $hc.Validation.Formula1 -ne 'N,Y') { throw "JobHpmsCheck should carry an N,Y dropdown" }
+  if ($hc.Worksheet.Name -ne $startName) { throw ("JobHpmsCheck should sit on '" + $startName + "', found on '" + $hc.Worksheet.Name + "'") }
+  Write-Host ("  JobHpmsCheck -> " + $wb.Names('JobHpmsCheck').RefersTo + " (N, dropdown N,Y)")
   Write-Host "  all job named ranges present" -ForegroundColor Green
 
   Write-Host "=== Sites headers (row $HeaderRow) ===" -ForegroundColor Cyan

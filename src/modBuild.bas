@@ -479,33 +479,36 @@ Private Sub BuildStartHereStandard(ByVal ws As Worksheet)
     LabelValue ws, 18, "State", NR_STATE, ""
     LabelValue ws, 19, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
     LabelValue ws, 20, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    FootnoteLine ws, 25, "*", "How far to look for a road / urban boundary when the exact point misses."
+    LabelValue ws, 21, "HPMS double-check (Y/N)", NR_HPMSCHECK, "N", "**"
+    FootnoteLine ws, 26, "*", "How far to look for a road / urban boundary when the exact point misses."
+    FootnoteLine ws, 27, "**", HpmsCheckFootnote()
 
-    SectionLabel ws, 27, "Exports & Handoff"
-    LabelValue ws, 29, "Output Folder", NR_OUTFOLDER, ""
-    NoteLine ws, 33, "Pick an export, then click Go. Everything saves to the Output Folder above."
+    SectionLabel ws, 29, "Exports & Handoff"
+    LabelValue ws, 31, "Output Folder", NR_OUTFOLDER, ""
+    NoteLine ws, 35, "Pick an export, then click Go. Everything saves to the Output Folder above."
 
-    SectionLabel ws, 35, "Repair / Reset"
-    NoteLine ws, 39, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    SectionLabel ws, 37, "Repair / Reset"
+    NoteLine ws, 41, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (rows are final above this line) ----
     AddStateValidation ws.Cells(18, 3)
     AddBufferValidation ws.Cells(20, 3)
-    SetOutputFolderDefault ws.Cells(29, 3)
-    AddBrowseButton ws, 29
+    AddYesNoValidation ws.Cells(21, 3)
+    SetOutputFolderDefault ws.Cells(31, 3)
+    AddBrowseButton ws, 31
 
     ' The "Photo Links (selected rows)" button was dropped per user request;
     ' OpenImageryForSelection is still a live macro (and still reachable from the
     ' inspector's roads dropdown), so it can be restored without touching modImagery.
-    AddButton ws, BODY_LEFT_PT, ws.Rows(22).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
-    AddButton ws, BODY_LEFT_PT + 210, ws.Rows(22).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
+    AddButton ws, BODY_LEFT_PT, ws.Rows(23).Top, 200, 30, "Check Roads", "CheckRoads", CLR_BTN_GO
+    AddButton ws, BODY_LEFT_PT + 210, ws.Rows(23).Top, 170, 30, "Re-run Failed Rows", "ReRunFailedRows"
 
-    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(31).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(31).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
+    CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(33).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(33).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(37).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(37).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
+    AddButton ws, BODY_LEFT_PT, ws.Rows(39).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(39).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
 ' Small "Browse" button parked at the RIGHT end of column B, on the label's own
@@ -542,26 +545,29 @@ Private Sub BuildStartHereInspector(ByVal ws As Worksheet)
     SectionLabel ws, 14, "Check FHWA Status  (optional)"
     LabelValue ws, 16, "User-Defined AGOL Layer (optional)", NR_AGOLMAP, ""
     LabelValue ws, 17, "FHWA search buffer (feet)", NR_BUFFER, CStr(DEFAULT_BUFFER_FEET), "*"
-    NoteLine ws, 21, "Optional road-classification / photo-link check (uses the State set on Map Pages). Pick an action, then Go."
-    FootnoteLine ws, 22, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+    LabelValue ws, 18, "HPMS double-check (Y/N)", NR_HPMSCHECK, "N", "**"
+    NoteLine ws, 22, "Optional road-classification / photo-link check (uses the State set on Map Pages). Pick an action, then Go."
+    FootnoteLine ws, 23, "*", "Fallback radius when the exact point hits no road (min 250 ft for the urban-boundary check)."
+    FootnoteLine ws, 24, "**", HpmsCheckFootnote()
 
-    SectionLabel ws, 26, "Repair / Reset"
-    NoteLine ws, 30, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
+    SectionLabel ws, 27, "Repair / Reset"
+    NoteLine ws, 31, "Repair Layout rebuilds the sheets, buttons and formulas and KEEPS your typed Sites data. " & _
         "Reset Everything deletes every point and rebuilds a blank Sites table - it asks you to confirm first."
 
     ' ---- controls (every row height above is final before this point) ----
     AddBufferValidation ws.Cells(17, 3)
+    AddYesNoValidation ws.Cells(18, 3)
 
     AddButton ws, BODY_LEFT_PT, ws.Rows(5).Top, 200, 22, ChrW$(8592) & " Back to Map Pages", "GoToMapPages", CLR_BTN_GO
 
     CreateExportPicker ws, BODY_LEFT_PT, ws.Rows(9).Top + 3, 300
     AddButton ws, BODY_LEFT_PT + 308, ws.Rows(9).Top, 70, 24, "Go", "RunSelectedExport", CLR_BTN_GO
 
-    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(19).Top + 3, 300
-    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(19).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
+    CreateRoadsPicker ws, BODY_LEFT_PT, ws.Rows(20).Top + 3, 300
+    AddButton ws, BODY_LEFT_PT + 308, ws.Rows(20).Top, 70, 24, "Go", "RunSelectedRoadsAction", CLR_BTN_GO
 
-    AddButton ws, BODY_LEFT_PT, ws.Rows(28).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
-    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(28).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
+    AddButton ws, BODY_LEFT_PT, ws.Rows(29).Top, 210, 24, "Repair Layout (keeps your data)", "BuildWorkbook", RGB(120, 120, 120)
+    AddButton ws, BODY_LEFT_PT + 220, ws.Rows(29).Top, 220, 24, "Reset Everything (erases data)", "ResetWorkbookFull", RGB(176, 80, 80)
 End Sub
 
 Private Sub AddStateValidation(ByVal cell As Range)
@@ -572,6 +578,23 @@ Private Sub AddStateValidation(ByVal cell As Range)
         .InCellDropdown = True
     End With
 End Sub
+
+' Y/N dropdown for the HPMS double-check cell (both products). Anything but a
+' leading "Y" reads as N in modClassify.HpmsDoubleCheckOn.
+Private Sub AddYesNoValidation(ByVal cell As Range)
+    With cell.Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="N,Y"
+        .IgnoreBlank = True
+        .InCellDropdown = True
+    End With
+End Sub
+
+' The footnote under the HPMS double-check box: five words on what Y buys,
+' then what it costs.
+Private Function HpmsCheckFootnote() As String
+    HpmsCheckFootnote = "Y = second source catches wrong classes. Adds one FHWA HPMS lookup per site, so runs take longer."
+End Function
 
 ' Whole-number 1..1000 validation for the Search-buffer cell (both products).
 ' Out-of-range values still fall back to DEFAULT_BUFFER_FEET via
