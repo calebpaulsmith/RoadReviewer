@@ -981,7 +981,10 @@ These came up reading the prototypes; capturing them so they aren't lost.
 ```
 /                                  this README — CLAUDE.md
 .github/workflows/pages.yml       deploys web/ to GitHub Pages on push to main (§7b)
-archive/                                the two prototypes + superseded workbook builds (reference only)
+archive/                                the two prototypes + superseded workbook builds (reference only);
+                                          archive/agol-notebook/ = the AGOL notebook port + its Web Tool
+                                          guide, FROZEN 2026-10-01 per user (no web tools in the org) —
+                                          never port fixes to it
 RoadReviewer.xlsm                       Standard product (PDMGs/partners/reviewers) — committed;
                                           rebuild via `build\build.ps1` after any src/ change
 Site Inspector Review Tool.xlsm         Inspector product (full toolkit) — committed; built from
@@ -1047,6 +1050,10 @@ build/                                  Local assembly + verification scripts (n
                                           workbook path maps to the local sync folder (regression
                                           for the mangled "<base>\https:\...sharepoint.com" bug)
   verify-agol-map.ps1                   AGOL Map column + Send Sites to AGOL Map (§9.3a)
+  verify-hpms-check.ps1                 §9.7b — the Y/N HPMS double-check + the non-inventory twin drop
+                                          in Excel's HPMS lookups (STH 52, a real OH mismatch, timing)
+  audit-hpms-vs-state.mjs               §9.7b — samples HPMS segments per state and compares HPMS with
+                                          the state DOT layer using the page's own rr-core; CSV + summary
   compile-check.ps1                     forces a full VBA compile of every module (catches the
                                           JIT-only traps in §9.3); opens the workbook READONLY
   dump-prototype.ps1                    Extracts the prototype VBA modules to build/prototype-vba/
@@ -1120,18 +1127,20 @@ docs/
   agol-review-app.md                    build guide for the AGOL site-review app + Excel hand-off
   map-image-export.md                   why per-site figures render on the web side and Excel
                                           only places them
-  notebook-web-tool-implementation.md   publishing notebooks/ as an AGOL Web Tool and calling it
-                                          from Experience Builder
   web-manual-tests.md                   hand-test pass for the web tool — clipboard, Excel, Google
                                           Earth, PDF layout, the editable export table; the things
                                           build/web-tests/ can't judge (ids are stable, quote them)
+  NEXT-rebuild-tiles.md                 NOT DONE — steps for a cloud session to rebuild the MI/IN/MN/
+                                          IL/OH tilesets with T = FACILITY_TYPE (needs tippecanoe,
+                                          which the Windows laptop lacks), what to check, what breaks
+  hpms-twin-conflicts-2026-09-30.csv    every centerline HPMS records twice with different classes,
+                                          all six states (§9.7b)
   NEXT-road-name-lookup.md              PLANNED, NOT BUILT — bare road names with no place: the
                                           measured ambiguity (904 places for "Main St" region-wide
                                           vs 2 in a county), what HPMS actually carries per segment
                                           (COUNTY_ID / URBAN_ID / OWNERSHIP, all verified live),
                                           the Default-Area + county-gated picker design, and the
                                           tile-size risk. Start here to resume that work
-notebooks/                              AGOL notebook port of rr-core (jupytext-paired .py/.ipynb)
 AutoChecker/                            loose reference snippets from the user's other automation
                                           (column lists, GPS extraction, sample output) — not built
 ```
@@ -1515,6 +1524,13 @@ live services. Full design narrative + verification history:
   - A test server that serves `.css` as `octet-stream` makes Chromium reject
     `leaflet.css`, Leaflet panes lose `position:absolute`, and the map
     "breaks" while the page itself is fine.
+- **Double-check Y/N (2026-09-30, per user) — full write-up in §9.7b.** The
+  web keeps HPMS tiles as its default source (Excel keeps the live state
+  layer); a `#dblCheck` dropdown next to the row filter (default N, hint
+  "Second source catches wrong classes") re-checks every site against the
+  OTHER source through `withDoubleCheck` → rr-core `crossCheck`, and a
+  federal-aid mismatch becomes `Review - Sources disagree`.
+  `classifyPointSmart` is now a thin wrapper over `classifyPointPrimary`.
 - **Open items.** (a) The **PDF map width** select is labelled in plain feet
   then miles (500 ft / 1,000 ft / 2,000 ft / 0.75 mi / 1.5 mi / 3 mi) over the
   same metre half-widths (76/152/300/600/1200/2400) that `reportRadiusMeters()`
@@ -2145,6 +2161,7 @@ product has no FIRMette buttons or WO/DI named ranges).
 | `verify-screenshot-pdf.ps1` | §7g — the manual screenshot flow end-to-end with 6 synthetic GE-aspect images (Prepare → Insert → Export), PyMuPDF asserts the imagery fills EXACTLY the 760×568 block on every page and the right image is on the right page; then sabotages the sheet geometry (rows 142→152, a picture displaced/stretched) and asserts the re-export is still exact | inspector | no |
 | `verify-imagery.ps1` | §7e — Fetch Imagery end-to-end: Prepare, failure path, re-run-failed-only, imagery-URL override, Export PDF, PyMuPDF pixel/text checks. Copies the workbook to %TEMP% itself. | inspector (either works) | Esri World Imagery export |
 | `verify-hpms-fallback.ps1` | §9.7a — dead URL in `Svc_MI_NFC` → HPMS verdict + tag + blue cells + bold state link; clearing the cell restores the state layer (URL swap, no rebuild); both down → `Failed - NFC query`. Temp copy. | each product | MDOT + HPMS + NTAD + Census |
+| `verify-hpms-check.ps1` | §9.7b — STH 52 with the double-check N and Y (twin dropped, HPMS agrees), HPMS fallback reads the inventory record, HPMS down under Y leaves the verdict, a real OH mismatch (`-MismatchState OH -MismatchLat 39.668489 -MismatchLon -83.969003`) becomes `Review - Sources disagree`; prints the N-vs-Y run time. Temp copy. | each product | WisDOT + ODOT + HPMS + NTAD + Census |
 | `verify-output-folder.ps1` | §8 resolved #9 — OneDrive-for-Business / SharePoint `https://…/Documents/…` workbook path maps to the local sync folder (not a mangled `<base>\https:\…` path); builds a fake sync tree + dummy workbook, points `OneDriveCommercial` at it, asserts the clean folder maps and unmappable URLs return `""`. Opens the workbook READ-ONLY. | each product | no |
 
 Run the whole suite from a clean state:
@@ -2183,7 +2200,7 @@ other way.
 | `web-tests/verify-coord-readout.mjs` | the bottom-right pointer coordinate readout: placement above the attribution, tracking accuracy against Leaflet's own projection, re-projection on pan, freeze + click-to-copy, and the cost measurements (µs/event, one DOM write per frame, long tasks under a throttled sweep) | tiles only |
 | `web-tests/verify-pdf-report.mjs` | PDF report structure (page count, embedded images) + the pdfZoom option list | stubbed |
 | `web-tests/verify-map-render.mjs` | real tilesets: basemap pixels, class + ACUB pixels, the six-state mask, class visible at z15/z17, zero class pixels at the region view, zoom long-task budget | tiles only |
-| `web-tests/verify-hpms-tiles.mjs` | the cached-tile verdict path: HPMS legend section, painted pixels, and a known verdict with ZERO live point queries | tiles only |
+| `web-tests/verify-hpms-tiles.mjs` | the cached-tile verdict path: HPMS legend section, painted pixels, a known verdict with ZERO live point queries, the outage fallback, and the Double-check Y/N box (mismatch → review, match → agrees chip, state failure → verdict stands) | tiles only |
 | `web-tests/verify-inspection-filler.mjs` | §7h end-to-end: fill, draw, attach a geotagged photo, generate, then assert the output PDF's fields/checkboxes/page count/EXIF GPS with pdf-lib | none (file://) |
 
 ```bash
@@ -2497,6 +2514,132 @@ into the code like WI local) — that needs a code change in `QueryStateRoads`.
 through "Microsoft Print to PDF" (session-only `ActivePrinter`, restored
 after) when PageSetup raises — an unreachable network default printer made
 `.Orientation` throw and hung the headless build in VBE break mode.
+
+### 9.7b Double-check Y/N + the two products' default sources (2026-09-30, per user)
+
+**Which source decides, by product — decided, do not flip.** The WEB tool
+answers from the cached HPMS tiles by default (they ship with the page, so it
+is instant and offline); EXCEL answers from the state DOT's live layer by
+default (it has no HPMS data on board) with HPMS only as the outage fallback
+(§9.7a). Everything else is the same logic in both.
+
+**Double-check (opt-in, default N).** One Y/N dropdown per product: Excel
+`JobHpmsCheck` (named range, `N,Y` list) under the search buffer — Start Here
+row 21 on the standard product, Tools and Exports row 18 on the inspector —
+with the footnote "Y = second source catches wrong classes. …"; web
+`#dblCheck` on its own results-bar line with the five-word hint
+`#dblCheckHint`, stored in `localStorage["rr_double_check"]`. With Y each site
+is ALSO looked up in the other source — Excel: one extra HPMS query per row;
+web: the state's `NFC_WIRED` query for a cached verdict, `hpmsTileSegments`
+for a Live Review verdict — and compared by rr-core `crossCheck` /
+`applyCrossCheck` = `modClassify.ApplyCrossCheck` (hand-ported, keep in step):
+
+- This source = its closest segment; the question is what the other source
+  says about THAT SAME ROAD.
+  1. **By route id (2026-10-01, per user).** Every state class layer carries
+     the same route id HPMS files the road under — verified live against HPMS
+     `ROUTE_ID`: MI `PR`, IN `ROUTE_ID`, WI local `RDWY_LINK_ID` / trunk
+     `RWLK_ID`, MN `ROUTE_ID`, IL `INVENTORY`, OH `NLF_ID` (tiles carry it as
+     `R`). When the other source has a segment with the same id inside the
+     buffer, that segment alone is compared. Ids are compared trimmed, upper
+     case, single-spaced (IL ids have inner double spaces). The id field is
+     requested ONLY while the double-check is on (`wantId()` /
+     `globalThis.RR_DOUBLE_CHECK` in rr-core, `IdField()` in modClassify), so
+     a swapped-in service URL lacking the field cannot break a normal lookup.
+     Excel segs are now `Array(class, distFt, routeId)`.
+  2. **By distance, only when no id matches.** The other source = its closest
+     classified segment PLUS anything within `CLOSE_ROAD_FEET` (30 ft) of it;
+     a disagreement only when NONE of those gives this source's answer. The
+     allowance exists because the two sources draw the same intersection a few
+     feet apart (USH 14 at Autumn Dr, La Crosse: HPMS puts the highway closest,
+     WisDOT the side street, 4 ft apart).
+  Audit after the change (60 points per state): 318 matched by route id, 1 by
+  distance. `crossCheck` returns `by: "id" | "distance"`; the web chip's
+  tooltip says which.
+- Disagree → a confident verdict becomes **`Review - Sources disagree`** and
+  the note names the other source's class (Excel Review Reason:
+  `Sources disagree | HPMS: Urban Local`; web: a `.chip.chk` + the export's
+  Review Reason column). A row already under review keeps its own reason and
+  just gains the note.
+- Same federal-aid answer, different class → verdict unchanged, note only.
+- Other source has no road / only non-certified segments → nothing.
+- The other source failing never fails the row (`HPMS check unavailable` /
+  `Double-check unavailable (…)`). Fallback rows are not double-checked.
+
+**Cost.** Excel: +0.4 to 0.8 s per row measured on 10 WI rows (N ≈ 0.5 s/row,
+Y ≈ 0.9–1.4 s/row), so about half a minute on 50 sites. Web: 1–3 live state
+requests per site, throttled 3 per host.
+
+**Non-inventory twin drop now runs in Excel too.** `AddHpmsSegs` (used by the
+fallback AND the double-check) requests `FACILITY_TYPE, RouteNumber,
+RouteName, ROUTE_ID` and drops a type-6 record whose twin sits at the same
+distance; `dropNonInventoryTwins` moved from the UI block into rr-core. Twins
+match on route number, name stem, or — new — route id apart from a trailing
+`-D` / `-I` (MnDOT's direction suffix). STH 52 through Excel's HPMS fallback
+now reads Minor Collector instead of a tie.
+
+**How often do the two sources actually differ?** `build/audit-hpms-vs-state.mjs`
+samples real HPMS segments (half classes 1-6, half locals), asks both sources
+about each midpoint with the page's own rr-core, and writes a CSV + summary.
+Run 2026-09-30, 200 points per state, 50 ft buffer: of 1,095 comparable points,
+**1 disagreed on federal aid** (OH 39.668489,-83.969003, Colorado Dr: ODOT
+Minor Collector inside an urban area = federal aid, HPMS Local) and 2 more
+differed in class only. That Ohio point is the live fixture for
+`verify-hpms-check.ps1` leg 5. So a mismatch is rare (on the order of 1 in
+1,000 sampled road points), which is why the check is opt-in.
+
+**Twin-conflict report at tile-build time.** `fetch-hpms-state.mjs` files every
+harvested record under a direction-independent geometry key and writes
+`<out>.conflicts.csv`: every centerline recorded more than once with different
+classes, and whether the difference can flip the federal-aid answer.
+`HPMS_CONFLICTS_ONLY=1` harvests for the report alone (no ndjson, no
+tippecanoe). Full harvests of all six states 2026-09-30: **WI 83 (28 that can
+flip), MN 4 (3), OH 2 (2), MI / IN / IL 0** — the combined list is
+`docs/hpms-twin-conflicts-2026-09-30.csv` (STH 52 alone accounts for three
+stretches). Every one of them is an exact tie, so each either resolves through
+the twin drop (a type-6 record beside a non-6 one on the same route) or lands
+in `Review - Conflicting classes`; none can produce a silent wrong verdict any
+more. The harvester exited silently once mid-run (OH, no error in the log) —
+if a run stops without a `DONE:` line, just re-run it.
+
+**NOT done — needs a session with tippecanoe.** MI/IN/MN/IL/OH tiles still
+carry no `T`, so the twin drop cannot act on the web's cached path there (a
+tie falls to `Review - Conflicting classes`, which is safe). This Windows
+laptop has no tippecanoe, WSL or Docker; rebuild from a cloud session with
+`bash build/tiles/build-state-tiles.sh <fips> <abbr>` — the full procedure,
+expected feature counts and the MN test point are in
+**`docs/NEXT-rebuild-tiles.md`**.
+
+**AGOL notebook version: ARCHIVED 2026-10-01 (per user — the org has no web
+tools).** `notebooks/` and `docs/notebook-web-tool-implementation.md` moved to
+`archive/agol-notebook/`. It has the tie rule but none of the above. Do not
+port fixes to it; wherever this file says "notebook" or "four products"
+(§9.7), read three: the two workbooks and the web tool.
+
+**Is STH 52 really a Minor Collector? (2026-10-01, per user — it is a state
+highway, so it looks like it should be federal aid.)** Pulled all 149 WisDOT
+trunk-layer records for STH 52 and HPMS's records Antigo → Lily. WisDOT's own
+layer classes it Principal/Minor Arterial through Wausau, Rural Minor Arterial
+east of Wausau, Principal Arterial in Antigo and for the 0.98 mi east of town
+(`RWLK_ID` 62846, AADT 8,610), then **Rural Minor Collector for the next
+7.3 miles** (`RWLK_ID` 6463–6470, `FC_DESC` "Rural Minor Collector",
+-89.114 → -89.009) and Rural Major Collector from there to Lily. HPMS's
+inventory (E) records match that segment for segment. HPMS's W records are
+SHIFTED: W 19029 carries class 3 (the class of the segment before it), W
+19037/19038 carry 6 where E is 5 — which is why they must not be believed and
+why the twin drop is right. So both sources agree the stretch is a Rural Minor
+Collector, and by 23 U.S.C. 101 a rural minor collector is not a federal-aid
+highway whoever owns it; the tool's "Non-federal aid" follows the rule.
+**Confirmed against WisDOT's published map 2026-10-01** (user supplied the PDF,
+"Langlade County Functional Classification Map", WisDOT, dated 10/2019): STH 52
+is drawn in the Minor Collector colour (RGB 168,112,0) from the STH 64 junction
+at Antigo's east edge to CTH S, and in the Major Collector colour (255,170,0)
+from CTH S / CTH B on to Lily - the same break the data layer has. The point
+sits on the Minor Collector part. (wisconsindot.gov refuses connections from
+this machine, so the PDF cannot be fetched here.) A state highway classed
+Rural Minor Collector is
+unusual enough to be worth a look every time; a possible follow-up is a review
+flag for "state-owned road, non-federal class" (HPMS `OWNERSHIP` = 1).
 
 ### 9.8 Map-page PDF export — Excel printable-area geometry (2026-07-14)
 

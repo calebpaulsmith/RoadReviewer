@@ -13,7 +13,12 @@ segment decides red vs blue, amber only downgrades blue with an
 explicit Review Reason ("Second road close" / "Nearby FHWA road" /
 "Urban boundary edge"), and red never downgrades — except a tie:
 two roads at the same distance (within 3 ft) with different outcomes
-is "Conflicting classes", whichever came first. Same red/blue/amber
+is "Conflicting classes", whichever came first. A **Double-check** Y/N
+box (default N) also looks each site up in the second class source (the
+state DOT's live layer when the verdict came from the HPMS tiles, the
+tiles when it came from the state layer) and turns a site where the two
+give different federal-aid answers into "Review - Sources disagree";
+Excel has the same box, comparing its state-layer verdict with HPMS. Same red/blue/amber
 buckets as the Sites table and KML export. A "Download PDF Report"
 button turns the classified points into a citeable PDF — see below.
 

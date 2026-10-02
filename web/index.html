@@ -697,6 +697,15 @@ Portage Rd, Portage MI"></textarea>
         <span class="infodot" tabindex="0" role="note" aria-label="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft." title="Every FHWA-classified road within this distance of the point is found and its true distance measured. The closest road decides the verdict; another federal-aid road inside the buffer can only downgrade a non-federal-aid result to yellow for review. Tighten it on dense urban grids; widen it when GPS points sit off the road. The urban-boundary (ACUB) check never narrows below 250 ft.">i</span>
       </div>
       <div class="results-bar">
+        <label title="N (default): each site is answered from one class source — the cached FHWA HPMS data, or the state DOT layer when Live Review is on. Y: every site is also looked up in the other source, and a site where the two disagree on federal aid becomes a review. Slower: one more lookup per site.">Double-check:
+          <select id="dblCheck">
+            <option value="N" selected>N</option>
+            <option value="Y">Y</option>
+          </select>
+        </label>
+        <span class="count" id="dblCheckHint">Second source catches wrong classes</span>
+      </div>
+      <div class="results-bar">
         <input id="rowFilter" type="search" spellcheck="false" placeholder="Filter rows…"
           title="Show only sites whose text matches — site name, road or street names, verdict, class, urban area. The matching sites' map pins filter with the table.">
         <label class="count" title="Show only the sites inside the visible map area — Find a state, county or township first, then tick this. Zooming to one site (a row click, Prev/Next, adding a point) doesn't narrow the list."><input type="checkbox" id="rowFilterView"> filter by map view</label>
@@ -1028,11 +1037,22 @@ async function queryWithFallback(baseUrl, lat, lon, outFields, whereClause, fall
 // layer carries it on the same feature (WI both layers; MI/IN class layers
 // have no name field, see §4.2/§4.2a). `roads` is the separate named-road
 // list ([{name, distFt}]) merged into the Road Name display.
+// ROUTE IDs (2026-10-01). Every state class layer carries the SAME route id
+// HPMS files the road under (HPMS is built from the states' submissions):
+//   MI PR · IN ROUTE_ID · WI local RDWY_LINK_ID / trunk RWLK_ID · MN ROUTE_ID ·
+//   IL INVENTORY · OH NLF_ID          (verified live against HPMS ROUTE_ID)
+// The double-check uses it to compare the SAME road in both sources instead
+// of whichever road each source happens to draw closest. The id field is
+// only requested while the double-check is on (globalThis.RR_DOUBLE_CHECK),
+// so a swapped-in service URL that lacks the field cannot break a normal
+// class lookup. MI has always requested PR.
+function wantId(field) { return globalThis.RR_DOUBLE_CHECK ? "," + field : ""; }
+function normRouteId(v) { return v === null || v === undefined ? "" : String(v).trim().replace(/\s+/g, " ").toUpperCase(); }
 async function queryMichiganNfc(lat, lon, bufferFt) {
   const nfc = await queryWithFallback(svc("MI_NFC"), lat, lon, "FunctionalSystem,PR", "RHRetireDate IS NULL", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.FunctionalSystem) !== "" && Number.isFinite(Number(e.attrs.FunctionalSystem)))
-    .map(e => ({ code: Math.trunc(Number(e.attrs.FunctionalSystem)), name: "", distFt: e.distFt }));
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FunctionalSystem)), name: "", distFt: e.distFt, routeId: normRouteId(e.attrs.PR) }));
   const roads = [];
   if (svc("MI_ROUTE")) try {
     const route = await queryWithFallback(svc("MI_ROUTE"), lat, lon, "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", bufferFt, true);
@@ -1049,10 +1069,10 @@ async function queryIndianaNfc(lat, lon, bufferFt) {
   // FUNCTIONAL_CLASS, where=1=1 (no record-status filter — the layer holds only
   // statuses {1,4,5,null}, none retired, and null-status segments carry real
   // classes, e.g. Wolf Run Rd Major Collector; the official app applies no filter).
-  const nfc = await queryWithFallback(svc("IN_NFC"), lat, lon, "FUNCTIONAL_CLASS", "1=1", bufferFt, true);
+  const nfc = await queryWithFallback(svc("IN_NFC"), lat, lon, "FUNCTIONAL_CLASS" + wantId("ROUTE_ID"), "1=1", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.FUNCTIONAL_CLASS) !== "" && Number.isFinite(Number(e.attrs.FUNCTIONAL_CLASS)))
-    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt }));
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt, routeId: normRouteId(e.attrs.ROUTE_ID) }));
   const roads = [];
   try {
     const nm = await queryWithFallback(svc("IN_ROADNAME"), lat, lon, "st_full", "1=1", bufferFt, true);
@@ -1073,23 +1093,23 @@ async function queryWisconsinNfc(lat, lon, bufferFt) {
   // layer classifies). Closest-road logic downstream then picks the verdict.
   const segments = [], roads = [];
   let sawStub = false;
-  const loc = await queryWithFallback(svc("WI_LOCAL_ROADS"), lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", bufferFt, true);
+  const loc = await queryWithFallback(svc("WI_LOCAL_ROADS"), lat, lon, "FNCT_CLS_CTGY_TYCD,ST_LABL_NM" + wantId("RDWY_LINK_ID"), "1=1", bufferFt, true);
   for (const e of featureEntries(loc, lat, lon)) {
     const a = e.attrs, cat = Number(a.FNCT_CLS_CTGY_TYCD);
     if (cleanStr(a.FNCT_CLS_CTGY_TYCD) === "" || !Number.isFinite(cat)) { sawStub = true; continue; }
     const code = wisconsinLocalCategoryToFhwa(Math.trunc(cat));
     if (code < 1) { sawStub = true; continue; }   // code 0 / unrecognized = stub
     const name = cleanStr(a.ST_LABL_NM);
-    segments.push({ code, name, distFt: e.distFt });
+    segments.push({ code, name, distFt: e.distFt, routeId: normRouteId(a.RDWY_LINK_ID) });
     if (name) roads.push({ name, distFt: e.distFt });
   }
   if (segments.length === 0 || sawStub) {
-    const trunk = await queryWithFallback(svc("WI_STATE_TRUNK"), lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR", "1=1", bufferFt, true);
+    const trunk = await queryWithFallback(svc("WI_STATE_TRUNK"), lat, lon, "FED_FC_CD,HWYTYPE,HWYNUM,HWYDIR" + wantId("RWLK_ID"), "1=1", bufferFt, true);
     for (const e of featureEntries(trunk, lat, lon)) {
       const a = e.attrs, code = Number(a.FED_FC_CD);
       if (cleanStr(a.FED_FC_CD) === "" || !Number.isFinite(code)) continue;
       const name = [a.HWYTYPE, a.HWYNUM, a.HWYDIR].map(cleanStr).filter(Boolean).join(" ");
-      segments.push({ code: Math.trunc(code), name, distFt: e.distFt });
+      segments.push({ code: Math.trunc(code), name, distFt: e.distFt, routeId: normRouteId(a.RWLK_ID) });
       if (name) roads.push({ name, distFt: e.distFt });
     }
   }
@@ -1102,30 +1122,30 @@ async function queryWisconsinNfc(lat, lon, bufferFt) {
 // (Census TIGER backfills); OH names its IR/US/SR routes on the same layer
 // (municipal "MR 00923" codes are skipped as gibberish, TIGER covers them).
 async function queryMinnesotaNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(svc("MN_NFC"), lat, lon, "FUNCTIONAL_CLASS", "1=1", bufferFt, true);
+  const nfc = await queryWithFallback(svc("MN_NFC"), lat, lon, "FUNCTIONAL_CLASS" + wantId("ROUTE_ID"), "1=1", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.FUNCTIONAL_CLASS) !== "" && Number.isFinite(Number(e.attrs.FUNCTIONAL_CLASS)))
-    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt }));
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FUNCTIONAL_CLASS)), name: "", distFt: e.distFt, routeId: normRouteId(e.attrs.ROUTE_ID) }));
   return { segments, roads: [] };
 }
 
 async function queryIllinoisNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(svc("IL_NFC"), lat, lon, "FC", "1=1", bufferFt, true);
+  const nfc = await queryWithFallback(svc("IL_NFC"), lat, lon, "FC" + wantId("INVENTORY"), "1=1", bufferFt, true);
   const segments = featureEntries(nfc, lat, lon)
     .filter(e => cleanStr(e.attrs.FC) !== "" && Number.isFinite(Number(e.attrs.FC)))
-    .map(e => ({ code: Math.trunc(Number(e.attrs.FC)), name: "", distFt: e.distFt }));
+    .map(e => ({ code: Math.trunc(Number(e.attrs.FC)), name: "", distFt: e.distFt, routeId: normRouteId(e.attrs.INVENTORY) }));
   return { segments, roads: [] };
 }
 
 async function queryOhioNfc(lat, lon, bufferFt) {
-  const nfc = await queryWithFallback(svc("OH_NFC"), lat, lon, "FUNCTION_CLASS_CD,ROUTE_TYPE,ROUTE_NBR", "1=1", bufferFt, true);
+  const nfc = await queryWithFallback(svc("OH_NFC"), lat, lon, "FUNCTION_CLASS_CD,ROUTE_TYPE,ROUTE_NBR" + wantId("NLF_ID"), "1=1", bufferFt, true);
   const segments = [], roads = [];
   for (const e of featureEntries(nfc, lat, lon)) {
     const a = e.attrs;
     if (cleanStr(a.FUNCTION_CLASS_CD) === "" || !Number.isFinite(Number(a.FUNCTION_CLASS_CD))) continue;
     const rt = cleanStr(a.ROUTE_TYPE).toUpperCase(), rn = cleanStr(a.ROUTE_NBR);
     const name = (["IR", "US", "SR"].includes(rt) && /^\d+$/.test(rn)) ? rt + " " + Number(rn) : "";
-    segments.push({ code: Math.trunc(Number(a.FUNCTION_CLASS_CD)), name, distFt: e.distFt });
+    segments.push({ code: Math.trunc(Number(a.FUNCTION_CLASS_CD)), name, distFt: e.distFt, routeId: normRouteId(a.NLF_ID) });
     if (name) roads.push({ name, distFt: e.distFt });
   }
   return { segments, roads };
@@ -1254,6 +1274,98 @@ function computeVerdict(segments, exactUrban, boundaryAmbiguous, bufferFt, named
     reason = "Urban boundary edge";
 
   return reason ? { verdict: "Review - " + reason, reason } : { verdict: baseText, reason: "" };
+}
+
+// HPMS writes some routes twice: a two-way record (FACILITY_TYPE 2) plus a
+// "non-inventory direction" record (FACILITY_TYPE 6, baked into the tiles as
+// T:6 by build/tiles/fetch-hpms-state.mjs) on the SAME centerline, and the
+// two can carry different classes: WI STH 52 at 45.169879,-89.102452 is
+// class 6 on the type-2 record and 3 on the type-6 one, while WisDOT's own
+// layer (the live path, and the Excel tool) classes only one direction.
+// Drop a type-6 segment whose twin — same route number, same name apart
+// from a trailing direction letter, or same route id apart from a trailing
+// -D / -I direction suffix (MnDOT: "0400006595000005-D" beside "...-I") —
+// lies at the same distance, so the type-2 record decides. Type 6 on its own means nothing (WisDOT files nearly
+// every local street as 6, 725k of 902k segments), and a divided highway's
+// second carriageway is far enough away to keep. Tilesets built before T
+// existed carry no T; the tie then lands in computeVerdict's "Conflicting
+// classes" review instead of whichever record the tile listed first.
+// (modClassify.AddHpmsSegs applies the same rule to Excel's HPMS lookups.)
+function routeStem(name) {
+  return String(name || "").toUpperCase().replace(/\s+/g, " ").trim().replace(/(\d)\s*[NSEW]$/, "$1");
+}
+function dropNonInventoryTwins(segs) {
+  return segs.filter(s => s.facility !== 6 || !segs.some(o => o !== s && o.facility !== 6
+    && Math.abs((o.distFt ?? Infinity) - (s.distFt ?? Infinity)) <= CLASS_TIE_FEET
+    && ((s.routeNumber && o.routeNumber === s.routeNumber) || (s.name && routeStem(o.name) === routeStem(s.name))
+        || (s.routeId && routeIdStem(o.routeId) === routeIdStem(s.routeId)))));
+}
+function routeIdStem(id) { return String(id || "").trim().toUpperCase().replace(/-[DI]$/, ""); }
+
+// DOUBLE-CHECK (opt-in, 2026-09-30, per user). The verdict's own source is
+// compared with the OTHER class source — the web's cached HPMS tiles against
+// the state DOT's live layer, Excel's state layer against HPMS (port:
+// modClassify.ApplyCrossCheck — keep the two in step).
+//
+// This source is represented by its closest segment, and the question is
+// what the OTHER source says about THAT SAME ROAD:
+//   1. BY ROUTE ID (2026-10-01, per user). Both sources file a road under the
+//      same route id (see wantId above). When the other source has a segment
+//      with this segment's id inside the buffer, that segment — and only that
+//      one — is compared. No geometry guesswork.
+//   2. BY DISTANCE, only when no id matches (an id missing on either side, or
+//      a road one source does not carry). The other source is then its closest
+//      classified segment PLUS anything within CLOSE_ROAD_FEET of it: the two
+//      sources draw the same intersection a few feet apart, so "which road is
+//      closest" can flip between them at a corner without either being wrong
+//      (measured: USH 14 at Autumn Dr, La Crosse — HPMS puts the highway
+//      closest, WisDOT the side street, 4 ft apart). A disagreement only when
+//      NONE of those near-closest segments gives this source's answer.
+// The result's `by` says which of the two decided ("id" / "distance").
+//   none          the other source has no road within the buffer
+//   unclear       the other source has only non-certified segments there
+//   other-only    this source found no usable class; the other did
+//   disagree      the two differ on federal aid
+//   class-differs same federal-aid answer, different class
+//   agree
+function crossCheck(primarySegs, otherSegs, exactUrban) {
+  const byDist = a => [...(a || [])].sort((x, y) => (x.distFt ?? Infinity) - (y.distFt ?? Infinity));
+  const o = byDist(otherSegs).filter(s => s.code !== 0), p = byDist(primarySegs);
+  if (!(otherSegs || []).length) return { status: "none" };
+  if (!o.length) return { status: "unclear" };
+  const label = code => (exactUrban ? "Urban " : "Rural ") + functionalSystemLabel(code);
+  if (!p.length || p[0].code === 0) return { status: "other-only", code: o[0].code, label: label(o[0].code) };
+  const fedP = classIsFederal(p[0].code, exactUrban);
+  const pid = normRouteId(p[0].routeId);
+  const same = pid ? o.find(s => normRouteId(s.routeId) === pid) : null;   // o is nearest-first
+  if (same) {
+    const status = classIsFederal(same.code, exactUrban) !== fedP ? "disagree" : same.code !== p[0].code ? "class-differs" : "agree";
+    return { status, code: same.code, label: label(same.code), by: "id" };
+  }
+  const near = o.filter(s => ((s.distFt ?? Infinity) - (o[0].distFt ?? Infinity)) < CLOSE_ROAD_FEET
+    && classIsFederal(s.code, exactUrban) === fedP);
+  if (!near.length) return { status: "disagree", code: o[0].code, label: label(o[0].code), by: "distance" };
+  const m = near.find(s => s.code === p[0].code) || near[0];
+  return { status: m.code === p[0].code ? "agree" : "class-differs", code: m.code, label: label(m.code), by: "distance" };
+}
+// What a cross-check does to a verdict: a disagreement on federal aid turns a
+// confident Federal / Non-federal verdict into "Review - Sources disagree"
+// (a row that is already a review keeps its own reason); everything else
+// leaves the verdict alone and at most adds a note naming the other source's
+// class. A row already under "Conflicting classes" always gets the note —
+// the other source is what settles which of the tied records to believe.
+function applyCrossCheck(verdict, reason, cc, otherName) {
+  let note = "";
+  if (!cc || !cc.label) return { verdict, reason, note };
+  if (cc.status === "other-only" || reason === "Conflicting classes") {
+    note = otherName + ": " + cc.label;
+  } else if (cc.status === "disagree") {
+    note = otherName + ": " + cc.label;
+    if (/^(Federal aid|Non-federal aid)/.test(verdict)) { verdict = "Review - Sources disagree"; reason = "Sources disagree"; }
+  } else if (cc.status === "class-differs") {
+    note = otherName + " class: " + functionalSystemLabel(cc.code) + " (same federal-aid result)";
+  }
+  return { verdict, reason, note };
 }
 
 // Point-in-ACUB-polygon (exact) first; only if the point is outside every
@@ -2349,6 +2461,7 @@ const REASON_EXPLAIN = {
   "Second road close": "The two closest roads are within 30 ft of each other and the other one is federal-aid — GPS alone can't tell which road the point is on. Check it on the map.",
   "Nearby FHWA road": "The closest road is non-federal, but another federal-aid road sits inside the search radius. Confirm the site isn't on that one.",
   "Conflicting classes": "Two roads sit at the same distance from the point and only one of them is federal-aid — usually one road recorded twice with different classes (HPMS keeps an inventory and a non-inventory direction record), or an intersection. Check the class on the state DOT's own map.",
+  "Sources disagree": "The FHWA HPMS data and the state DOT's own layer give this road different federal-aid answers. One of the two is out of date or mis-recorded — check the class on the state DOT's own map before relying on either.",
   "Urban boundary edge": "The closest road is a Minor Collector right at the urban-boundary edge; inside the boundary it would be federal-aid. Confirm urban vs rural on the map.",
   "No road found": "No classified road segment inside the search radius — widen the radius or double-check the coordinates.",
   "Unclassified road": "A road is present near this point (see Road Name) but the state assigns it no functional class — it's likely a local/unclassified road. Confirm on the map.",
@@ -2495,7 +2608,12 @@ function render() {
         : "";
       const srcChip = sourceChipHtml(res);
       const provChip = window.provenanceChipHtml ? provenanceChipHtml(p, res) : "";
-      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, provChip, extrasHtml(res)].filter(Boolean).join(" ");
+      // Double-check result (only when the Y/N box is Y): the other source's
+      // class on a mismatch, or a plain "agrees".
+      const checkChip = res.checkNote
+        ? `<span class="chip chk" title="Double-check: what the second class source says about this ${res.checkBy === "id" ? "road (matched by its route id)" : "point (no shared route id here, matched by distance)"}.">${esc(res.checkNote)}</span>`
+        : (res.checkStatus === "agree" ? `<span class="chip chk" title="Double-check: ${esc(res.checkOther)} gives the same class for this ${res.checkBy === "id" ? "road (matched by its route id)" : "point (matched by distance)"}.">✓ ${esc(res.checkOther)} agrees</span>` : "");
+      const subHtml = [roadChipsHtml(res), urbanChipHtml(res), segChip, srcChip, checkChip, provChip, extrasHtml(res)].filter(Boolean).join(" ");
       tr.innerHTML = `<div class="row-main">${headHtml}${badgeHtml(res.verdict, bucket, res.reviewReason)}${sourceBadgeHtml(res)}${retry}` +
         `<span class="caret">▶</span></div>` +
         (subHtml ? `<div class="row-sub">${subHtml}</div>` : "") + linksHtml;
@@ -2506,6 +2624,7 @@ function render() {
         `${esc(res.urbanRural)}${res.acubName ? " (" + esc(res.acubName) + ")" : ""}<br>` +
         `<b>${esc(res.verdict)}</b>` +
         (res.reviewReason && REASON_EXPLAIN[res.reviewReason] ? `<br><i>${esc(REASON_EXPLAIN[res.reviewReason])}</i>` : "") +
+        (res.checkNote ? `<br>${esc(res.checkNote)}` : "") +
         (verdictSource(res) ? `<br>Source: ${sourceLinkHtml(verdictSource(res), esc(verdictSource(res).short), "")}` : "") +
         `<br>${pointLinks(p.lat, p.lon, state)}`);
       done++;
@@ -2765,6 +2884,16 @@ $("liveVerdicts").addEventListener("change", () => {
   if (keepIdx >= 0) selectSite(keepIdx);       // same site, same view, popup back
 });
 
+/* ---- double-check Y/N: persisted; flipping it re-checks every site in place ---- */
+try { if (localStorage.getItem("rr_double_check") === "Y") $("dblCheck").value = "Y"; } catch { /* private mode */ }
+$("dblCheck").addEventListener("change", () => {
+  try { localStorage.setItem("rr_double_check", $("dblCheck").value); } catch { /* private mode */ }
+  const keepIdx = reviewIdx;
+  keepMapView = true;
+  cache.clear(); rebuildPoints(); render();
+  if (keepIdx >= 0) selectSite(keepIdx);
+});
+
 /* ---- exports (generated locally in the browser; nothing leaves the page) ---- */
 // The closest segment's STATE LRS linkage (route id + mileposts) — only
 // the rebuilt tilesets carry it; blank otherwise and on the live path.
@@ -2798,7 +2927,7 @@ function exportRowFor(p) {
   const r = p.result || {}, seg = closestStateSeg(r);
   const base = [
     p.name, p.lat, p.lon, r.state, r.classLabel, r.urbanRural,
-    r.acubName, r.roadName, r.streets, r.verdict, r.reviewReason,
+    r.acubName, r.roadName, r.streets, r.verdict, [r.reviewReason, r.checkNote].filter(Boolean).join(" | "),
     seg ? seg.routeId : "", seg ? seg.mp : "", (verdictSource(r) || {}).short || "", p.note || "",
   ].map(v => v === undefined || v === null ? "" : v);
   const ed = rowEdits.get(editKey(p));
@@ -4413,28 +4542,26 @@ async function determineAcubTiles(lat, lon, bufferFt) {
 
 // The cached-path equivalent of classifyPoint — identical output shape
 // and identical verdict logic, fed from the tiles.
-// HPMS writes some routes twice: a two-way record (FACILITY_TYPE 2) plus a
-// "non-inventory direction" record (FACILITY_TYPE 6, baked into the tiles as
-// T:6 by build/tiles/fetch-hpms-state.mjs) on the SAME centerline, and the
-// two can carry different classes: WI STH 52 at 45.169879,-89.102452 is
-// class 6 on the type-2 record and 3 on the type-6 one, while WisDOT's own
-// layer (the live path, and the Excel tool) classes only one direction.
-// Drop a T:6 segment whose twin — same route number, or same name apart
-// from a trailing direction letter — lies at the same distance, so the
-// type-2 record decides. T:6 on its own means nothing (WisDOT files nearly
-// every local street as 6, 725k of 902k segments), and a divided highway's
-// second carriageway is far enough away to keep. Tilesets built before T
-// existed carry no T; the tie then lands in computeVerdict's "Conflicting
-// classes" review instead of whichever record the tile listed first.
-function routeStem(name) {
-  return String(name || "").toUpperCase().replace(/\s+/g, " ").trim().replace(/(\d)\s*[NSEW]$/, "$1");
-}
-function dropNonInventoryTwins(segs) {
-  return segs.filter(s => s.facility !== 6 || !segs.some(o => o !== s && o.facility !== 6
-    && Math.abs((o.distFt ?? Infinity) - (s.distFt ?? Infinity)) <= CLASS_TIE_FEET
-    && ((s.routeNumber && o.routeNumber === s.routeNumber) || (s.name && routeStem(o.name) === routeStem(s.name)))));
-}
+// (routeStem / dropNonInventoryTwins live in rr-core.)
 window.dropNonInventoryTwins = dropNonInventoryTwins;
+// The HPMS tile segments within the buffer, nearest first, non-inventory
+// twins dropped. Shared by the cached verdict and by the double-check of a
+// live verdict.
+async function hpmsTileSegments(lat, lon, stateCode, bufferFt) {
+  const segs = [];
+  for (const f of await featuresNear("roads", stateCode, lat, lon, bufferFt)) {
+    if (f.geomType !== 2) continue;
+    const d = minDistanceFt({ paths: f.parts }, lat, lon);
+    if (d > bufferFt) continue;
+    segs.push({ code: Math.trunc(Number(f.props.F)), name: cleanStr(f.props.N), distFt: Math.round(d),
+      routeId: f.props.R != null ? String(f.props.R) : "",
+      mpFrom: f.props.B != null ? f.props.B : null,
+      mpTo: f.props.E != null ? f.props.E : null,
+      routeNumber: f.props.RN != null ? String(f.props.RN) : "",
+      facility: f.props.T != null ? Math.trunc(Number(f.props.T)) : 0 });
+  }
+  return dropNonInventoryTwins(segs).sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
+}
 async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
   const out = { lat, lon, state: stateCode, urbanRural: "", acubName: "", acubBoundary: false,
                 classLabel: "", roadName: "", streets: "", streetList: [], roadList: [],
@@ -4450,23 +4577,8 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
   // (rebuilt tiles: R = ROUTE_ID, B/E = mileposts, N = RouteName, RN =
   // RouteNumber — HPMS is built from the states' submissions, so R points
   // straight back at the state inventory, e.g. an MDOT PR number).
-  const roads = [];
-  const roadFeats = await featuresNear("roads", stateCode, lat, lon, bufferFt);
-  for (const f of roadFeats) {
-    if (f.geomType !== 2) continue;
-    const d = minDistanceFt({ paths: f.parts }, lat, lon);
-    if (d > bufferFt) continue;
-    const nm = cleanStr(f.props.N);
-    out.segments.push({ code: Math.trunc(Number(f.props.F)), name: nm, distFt: Math.round(d),
-      routeId: f.props.R != null ? String(f.props.R) : "",
-      mpFrom: f.props.B != null ? f.props.B : null,
-      mpTo: f.props.E != null ? f.props.E : null,
-      routeNumber: f.props.RN != null ? String(f.props.RN) : "",
-      facility: f.props.T != null ? Math.trunc(Number(f.props.T)) : 0 });
-    if (nm) roads.push({ name: nm, distFt: Math.round(d) });   // Road Name column, offline
-  }
-  out.segments = dropNonInventoryTwins(out.segments);
-  out.segments.sort((a, b) => (a.distFt ?? Infinity) - (b.distFt ?? Infinity));
+  out.segments = await hpmsTileSegments(lat, lon, stateCode, bufferFt);
+  const roads = out.segments.filter(sg => sg.name).map(sg => ({ name: sg.name, distFt: sg.distFt }));   // Road Name column, offline
 
   // Street names still come from Census TIGER when reachable — non-fatal
   // and verdict-irrelevant, exactly like the live path's name backfill.
@@ -4500,6 +4612,50 @@ async function classifyPointTiles(lat, lon, stateCode, bufferFt) {
 // source was out (fallbackFrom / fallbackReason / fallbackHost -> the
 // "Source: FHWA HPMS … · MDOT live layer down" chip and the export column).
 async function classifyPointSmart(lat, lon, stateCode, bufferFt) {
+  doubleCheckOn();   // raises RR_DOUBLE_CHECK before the primary query, so a Live Review verdict carries route ids too
+  return withDoubleCheck(await classifyPointPrimary(lat, lon, stateCode, bufferFt), lat, lon, stateCode, bufferFt);
+}
+// DOUBLE-CHECK (the Y/N box by the Detection Buffer, default N). The verdict
+// above stands on its own source; with Y the OTHER source is asked too — the
+// state DOT's live layer for a cached-HPMS verdict, the HPMS tiles for a live
+// one — and rr-core's crossCheck decides whether the row becomes a review.
+// Skipped for failed rows and outage-fallback rows (there the other source
+// is the one that is down). The second source failing never fails the row.
+function doubleCheckOn() {
+  const el = $("dblCheck");
+  const on = el ? el.value === "Y" : false;
+  globalThis.RR_DOUBLE_CHECK = on;   // rr-core asks the state layers for their route id only while this is on
+  return on;
+}
+async function withDoubleCheck(res, lat, lon, st, buf) {
+  if (!doubleCheckOn() || !res || res.failed || res.fallbackFrom) return res;
+  const urban = res.urbanRural === "Urban";
+  let other, otherName;
+  try {
+    if (res.sourceKind === "hpms") {
+      otherName = "State DOT";
+      if (!NFC_WIRED[st]) return res;
+      const key = STATE_SVC_KEY[st], h = key && svc(key) ? healthOf(hostOf(svc(key))) : null;
+      if (h && h.down) throw new Error(h.reason || "down");
+      other = (await NFC_WIRED[st](lat, lon, buf)).segments;
+    } else if (res.sourceKind === "state") {
+      otherName = "HPMS";
+      if (!((await deltaApiUsable()) || (hpmsTilesUsable() && (await ensureHpmsTiles(st))))) return res;
+      other = await hpmsTileSegments(lat, lon, st, buf);
+    } else return res;
+  } catch (e) {
+    res.checkStatus = "unavailable";
+    res.checkNote = `Double-check unavailable (${otherName} did not answer)`;
+    return res;
+  }
+  const cc = crossCheck(res.segments, other, urban);
+  const a = applyCrossCheck(res.verdict, res.reviewReason, cc, otherName);
+  res.verdict = a.verdict; res.reviewReason = a.reason;
+  res.checkStatus = cc.status; res.checkNote = a.note; res.checkOther = otherName; res.checkBy = cc.by || "";
+  return res;
+}
+window.withDoubleCheck = withDoubleCheck;
+async function classifyPointPrimary(lat, lon, stateCode, bufferFt) {
   let tilesOk = false;
   try { tilesOk = stateCode !== "XX" && ((await deltaApiUsable()) || (hpmsTilesUsable() && (await ensureHpmsTiles(stateCode)) && (await acubTilesUsable()))); }
   catch { tilesOk = false; }

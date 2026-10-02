@@ -64,6 +64,12 @@ Public Const NR_IMAGERYSVC As String = "JobImagerySvc"
 ' modClassify.BufferFeet.
 Public Const NR_BUFFER As String = "JobBufferFeet"
 Public Const DEFAULT_BUFFER_FEET As Long = 250
+' Opt-in double-check (Y/N dropdown next to the buffer, default N). The state
+' DOT layer always decides the verdict; with Y every row is ALSO looked up in
+' FHWA's HPMS layer and a row where the two disagree on federal aid becomes
+' "Review - Sources disagree" (modClassify.ApplyCrossCheck). One extra request
+' per row, which is why it is off by default.
+Public Const NR_HPMSCHECK As String = "JobHpmsCheck"
 
 ' ---- Sites table geometry ----
 ' Row 1 IS the header row. The action buttons that used to float over a slim
@@ -273,6 +279,7 @@ Public Const REST_TIGER_ROADS As String = "https://tigerweb.geo.census.gov/arcgi
 ' is unavailable (2026-09-21): the row is still classified, marked "HPMS
 ' fallback", tinted blue, and its state-site link bolded so the inspector
 ' verifies it there. Same data the web tool's cached tiles are built from.
+' Also the second opinion for the opt-in double-check (NR_HPMSCHECK).
 Public Const REST_HPMS As String = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/HPMS_National_Current/FeatureServer/0"
 Public Const HPMS_FALLBACK_TAG As String = "HPMS fallback"
 Public Const CLR_HPMS_FALLBACK As Long = 16247773   ' RGB(221,235,247) light blue

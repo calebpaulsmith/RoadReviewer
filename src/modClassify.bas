@@ -224,7 +224,7 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
         Dim stateErr As String, hpmsErr As String
         stateErr = errMsg
         Set segs = New Collection
-        AddClassSegs ServiceUrl("HPMS"), "F_SYSTEM", "1=1", False, False, lat, lon, latP, lonP, segs, hpmsErr
+        AddHpmsSegs lat, lon, latP, lonP, segs, hpmsErr
         If Len(hpmsErr) > 0 Then
             ws.Cells(r, COL_ELIGIBILITY).Value = STATUS_FAILED_PREFIX & "NFC query (" & stateErr & _
                 "; HPMS fallback: " & hpmsErr & ")"
@@ -253,6 +253,24 @@ Private Sub ClassifyOneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal stateCo
     ' nothing here" (request 4: Mohawk Trail is present in TIGER but absent
     ' from INDOT's class layer).
     ComputeVerdict segs, exactUrban, boundaryAmbiguous, (roads.Count > 0), verdict, reason
+    ' Opt-in double-check (the Y/N box by the buffer): the state layer above
+    ' decided the verdict; HPMS is asked the same question and a disagreement
+    ' on federal aid turns the row into a review. Skipped when HPMS already IS
+    ' the source (fallback row). An HPMS failure never fails the row.
+    If HpmsDoubleCheckOn() And Len(hpmsNote) = 0 Then
+        Dim hpmsSegs As Collection, checkErr As String, checkNote As String
+        Set hpmsSegs = New Collection
+        AddHpmsSegs lat, lon, latP, lonP, hpmsSegs, checkErr
+        If Len(checkErr) > 0 Then
+            checkNote = "HPMS check unavailable"
+            TraceLine "  HPMS double-check failed: " & checkErr
+        Else
+            ApplyCrossCheck segs, hpmsSegs, exactUrban, "HPMS", verdict, reason, checkNote
+        End If
+        If Len(checkNote) > 0 Then
+            If Len(reason) > 0 Then reason = reason & " | " & checkNote Else reason = checkNote
+        End If
+    End If
     ws.Cells(r, COL_ELIGIBILITY).Value = verdict
     ' The "HPMS fallback" tag in Review Reason is what drives the blue tint and
     ' the bold state-site link (conditional formats in modBuild), and it
@@ -294,7 +312,7 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
         Case "MI"
             ' Class from layer 353; trunkline route names from 543.
             AddClassSegs ServiceUrl("MI_NFC"), "FunctionalSystem", "RHRetireDate IS NULL", False, False, _
-                lat, lon, latP, lonP, segs, errMsg
+                lat, lon, latP, lonP, segs, errMsg, IdField("PR")
             If Len(errMsg) > 0 Then Exit Sub
             If Len(ServiceUrl("MI_ROUTE")) > 0 Then
                 AddNamedRoads ServiceUrl("MI_ROUTE"), "RouteDesignation,RouteNumber", "RHRetireDate IS NULL", _
@@ -308,7 +326,7 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
             ' e.g. Wolf Run Rd Major Collector). Road name still comes from the
             ' separate centerlines layer (lowercase st_full, unchanged).
             AddClassSegs ServiceUrl("IN_NFC"), "FUNCTIONAL_CLASS", "1=1", False, False, _
-                lat, lon, latP, lonP, segs, errMsg
+                lat, lon, latP, lonP, segs, errMsg, IdField("ROUTE_ID")
             If Len(errMsg) > 0 Then Exit Sub
             AddNamedRoads ServiceUrl("IN_ROADNAME"), "st_full", "1=1", "SINGLE:st_full", lat, lon, latP, lonP, roads
         Case "WI"
@@ -326,7 +344,7 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
             If Len(errMsg) > 0 Then Exit Sub
             If segs.Count = 0 Or sawStub Then
                 AddClassSegs ServiceUrl("WI_STATE_TRUNK"), "FED_FC_CD", "1=1", True, False, _
-                    lat, lon, latP, lonP, segs, errMsg
+                    lat, lon, latP, lonP, segs, errMsg, IdField("RWLK_ID")
                 If Len(errMsg) > 0 Then Exit Sub
                 AddNamedRoads ServiceUrl("WI_STATE_TRUNK"), "HWYTYPE,HWYNUM,HWYDIR", "1=1", "WI_TRUNK", _
                     lat, lon, latP, lonP, roads
@@ -337,14 +355,14 @@ Private Sub QueryStateRoads(ByVal stateCode As String, ByVal lat As String, ByVa
         ' trunkline names ("US 23") on the same layer.
         Case "MN"
             AddClassSegs ServiceUrl("MN_NFC"), "FUNCTIONAL_CLASS", "1=1", False, False, _
-                lat, lon, latP, lonP, segs, errMsg
+                lat, lon, latP, lonP, segs, errMsg, IdField("ROUTE_ID")
         Case "IL"
             ' FC is a STRING field ("1".."7") - isStringClass, like WI's FED_FC_CD.
             AddClassSegs ServiceUrl("IL_NFC"), "FC", "1=1", True, False, _
-                lat, lon, latP, lonP, segs, errMsg
+                lat, lon, latP, lonP, segs, errMsg, IdField("INVENTORY")
         Case "OH"
             AddClassSegs ServiceUrl("OH_NFC"), "FUNCTION_CLASS_CD", "1=1", False, False, _
-                lat, lon, latP, lonP, segs, errMsg
+                lat, lon, latP, lonP, segs, errMsg, IdField("NLF_ID")
             If Len(errMsg) > 0 Then Exit Sub
             AddNamedRoads ServiceUrl("OH_NFC"), "ROUTE_TYPE,ROUTE_NBR", "1=1", "OH_ROUTE", _
                 lat, lon, latP, lonP, roads
@@ -364,8 +382,10 @@ Private Sub AddWiLocalRoads(ByVal lat As String, ByVal lon As String, _
         ByRef sawStub As Boolean, ByRef errMsg As String)
     Dim json As String, blocks As Collection, b As Variant
     Dim ints As Collection, cls As Long, nm As String, d As Double
+    Dim idFld As String
+    idFld = IdField("RDWY_LINK_ID")
     json = RunQuery(ServiceUrl("WI_LOCAL_ROADS"), lat, lon, _
-        "FNCT_CLS_CTGY_TYCD,ST_LABL_NM", "1=1", BufferFeet(), errMsg, True)
+        "FNCT_CLS_CTGY_TYCD,ST_LABL_NM" & IIf(Len(idFld) > 0, "," & idFld, ""), "1=1", BufferFeet(), errMsg, True)
     If Len(errMsg) > 0 Then Exit Sub
     Set blocks = FeatureBlocks(json)
     For Each b In blocks
@@ -376,7 +396,7 @@ Private Sub AddWiLocalRoads(ByVal lat As String, ByVal lon As String, _
         Else
             cls = WisconsinLocalCategoryToFhwa(CLng(ints(1)))
             If cls >= 1 Then
-                segs.Add Array(cls, d)
+                segs.Add Array(cls, d, IdFromBlock(CStr(b), idFld))
                 nm = Trim$(FirstString(CStr(b), "ST_LABL_NM"))
                 If Len(nm) > 0 Then roads.Add Array(nm, d)
             Else
@@ -387,21 +407,229 @@ Private Sub AddWiLocalRoads(ByVal lat As String, ByVal lon As String, _
 End Sub
 
 ' Query a functional-class layer with geometry and append each segment's
-' (fhwaClass, distanceFt) to segs. isStringClass=True reads the class as a
+' (fhwaClass, distanceFt, routeId) to segs. routeId is "" unless idField is
+' given (see IdField - only while the HPMS double-check is on). isStringClass=True reads the class as a
 ' string field (WI FED_FC_CD); wiLocalDecode=True runs the value through
 ' WisconsinLocalCategoryToFhwa (WI local-roads category code).
 Private Sub AddClassSegs(ByVal baseUrl As String, ByVal classField As String, ByVal whereClause As String, _
         ByVal isStringClass As Boolean, ByVal wiLocalDecode As Boolean, _
         ByVal lat As String, ByVal lon As String, ByVal latP As Double, ByVal lonP As Double, _
-        ByRef segs As Collection, ByRef errMsg As String)
+        ByRef segs As Collection, ByRef errMsg As String, Optional ByVal idField As String = "")
     Dim json As String, blocks As Collection, b As Variant, cls As Long
-    json = RunQuery(baseUrl, lat, lon, classField, whereClause, BufferFeet(), errMsg, True)
+    json = RunQuery(baseUrl, lat, lon, classField & IIf(Len(idField) > 0, "," & idField, ""), _
+        whereClause, BufferFeet(), errMsg, True)
     If Len(errMsg) > 0 Then Exit Sub
     Set blocks = FeatureBlocks(json)
     For Each b In blocks
         cls = ClassFromBlock(CStr(b), classField, isStringClass, wiLocalDecode)
-        If cls >= 0 Then segs.Add Array(cls, MinDistanceFt(CStr(b), lonP, latP))
+        If cls >= 0 Then segs.Add Array(cls, MinDistanceFt(CStr(b), lonP, latP), IdFromBlock(CStr(b), idField))
     Next b
+End Sub
+
+' HPMS class segments, with the non-inventory twin dropped. HPMS writes some
+' undivided roads twice - a two-way record (FACILITY_TYPE 2) and a
+' "non-inventory direction" record (FACILITY_TYPE 6) on the SAME centerline -
+' and the two can carry different classes (WI STH 52 at 45.169879,-89.102452:
+' class 6 on the type-2 record, 3 on the type-6 one; WisDOT's own layer says 6).
+' A type-6 record whose twin - same route number, same route name apart from a
+' trailing direction letter, or same route id apart from a trailing -D / -I
+' direction suffix (MnDOT) - sits at the same distance is dropped so the
+' inventory record decides. Type 6 on its own means nothing (WisDOT files
+' nearly every local street that way), so only the twin test acts on it. Same
+' rule as the web tool's dropNonInventoryTwins.
+Private Sub AddHpmsSegs(ByVal lat As String, ByVal lon As String, _
+        ByVal latP As Double, ByVal lonP As Double, _
+        ByRef segs As Collection, ByRef errMsg As String)
+    Dim json As String, blocks As Collection, b As Variant, ints As Collection
+    Dim n As Long, i As Long, j As Long, isTwin As Boolean
+    json = RunQuery(ServiceUrl("HPMS"), lat, lon, "F_SYSTEM,FACILITY_TYPE,RouteNumber,RouteName,ROUTE_ID", _
+        "1=1", BufferFeet(), errMsg, True)
+    If Len(errMsg) > 0 Then Exit Sub
+    Set blocks = FeatureBlocks(json)
+    If blocks.Count = 0 Then Exit Sub
+
+    Dim cls() As Long, dist() As Double, fac() As Long, rn() As Long, stem() As String, rid() As String, fullId() As String
+    ReDim cls(1 To blocks.Count): ReDim dist(1 To blocks.Count): ReDim fac(1 To blocks.Count)
+    ReDim rn(1 To blocks.Count): ReDim stem(1 To blocks.Count): ReDim rid(1 To blocks.Count): ReDim fullId(1 To blocks.Count)
+    For Each b In blocks
+        Set ints = ExtractIntegers(CStr(b), "F_SYSTEM")
+        If ints.Count > 0 Then
+            n = n + 1
+            cls(n) = CLng(ints(1))
+            dist(n) = MinDistanceFt(CStr(b), lonP, latP)
+            Set ints = ExtractIntegers(CStr(b), "FACILITY_TYPE")
+            If ints.Count > 0 Then fac(n) = CLng(ints(1))
+            Set ints = ExtractIntegers(CStr(b), "RouteNumber")
+            If ints.Count > 0 Then rn(n) = CLng(ints(1))
+            stem(n) = RouteStem(FirstString(CStr(b), "RouteName"))
+            fullId(n) = IdFromBlock(CStr(b), "ROUTE_ID")
+            rid(n) = RouteIdStem(fullId(n))
+        End If
+    Next b
+
+    For i = 1 To n
+        isTwin = False
+        If fac(i) = 6 Then
+            For j = 1 To n
+                If j <> i And fac(j) <> 6 And Abs(dist(j) - dist(i)) <= CLASS_TIE_FEET Then
+                    If (rn(i) <> 0 And rn(j) = rn(i)) Or (Len(stem(i)) > 0 And stem(j) = stem(i)) _
+                            Or (Len(rid(i)) > 0 And rid(j) = rid(i)) Then
+                        isTwin = True
+                        Exit For
+                    End If
+                End If
+            Next j
+        End If
+        If isTwin Then
+            TraceLine "  HPMS non-inventory twin dropped (class " & cls(i) & ")"
+        Else
+            segs.Add Array(cls(i), dist(i), fullId(i))
+        End If
+    Next i
+End Sub
+
+' "STH  052W" -> "STH 052": upper-case, single spaces, and a direction letter
+' that trails a digit removed, so the two direction records of one route match.
+Private Function RouteStem(ByVal routeName As String) As String
+    Dim s As String, body As String
+    s = UCase$(Trim$(routeName))
+    Do While InStr(s, "  ") > 0
+        s = Replace(s, "  ", " ")
+    Loop
+    If Len(s) >= 2 Then
+        If InStr("NSEW", Right$(s, 1)) > 0 Then
+            body = RTrim$(Left$(s, Len(s) - 1))
+            If Len(body) > 0 Then
+                If Right$(body, 1) >= "0" And Right$(body, 1) <= "9" Then s = body
+            End If
+        End If
+    End If
+    RouteStem = s
+End Function
+
+' "0400006595000005-D" -> "0400006595000005": the route id without its
+' direction suffix, so MnDOT's two direction records of one route match.
+Private Function RouteIdStem(ByVal routeId As String) As String
+    Dim s As String
+    s = UCase$(Trim$(routeId))
+    If Right$(s, 2) = "-D" Or Right$(s, 2) = "-I" Then s = Left$(s, Len(s) - 2)
+    RouteIdStem = s
+End Function
+
+' ROUTE IDs (2026-10-01). Every state class layer carries the SAME route id
+' HPMS files the road under: MI PR, IN ROUTE_ID, WI local RDWY_LINK_ID / trunk
+' RWLK_ID, MN ROUTE_ID, IL INVENTORY, OH NLF_ID (verified live against HPMS
+' ROUTE_ID). The double-check uses it to compare the SAME road in both sources.
+' The field is only requested while the double-check is on, so a swapped-in
+' service URL that lacks it cannot break a normal class lookup.
+Private Function IdField(ByVal fieldName As String) As String
+    If HpmsDoubleCheckOn() Then IdField = fieldName
+End Function
+
+' A feature's route id as a normalized string (trimmed, single spaces, upper
+' case). String ids ("0006904", "016  20370 000000") and numeric ones (WisDOT's
+' 6463) both come back as text.
+Private Function IdFromBlock(ByVal block As String, ByVal fieldName As String) As String
+    Dim s As String, ints As Collection
+    If Len(fieldName) = 0 Then Exit Function
+    s = Trim$(FirstString(block, fieldName))
+    If Len(s) = 0 Then
+        Set ints = ExtractIntegers(block, fieldName)
+        If ints.Count > 0 Then s = CStr(ints(1))
+    End If
+    s = UCase$(s)
+    Do While InStr(s, "  ") > 0
+        s = Replace(s, "  ", " ")
+    Loop
+    IdFromBlock = s
+End Function
+
+Private Function SegId(ByVal seg As Variant) As String
+    If UBound(seg) >= 2 Then SegId = CStr(seg(2))
+End Function
+
+Private Function HpmsDoubleCheckOn() As Boolean
+    HpmsDoubleCheckOn = (UCase$(Left$(Trim$(SetupValue(NR_HPMSCHECK)), 1)) = "Y")
+End Function
+
+' Compare the verdict's own segments with a second source's (port of the web
+' tool's crossCheck + applyCrossCheck - keep the two in step).
+'
+' This source is represented by its closest segment, and the question is what
+' the OTHER source says about THAT SAME ROAD:
+'   1. BY ROUTE ID (2026-10-01, per user): when the other source has a segment
+'      with the same route id inside the buffer, that segment alone is compared.
+'   2. BY DISTANCE, only when no id matches: the other source is its closest
+'      classified segment PLUS anything within CLOSE_ROAD_FEET of it (the two
+'      sources draw the same intersection a few feet apart, so "which road is
+'      closest" can flip at a corner without either being wrong). A
+'      disagreement only when NONE of those gives this source's answer.
+'   - the other source finds no classified road: no opinion, nothing changes;
+'   - the two disagree on federal aid: a confident verdict becomes
+'     "Review - Sources disagree" and the note names the other source's class;
+'   - same federal-aid answer, different class: verdict stands, note only;
+'   - this source found no class at all, or is itself tied ("Conflicting
+'     classes"): the note reports the other source's class.
+Private Sub ApplyCrossCheck(ByVal segs As Collection, ByVal otherSegs As Collection, _
+        ByVal exactUrban As Boolean, ByVal otherName As String, _
+        ByRef verdict As String, ByRef reason As String, ByRef note As String)
+    note = ""
+    If otherSegs.Count = 0 Then Exit Sub
+    Dim o() As Variant, i As Long, k As Long
+    o = SortSegsByDist(otherSegs)
+    k = -1
+    For i = 0 To UBound(o)
+        If CLng(o(i)(0)) <> 0 Then
+            k = i
+            Exit For
+        End If
+    Next i
+    If k < 0 Then Exit Sub                       ' only non-certified segments
+    Dim oClass As Long, oDist As Double
+    oClass = CLng(o(k)(0)): oDist = CDbl(o(k)(1))
+
+    Dim pClass As Long, p() As Variant
+    If segs.Count > 0 Then
+        p = SortSegsByDist(segs)
+        pClass = CLng(p(0)(0))
+    End If
+    If pClass = 0 Or reason = "Conflicting classes" Then
+        note = otherName & ": " & PrefixedClass(oClass, exactUrban)
+        Exit Sub
+    End If
+
+    Dim fedP As Boolean, matchClass As Long, c As Long, pid As String, idHit As Boolean
+    fedP = ClassIsFederal(pClass, exactUrban)
+    matchClass = -1
+    pid = SegId(p(0))
+    If Len(pid) > 0 Then
+        For i = k To UBound(o)                   ' nearest-first
+            If CLng(o(i)(0)) <> 0 And SegId(o(i)) = pid Then
+                idHit = True
+                oClass = CLng(o(i)(0))
+                If ClassIsFederal(oClass, exactUrban) = fedP Then matchClass = oClass
+                Exit For
+            End If
+        Next i
+    End If
+    For i = k To UBound(o)
+        If idHit Then Exit For
+        c = CLng(o(i)(0))
+        If c <> 0 And (CDbl(o(i)(1)) - oDist) < CLOSE_ROAD_FEET Then
+            If ClassIsFederal(c, exactUrban) = fedP Then
+                If matchClass = -1 Or c = pClass Then matchClass = c
+            End If
+        End If
+    Next i
+    If matchClass = -1 Then
+        note = otherName & ": " & PrefixedClass(oClass, exactUrban)
+        If Left$(verdict, 11) = "Federal aid" Or Left$(verdict, 15) = "Non-federal aid" Then
+            verdict = "Review - Sources disagree"
+            reason = "Sources disagree"
+        End If
+    ElseIf matchClass <> pClass Then
+        note = otherName & " class: " & FunctionalSystemLabel(matchClass) & " (same federal-aid result)"
+    End If
 End Sub
 
 Private Function ClassFromBlock(ByVal block As String, ByVal classField As String, _

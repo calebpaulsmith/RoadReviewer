@@ -120,7 +120,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
     </div>
     <div class="card">
       <h4><span class="tag state">State layer</span> decides the verdict only when…</h4>
-      <p>…any one of these is true: the <b>"Live verdicts"</b> box (under Data service URLs) is ticked; the point is <b>outside the six states</b>; the tiles <b>cannot be read</b> (opened from a file, a state's tile file missing, a read error). Then that state's own functional-class layer and the live NTAD urban boundaries are queried per point.</p>
+      <p>…any one of these is true: the <b>Live Review</b> button above the results is on; the point is <b>outside the six states</b>; the tiles <b>cannot be read</b> (opened from a file, a state's tile file missing, a read error). Then that state's own functional-class layer and the live NTAD urban boundaries are queried per point.</p>
     </div>
     <div class="card">
       <h4><span class="tag hpms">HPMS tiles</span> draw the class lines while you browse</h4>
@@ -131,7 +131,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
       <p>Click a row, step Prev / Next, or export the PDF report and the "Source layers at this site" lines come from the <b>state DOT layer, live, in that state's own published colors</b>, with the urban boundary from the live NTAD service. Same for the class swatch on Find-box road suggestions.</p>
     </div>
   </div>
-  <div class="warn"><b>What this means in practice.</b> The verdict and the site overlay can disagree. The tiles are one HPMS year old; the state layer is current. If a collector was reclassified since the 2024 submission, the row may say one thing and the lines around the pin another. Ticking "Live verdicts" makes both use the state layer.</div>
+  <div class="warn"><b>What this means in practice.</b> The verdict and the site overlay can disagree. The tiles are one HPMS year old; the state layer is current. If a collector was reclassified since the 2024 submission, the row may say one thing and the lines around the pin another. Turning <b>Live Review</b> on makes both use the state layer. Setting <b>Double-check</b> to Y keeps the fast HPMS verdict but also asks the state layer about the same road, and flags the site when the two disagree (step 4 below).</div>
 </section>
 
 <section id="flow">
@@ -151,7 +151,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
     <div class="frow one">
       <div class="box decide"><b class="t">Go live (state layer) if any of these hold — otherwise use the tiles</b>
         <ul>
-          <li>"Live verdicts" is ticked (remembered in this browser).</li>
+          <li>Live Review is on (remembered in this browser).</li>
           <li>The point is not inside one of the six states.</li>
           <li>The page was opened as a file, the state's tile file is missing, or a tile read fails.</li>
         </ul></div>
@@ -163,6 +163,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
           <li><b>Roads within 250 ft</b> from <code>web/tiles/&lt;state&gt;.pmtiles</code>: FHWA class 1–7, the HPMS street name, and the state's own route id + mileposts (the "State route · MP" chip).</li>
           <li><b>Urban or rural</b> from <code>web/tiles/acub.pmtiles</code> (NTAD 2020 adjusted urban areas), plus "on the boundary" when the point is outside every polygon but within 250 ft of one.</li>
           <li><b>Street names</b> from Census TIGER, live, if reachable. Names never change the verdict.</li>
+          <li><b>Duplicate records are dropped.</b> HPMS stores some two-way roads as two rows on the same line, one per direction of travel, and the second row's class can be wrong. When both rows of one route sit at the same distance from the point, only the main row is used.</li>
         </ul></div>
       <div class="box state"><b class="t"><span class="tag state">Live path</span> &nbsp;That state's DOT layer, per point</b>
         <ul>
@@ -179,13 +180,28 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1
         <ul>
           <li><b>Federal aid</b> — class 1–5 anywhere; class 6 (Minor Collector) when urban.</li>
           <li><b>Non-federal aid</b> — class 7 (Local) anywhere; class 6 when rural.</li>
-          <li><b>Review</b> — no road within the buffer; a named road that the layer gives no class; class 0 (non-certified); a second road within 30 ft that is federal aid; any other federal-aid road nearby; a Minor Collector on the urban boundary.</li>
+          <li><b>Review</b> — no road within the buffer; a named road that the layer gives no class; class 0 (non-certified); two roads at the same distance that give different answers; a second road within 30 ft that is federal aid; any other federal-aid road nearby; a Minor Collector on the urban boundary.</li>
         </ul>
-        <p class="note">Amber only ever downgrades blue. Red stays red. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p></div>
+        <p class="note">Amber only ever downgrades blue. Red stays red, with one exception: two roads tied at the same distance with different answers is a review whichever was listed first. The rule tags the road, never the project — it is a direct port of the Excel tool's ComputeVerdict.</p>
+        <p class="note">The rule itself is federal law: a federal-aid highway is any public road except a local road or a rural minor collector (23 U.S.C. 101). Who owns the road does not enter into it — a state highway classed Rural Minor Collector is not federal aid.</p></div>
     </div>
     <div class="arrow">↓</div>
 
-    <h3>4. Where it lands</h3>
+    <h3>4. Optional: Double-check against the second source</h3>
+    <div class="frow one">
+      <div class="box decide"><b class="t">Only when the Double-check box is set to Y (it ships as N)</b>
+        <ul>
+          <li>The road the point is on is looked up in the <b>other</b> class source: the state DOT layer when the verdict came from the HPMS tiles, the HPMS tiles when it came from the state layer.</li>
+          <li><b>Same road, matched by its route id.</b> HPMS is built from the states' own submissions, so both sources file a road under the same id (Michigan's PR number, Ohio's NLF id, and so on). Only when no id matches is the nearest road in the other source used instead.</li>
+          <li><b>Different federal-aid answers</b> → the verdict becomes "Review - Sources disagree" and the row names the other source's class.</li>
+          <li><b>Same answer, different class</b> → the verdict stands and the row notes the other class.</li>
+          <li>If the second source does not answer, the verdict stands and the row says the check was unavailable.</li>
+        </ul>
+        <p class="note">It is off by default because it costs one more lookup per site and the sources rarely differ: in a sample of about 1,100 road points across the six states, one differed on federal aid.</p></div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <h3>5. Where it lands</h3>
     <div class="frow one">
       <div class="box"><b class="t">Row, pin, exports</b>The verdict, FHWA class, urban/rural + urban-area name, road name(s) with distances, the state route chip, and a "Source:" chip naming where the class came from (FHWA HPMS tiles or the state DOT's live layer) — on the row, in the pin popup, as the pin color, and in every export (CSV, TSV, GeoJSON, KMZ carry a Data Source column).</div>
     </div>

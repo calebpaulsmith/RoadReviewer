@@ -26,7 +26,7 @@
 // line features even at maxzoom (repro'd v2.49: 5 clean parallel lines ->
 // 1 survivor, "dropped_by_rate" in tile strategies, -r1 doesn't help).
 
-import { createWriteStream } from "node:fs";
+import { createWriteStream, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -34,6 +34,9 @@ const BASE = "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/
 const PAGE_CAP = 2000;        // the layer's maxRecordCount
 const CONCURRENCY = 4;
 const MIN_CELL_DEG = 0.005;   // never split below ~500 m — data-error guard
+// HPMS_CONFLICTS_ONLY=1: harvest for the twin-conflict report alone and leave
+// the feature file empty (no tippecanoe needed, no multi-hundred-MB ndjson).
+const CONFLICTS_ONLY = process.env.HPMS_CONFLICTS_ONLY === "1";
 
 // Generous per-state boxes (same rough bounds the web tool's detectState
 // uses, padded) — the STATE_ID where-clause clips exactly.
@@ -107,6 +110,22 @@ const queue = [];
 let written = 0, cellsDone = 0, splits = 0;
 const skipped = [];
 
+// TWIN-CONFLICT REPORT (2026-09-30). HPMS writes some centerlines twice (an
+// inventory record and a non-inventory-direction record) and the two can
+// carry different classes — WI STH 52 is 6 on one and 3 on the other. Every
+// harvested record is filed under a direction-independent key of its
+// geometry (the non-inventory record is often the same line reversed), and
+// at the end every key holding more than one class is written to
+// <out>.conflicts.csv, so a rebuild lists these places for the whole state
+// instead of waiting for a user to land on one.
+const twins = new Map();   // geometry key -> [{F, T, R, N, mid}]
+function geomKey(g) {
+  const pts = g.type === "MultiLineString" ? g.coordinates.flat() : g.coordinates;
+  if (!pts || pts.length < 2) return null;
+  const a = pts[0].join(","), b = pts[pts.length - 1].join(",");
+  return { key: (a < b ? a + "|" + b : b + "|" + a) + "|" + pts.length, mid: pts[pts.length >> 1] };
+}
+
 async function worker() {
   for (;;) {
     const cell = queue.shift();
@@ -179,10 +198,16 @@ async function worker() {
           // test acts on it.
           const ft = Math.trunc(Number(p.FACILITY_TYPE));
           if (ft >= 3 && ft <= 7) props.T = ft;
+          const gk = geomKey(f.geometry);
+          if (gk) {
+            const rec = { F: cls, T: Number.isFinite(ft) ? ft : 0, R: props.R || "", N: props.N || "", mid: gk.mid };
+            const g = twins.get(gk.key);
+            if (g) g.push(rec); else twins.set(gk.key, [rec]);
+          }
           lines += JSON.stringify({ type: "Feature", properties: props, geometry: f.geometry }) + "\n";
           written++;
         }
-        if (lines) await new Promise((res, rej) => out.write(lines, e => e ? rej(e) : res()));
+        if (lines && !CONFLICTS_ONLY) await new Promise((res, rej) => out.write(lines, e => e ? rej(e) : res()));
         cellsDone++;
         if (cellsDone % 10 === 0) console.log(`  ${cellsDone} cells done, ${splits} splits, ${written} features, queue ${queue.length}`);
       }
@@ -196,3 +221,23 @@ await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 await new Promise(res => out.end(res));
 console.log(`DONE: ${written} features, ${cellsDone} leaf cells, ${splits} splits -> ${outPath}`);
 if (skipped.length) console.log(`WARNING: ${skipped.length} min-size cell(s) skipped: ${JSON.stringify(skipped)}`);
+
+// Same-centerline records whose classes differ. "flips" says whether the
+// difference can change the federal-aid answer: classes 1-5 are always
+// federal aid, 6 only inside an urban boundary, 7 never.
+{
+  const q = v => '"' + String(v).replaceAll('"', '""') + '"';
+  const rows = [["lat", "lon", "classes", "facility_types", "route_ids", "route_names", "flips_verdict"].join(",")];
+  let flipping = 0;
+  for (const g of twins.values()) {
+    if (g.length < 2 || new Set(g.map(r => r.F)).size < 2) continue;
+    const rural = new Set(g.map(r => r.F <= 5)).size > 1, urban = new Set(g.map(r => r.F <= 6)).size > 1;
+    const flips = rural && urban ? "yes" : rural ? "rural only" : urban ? "urban only" : "no";
+    if (flips !== "no") flipping++;
+    rows.push([g[0].mid[1], g[0].mid[0], q(g.map(r => r.F).join("|")), q(g.map(r => r.T).join("|")),
+      q(g.map(r => r.R).join("|")), q(g.map(r => r.N).join("|")), flips].join(","));
+  }
+  const conflictsPath = outPath + ".conflicts.csv";
+  writeFileSync(conflictsPath, rows.join("\n") + "\n");
+  console.log(`TWINS: ${rows.length - 1} centerline(s) recorded more than once with different classes, ${flipping} where it can change the federal-aid answer -> ${conflictsPath}`);
+}
